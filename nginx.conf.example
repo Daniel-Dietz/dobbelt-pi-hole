@@ -1,76 +1,74 @@
 # ------------------------------------------------------------------
-# Dobbelt Pi-hole-kontrolpanel — nginx reverse-proxy eksempel
+# Double Pi-hole dashboard — nginx reverse proxy example
 #
-# Hvad skal tilpasses:
-#   dns.eksempel.dk         -> domænenavnet man tilgår dette værktøj.
-#   pihole1.eksempel.dk     -> værtsnavn eller IP-adresse til din første Pi-hole-installation
-#   pihole2.eksempel.dk     -> værtsnavn eller IP-adresse til din anden Pi-hole-installation
-#   /etc/nginx/ssl/...      -> dit SSL certifikat og privat nøgle.
-#   /srv/web/dobbeltpihole  -> hvor du placerer index.html og chart.umd.min.js
+# Values to adjust:
+#   dns.example.com         -> domain name used to access this dashboard
+#   pihole1.example.com     -> host name or IP address of your first Pi-hole instance
+#   pihole2.example.com     -> host name or IP address of your second Pi-hole instance
+#   /etc/nginx/ssl/...      -> your SSL certificate and private key
+#   /srv/web/dobbeltpihole  -> location of index.html and chart.umd.min.js
 #
-# Hvorfor en proxy til dette: Kontrolpanelets JavaScript henter data fra
-# /api1/... og /api2/... som relative stier på den oprindelige host.
-# Så vil nginx videresende disse forespørgsler til de 2 rigtige Pi-hole
-# installationer så man undgår CORS helt.
-# Pi-holes CORS-håndtering er ikke konsekvent på tværs af alle endpoints.
-# Derfor er dette den enkleste måde at få en stabil løsning på.
+# Why this proxy is required: The dashboard JavaScript fetches data from
+# /api1/... and /api2/... as relative paths on the original host. nginx then
+# forwards these requests to the two actual Pi-hole instances, avoiding CORS
+# entirely. Pi-hole's CORS handling is not consistent across all endpoints.
+# This is therefore the simplest way to achieve a stable setup.
 # ------------------------------------------------------------------
 
 server {
     listen 443 ssl http2;
-    server_name dns.eksempel.dk;
+    server_name dns.example.com;
 
-    ssl_certificate     /etc/nginx/ssl/dns.eksempel.dk/fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/dns.eksempel.dk/privkey.pem;
+    ssl_certificate     /etc/nginx/ssl/dns.example.com/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/dns.example.com/privkey.pem;
 
     root /srv/web/dobbeltpihole;
     index index.html;
     autoindex off;
 
-    # --- Grundlæggende sikkerhedsheadere ------------------------------
-    # Bemærkning om script-src 'unsafe-inline': Kontrolpanelet leveres som
-    # én selvstændig HTML-fil med JavaScript direkte i filen. Browseren skal
-    # derfor have tilladelse til at afvikle inline JavaScript. Det betyder,
-    # at denne CSP ikke blokerer et indsat inline <script>, hvis et sådant
-    # script skulle slippe igennem uden korrekt neutralisering et sted i
-    # programmet. Politikken begrænser primært, hvilke kilder der må
-    # kommunikeres med, indlejres eller indlæses elementer fra.
+    # --- Basic security headers ---------------------------------------
+    # Note about script-src 'unsafe-inline': The dashboard is provided as
+    # one self-contained HTML file with JavaScript embedded directly in it.
+    # The browser must therefore be allowed to execute inline JavaScript.
+    # This means that this CSP does not block an injected inline <script> if
+    # one were to pass through the application's escaping. The policy mainly
+    # restricts which sources may be contacted, embedded or loaded.
     #
-    # Hvis kontrolpanelet skal deles med andre og ikke kun bruges af dig selv,
-    # kan <script>-blokken flyttes til en separat app.js-fil. Derefter kan
-    # 'unsafe-inline' fjernes fra script-src, hvilket lukker dette hul.
-    # Ved personlig brug er risikoen begrænset, da det kun er dig selv,
-    # der vil kunne blive berørt.
-    # Hvis kontrolpanelet afvikles på en Synology NAS, kan der desuden
-    # oprettes og tilknyttes en "Profil til adgangskontrol" i DSM.
-    # Profilen kan begrænse adgangen til bestemte IP-adresser eller lokale
-    # netværk, så kontrolpanelet ikke er tilgængeligt for uvedkommende.
+    # If the dashboard is shared with other people rather than used only by
+    # you, the <script> block can be moved to a separate app.js file. You can
+    # then remove 'unsafe-inline' from script-src to close this gap.
+    # For personal use, the risk is limited because only you can be affected.
+    #
+    # When hosting the dashboard on a Synology NAS, you can also create and
+    # assign an Access Control Profile in DSM. The profile can restrict access
+    # to selected IP addresses or local networks, preventing unauthorized
+    # access to the dashboard.
 
     add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self';" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "same-origin" always;
 
-    # --- Reverse proxy til de 2 Pi-hole installationer ---------------------------
+    # --- Reverse proxy to the two Pi-hole instances ------------------
     location /api1/ {
-        proxy_pass https://pihole1.eksempel.dk/api/;
-        proxy_ssl_verify off;              # Fjern hvis pihole1 har et offentligt (ikke selv-signeret) certifikat
-        proxy_set_header Host pihole1.eksempel.dk;
+        proxy_pass https://pihole1.example.com/api/;
+        proxy_ssl_verify off;              # Remove if pihole1 has a public, trusted certificate
+        proxy_set_header Host pihole1.example.com;
         proxy_ssl_server_name on;
         proxy_connect_timeout 10s;
         proxy_read_timeout 30s;
     }
 
     location /api2/ {
-        proxy_pass https://pihole2.eksempel.dk/api/;
-        proxy_ssl_verify off;              # Fjern hvis pihole2 har et offentligt (ikke selv-signeret) certifikat
-        proxy_set_header Host pihole2.eksempel.dk;
+        proxy_pass https://pihole2.example.com/api/;
+        proxy_ssl_verify off;              # Remove if pihole2 has a public, trusted certificate
+        proxy_set_header Host pihole2.example.com;
         proxy_ssl_server_name on;
         proxy_connect_timeout 10s;
         proxy_read_timeout 30s;
     }
 
-    # --- Selve kontrolpanelet ------------------------------------------
+    # --- Dashboard files ---------------------------------------------
     location / {
         try_files $uri $uri/ =404;
     }
@@ -80,9 +78,9 @@ server {
     }
 }
 
-# Valgfri: Omdiriger http til https
+# Optional: Redirect HTTP to HTTPS
 server {
     listen 80;
-    server_name dns.eksempel.dk;
+    server_name dns.example.com;
     return 301 https://$host$request_uri;
 }

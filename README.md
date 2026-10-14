@@ -1,92 +1,135 @@
-# Dobbelt Pi-hole-kontrolpanel
+# Double Pi-hole dashboard
 
-En enkelt selvstændig `index.html`, der samler to Pi-hole v6-installationer
-i én administrationsvisning: dashboard med grafer, forespørgselslog,
-lister over tilladte og blokerede domæner, lokale DNS-poster, klienter
-(herunder "ukendte enheder på netværket" fra Pi-holes egne forslag),
-adlists og Gravity-opdateringer. Hvor det giver mening, findes der desuden
-funktioner til at tilføje eller slette på begge servere samtidig.
-
-Kontrolpanelet kommunikerer direkte med hver Pi-holes egne `/api/...`-endpoints
-fra din browser. Der er ingen backend, database eller buildproces. Det hele
-ligger i én HTML-fil.
+**English** | [Dansk](README.DA.md)
 
 
-## Krav
+A lightweight dashboard for managing two Pi-hole v6 instances from one
+interface. The solution consists of a single self-contained `index.html` with
+no backend, database or build process. The browser communicates directly with
+both Pi-hole REST APIs through an nginx reverse proxy.
 
-- To Pi-hole **v6**-installationer med det nye REST API. Løsningen fungerer
-  ikke med det gamle PHP API i Pi-hole v5.
-- En nginx eller tilsvarende reverse proxy foran kontrolpanelet, så browserens
-  forespørgsler til `/api1/...` og `/api2/...` videresendes til dine to faktiske
-  Pi-hole-installationer. Dermed undgås CORS-problemer helt. Se
-  `nginx.conf.example`.
-- En "app password" til hver Pi-hole. Den oprettes under **Settings → API** i
-  den enkelte Pi-holes eget webinterface. Brug denne i stedet for din rigtige
-  administratoradgangskode, når du logger ind på kontrolpanelet.
+The dashboard includes:
 
+- Combined statistics and charts
+- A combined query log with filtering and sorting
+- Management of allowed and blocked domains
+- Local DNS records with differences between the instances clearly shown
+- Known clients and suggestions for unknown devices
+- Adlist management
+- Gravity updates on each instance
+- Actions that can be applied to one or both instances
+- Danish and English user interfaces
 
-## Opsætning
+The two Pi-hole instances remain independent DNS servers. This project does not
+provide failover, a virtual IP address, a primary or secondary server, or
+automatic background replication. Its purpose is to make it easy to maintain
+the relevant settings consistently from a single dashboard.
 
-1. Kopiér `index.html` til den placering, hvor nginx skal levere den fra,
-   eksempelvis `/srv/web/pihole-dashboard/index.html`.
-2. Download Chart.js til samme mappe. Det bruges til graferne på dashboardet:
+## Lightweight by design
+
+The dashboard is deliberately simple:
+
+- One HTML file containing HTML, CSS and JavaScript
+- No backend
+- No database
+- No build process
+- No Node.js, PHP or Python
+- Settings stored locally in the browser
+- Direct communication with the Pi-hole v6 APIs through nginx
+
+Chart.js is loaded as a separate local file and is only used for charts.
+
+## Requirements
+
+- Two Pi-hole **v6** instances with the REST API. The dashboard does not work
+  with the old Pi-hole v5 PHP API.
+- nginx or a similar reverse proxy in front of the dashboard. Requests to
+  `/api1/...` and `/api2/...` must be forwarded to the two actual Pi-hole
+  instances. This avoids CORS issues.
+- An app password for each Pi-hole. Create it under **Settings → API** in each
+  Pi-hole administration interface.
+
+## Setup
+
+1. Copy `index.html` to the directory served by nginx, for example
+   `/srv/web/pihole-dashboard/index.html`.
+2. Download Chart.js to the same directory:
+
    ```bash
    cd /srv/web/pihole-dashboard
    curl -o chart.umd.min.js https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js
    ```
-3. Kopiér `nginx.conf.example` til din nginx-konfiguration. Tilpas domænet,
-   værtsnavnene eller IP-adresserne på de to Pi-hole-installationer,
-   certifikatstierne og placeringen af webfilerne.
-4. Kør `nginx -t && systemctl reload nginx`. Åbn derefter kontrolpanelets
-   domæne i en browser, og log ind på hver Pi-hole med dens app password.
 
-Det er det hele. Det er ikke nødvendigt at redigere selve `index.html` yderligere.
-Kontrolpanelet forventer allerede at finde de to Pi-hole-installationer på de
-relative stier `/api1` og `/api2`, hvilket er præcis det, nginx-skabelonen
-videresender for dig.
+3. Copy `nginx.conf.example` to your nginx configuration.
+4. Adjust the domain, Pi-hole addresses, certificate paths and web root.
+5. Test and reload nginx:
 
-Hvis du hellere vil pege direkte på Pi-hole-installationernes faktiske adresser
-i stedet for at bruge en proxy, kan du ændre de to serveradresser under fanen
-**Indstillinger** i selve kontrolpanelet. Du må dog forvente, at nogle faner kan
-fejle med CORS-fejl, da Pi-holes egen CORS-håndtering ikke er ensartet på tværs
-af alle endpoints.
+   ```bash
+   nginx -t && systemctl reload nginx
+   ```
 
+6. Open the dashboard URL and log in to both Pi-hole instances with their app
+   passwords.
 
-## Sikkerhed
+The dashboard expects the fixed relative API paths `/api1` and `/api2`. The
+nginx example forwards these paths to the actual Pi-hole instances. You do not
+need to edit `index.html` to enter their addresses.
 
-- Løsningen er udviklet til **personlig brug eller brug blandt personer, du
-  har tillid til**, som administrerer dine egne Pi-hole-installationer. Den er
-  ikke beregnet som et offentligt tilgængeligt værktøj. Alle, der kan logge ind,
-  har fulde administratorrettigheder på begge Pi-hole-installationer. De kan
-  deaktivere blokering, slette domæner og lister samt starte Gravity-opdateringer.
-- Login-sessioner gemmes i browserens `sessionStorage`, som ryddes, når fanen
-  lukkes, frem for i `localStorage`. Kontrolpanelet gemmer ikke selv
-  adgangskoderne nogen steder.
-- Kontrolpanelet neutraliserer værdier, der ikke er tillid til, før de vises,
-  eksempelvis klientnavne fra DHCP, domæner og kommentarer. Løsningen leveres
-  dog som én samlet fil med JavaScript direkte i HTML-filen. Det begrænser, hvor
-  restriktiv en Content Security Policy kan være. Se kommentaren i
-  `nginx.conf.example`. Hvis du vil dele adgangen med andre frem for kun at
-  bruge løsningen selv, bør du overveje at flytte `<script>`-blokken til en
-  ekstern `app.js`-fil. Derefter kan `'unsafe-inline'` fjernes fra `script-src`
-  i CSP-headeren.
-- Pull requests og issues er velkomne, både ved fejl og ved forslag, der kan
-  give reel understøttelse af mere end to Pi-hole-installationer.
-- Hvis kontrolpanelet afvikles på en Synology NAS, kan du oprette og tilknytte
-  en **Profil til adgangskontrol** i DSM. Dermed kan adgangen begrænses til
-  bestemte IP-adresser eller lokale netværk.
+The displayed server names can be changed under **Settings**. The names are
+stored in the browser's `localStorage`, while the API paths remain `/api1` and
+`/api2`.
 
+## Languages
 
-## Licens
+The user interface is available in Danish and English. On first use, the
+language is selected automatically from the browser language. It can then be
+changed at the top of the dashboard, and the selection is stored locally in
+the browser.
+
+## Security
+
+- The dashboard is intended for personal use or for people you trust. Anyone
+  who can log in receives administrative access to the connected Pi-hole
+  instances.
+- Login sessions are stored in the browser's `sessionStorage` and disappear
+  when the tab is closed. Passwords are not stored.
+- Untrusted values such as client names, domains and comments are escaped
+  before being displayed.
+- JavaScript is embedded directly in the HTML file. This limits how restrictive
+  a Content Security Policy can be. See the comment in
+  `nginx.conf.example`.
+- When hosting the dashboard on a Synology NAS, a DSM access control profile
+  can restrict access to selected IP addresses or local networks.
+
+The dashboard should not be exposed directly to the internet without suitable
+access control in front of it.
+
+## Roadmap
+
+- **v1.1.005:** Complete Danish and English interfaces and documentation
+- **v1.2.xxx:** Support for up to four Pi-hole instances
+- **v1.3.xxx:** Additional languages
+- **v1.4.xxx:** Docker image and simplified installation
+
+The implementation for multiple instances will be dynamic, while a maximum of
+four instances will be the officially supported and tested layout.
+
+## Contributing
+
+Issues and pull requests are welcome. Contributions may include bug fixes,
+suggestions and, in future versions, translations into additional languages.
+
+## License
 
 Copyright © 2023–2026 Christian Kragh Jessen  
 https://christiankragh.dk
 
-Projektet blev oprindeligt udviklet til Pi-hole v5 i 2023 og opdateret til
-Pi-hole v6 i 2026.
+The project was originally developed for Pi-hole v5 in 2023 and updated for
+Pi-hole v6 in 2026.
 
-Projektet er udgivet under MIT-licensen og må bruges, kopieres, ændres og
-videredistribueres i overensstemmelse med licensens vilkår. Se filen `LICENSE`.
+The project is released under the MIT License and may be used, copied, modified
+and redistributed in accordance with the terms of the license. See `LICENSE`.
 
-Chart.js medfølger ikke og skal hentes separat som beskrevet under opsætningen.
-Chart.js er et selvstændigt tredjepartsprojekt med sin egen licens.
+Chart.js is not included and must be downloaded separately as described in the
+setup instructions. Chart.js is an independent third-party project with its
+own license.
