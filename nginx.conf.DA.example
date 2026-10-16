@@ -5,13 +5,16 @@
 #   dns.eksempel.dk         -> domænenavnet man tilgår dette værktøj.
 #   pihole1.eksempel.dk     -> værtsnavn eller IP-adresse til din første Pi-hole-installation
 #   pihole2.eksempel.dk     -> værtsnavn eller IP-adresse til din anden Pi-hole-installation
+#   pihole3.eksempel.dk     -> tredje Pi-hole, hvis DEFAULT_SERVER_COUNT er 3 eller 4
+#   pihole4.eksempel.dk     -> fjerde Pi-hole, hvis DEFAULT_SERVER_COUNT er 4
 #   /etc/nginx/ssl/...      -> dit SSL certifikat og privat nøgle.
 #   /srv/web/dobbeltpihole  -> hvor du placerer index.html og chart.umd.min.js
 #
 # Hvorfor en proxy til dette: Kontrolpanelets JavaScript henter data fra
-# /api1/... og /api2/... som relative stier på den oprindelige host.
-# Så vil nginx videresende disse forespørgsler til de 2 rigtige Pi-hole
-# installationer så man undgår CORS helt.
+# /api1/... til /api4/... som relative stier på samme domæne.
+# nginx videresender til de tilsvarende Pi-hole, så man undgår CORS.
+# Antallet sættes kun med DEFAULT_SERVER_COUNT i index.html (2, 3 eller 4).
+# De første to proxyer er aktive; aktiver de kommenterede blokke efter behov.
 # Pi-holes CORS-håndtering er ikke konsekvent på tværs af alle endpoints.
 # Derfor er dette den enkleste måde at få en stabil løsning på.
 # ------------------------------------------------------------------
@@ -51,7 +54,7 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "same-origin" always;
 
-    # --- Reverse proxy til de 2 Pi-hole installationer ---------------------------
+    # --- Reverse proxy til 2–4 Pi-hole installationer ---------------------------
     location /api1/ {
         proxy_pass https://pihole1.eksempel.dk/api/;
         proxy_ssl_verify off;              # Fjern hvis pihole1 har et offentligt (ikke selv-signeret) certifikat
@@ -69,6 +72,26 @@ server {
         proxy_connect_timeout 10s;
         proxy_read_timeout 30s;
     }
+
+    # Valgfri Pi-hole 3: fjern kommentartegnene fra hele blokken og tilpas adressen.
+    # location /api3/ {
+    #     proxy_pass https://pihole3.eksempel.dk/api/;
+    #     proxy_ssl_verify off;              # Fjern hvis pihole3 har et offentligt (ikke selv-signeret) certifikat
+    #     proxy_set_header Host pihole3.eksempel.dk;
+    #     proxy_ssl_server_name on;
+    #     proxy_connect_timeout 10s;
+    #     proxy_read_timeout 30s;
+    # }
+
+    # Valgfri Pi-hole 4: fjern kommentartegnene fra hele blokken og tilpas adressen.
+    # location /api4/ {
+    #     proxy_pass https://pihole4.eksempel.dk/api/;
+    #     proxy_ssl_verify off;              # Fjern hvis pihole4 har et offentligt (ikke selv-signeret) certifikat
+    #     proxy_set_header Host pihole4.eksempel.dk;
+    #     proxy_ssl_server_name on;
+    #     proxy_connect_timeout 10s;
+    #     proxy_read_timeout 30s;
+    # }
 
     # --- Selve kontrolpanelet ------------------------------------------
     location / {

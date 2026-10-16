@@ -3,10 +3,10 @@
 **English** | [Dansk](README.DA.md)
 
 
-A lightweight dashboard for managing two Pi-hole v6 instances from one
+A lightweight dashboard for managing two, three or four Pi-hole v6 instances from one
 interface. The solution consists of a single self-contained `index.html` with
 no backend, database or build process. The browser communicates directly with
-both Pi-hole REST APIs through an nginx reverse proxy.
+the active Pi-hole REST APIs through an nginx reverse proxy.
 
 The dashboard includes:
 
@@ -16,14 +16,16 @@ The dashboard includes:
 - Local DNS records with differences between the instances clearly shown
 - Known clients and suggestions for unknown devices
 - Adlist management
-- Gravity updates on each instance
-- Actions that can be applied to one or both instances
+- Gravity updates on each instance, including the time of the last update
+- Actions that can be applied to one or all active instances
 - Danish and English user interfaces
 
-The two Pi-hole instances remain independent DNS servers. This project does not
+The Pi-hole instances remain independent DNS servers. This project does not
 provide failover, a virtual IP address, a primary or secondary server, or
 automatic background replication. Its purpose is to make it easy to maintain
 the relevant settings consistently from a single dashboard.
+
+![Pi-hole dashboard](images/dashboard.png)
 
 ## Lightweight by design
 
@@ -34,18 +36,18 @@ The dashboard is deliberately simple:
 - No database
 - No build process
 - No Node.js, PHP or Python
-- Settings stored locally in the browser
+- Server count and global names is configured in the HTML file; custom names and interface preferences stored locally in the browser
 - Direct communication with the Pi-hole v6 APIs through nginx
 
 Chart.js is loaded as a separate local file and is only used for charts.
 
 ## Requirements
 
-- Two Pi-hole **v6** instances with the REST API. The dashboard does not work
+- Two to four Pi-hole **v6** instances with the REST API. The dashboard does not work
   with the old Pi-hole v5 PHP API.
 - nginx or a similar reverse proxy in front of the dashboard. Requests to
-  `/api1/...` and `/api2/...` must be forwarded to the two actual Pi-hole
-  instances. This avoids CORS issues.
+  `/api1/...` and `/api2/...`, plus `/api3/...` and `/api4/...` when used,
+  must be forwarded to their corresponding Pi-hole instances. This avoids CORS issues.
 - An app password for each Pi-hole. Create it under **Settings → API** in each
   Pi-hole administration interface.
 
@@ -62,22 +64,51 @@ Chart.js is loaded as a separate local file and is only used for charts.
 
 3. Copy `nginx.conf.example` to your nginx configuration.
 4. Adjust the domain, Pi-hole addresses, certificate paths and web root.
+   Set `DEFAULT_SERVER_COUNT` in `index.html` to `2`, `3` or `4`. The nginx
+   example enables `/api1/` and `/api2/` by default. Uncomment and adjust the
+   `/api3/` block for three instances, and both `/api3/` and `/api4/` for four.
 5. Test and reload nginx:
 
    ```bash
    nginx -t && systemctl reload nginx
    ```
 
-6. Open the dashboard URL and log in to both Pi-hole instances with their app
+6. Open the dashboard URL and log in to each active Pi-hole instance with their app
    passwords.
 
-The dashboard expects the fixed relative API paths `/api1` and `/api2`. The
-nginx example forwards these paths to the actual Pi-hole instances. You do not
-need to edit `index.html` to enter their addresses.
+## Server count and names
 
-The displayed server names can be changed under **Settings**. The names are
-stored in the browser's `localStorage`, while the API paths remain `/api1` and
-`/api2`.
+The number of active Pi-hole instances is set **only in `index.html`**:
+
+```js
+const DEFAULT_SERVER_COUNT = 2; // 2, 3 or 4
+```
+
+The first two, three or four entries in `DEFAULT_SERVERS` are used. The API
+paths are `/api1`, `/api2`, `/api3` and `/api4`; configure nginx for each active
+instance. Actual Pi-hole host names or IP addresses belong in nginx, not in
+the browser settings.
+
+Default display names for all clients are set using `label` in `DEFAULT_SERVERS`:
+
+```js
+const DEFAULT_SERVERS = [
+    { id: "1", label: "Pi-hole 1", base: "/api1", color: "c-1", chip: "s1" },
+    { id: "2", label: "Pi-hole 2", base: "/api2", color: "c-2", chip: "s2" },
+    { id: "3", label: "Pi-hole 3", base: "/api3", color: "c-3", chip: "s3" },
+    { id: "4", label: "Pi-hole 4", base: "/api4", color: "c-4", chip: "s4" },
+];
+```
+
+Server colours are blue, yellow, purple and orange, respectively. The layout
+adapts to the configured number and the screen width, up to a maximum page
+width of 1900 px.
+
+Names can also be changed under **Settings** for the active instances. These
+names are saved in the browser's `localStorage` and override the file's default
+names in that browser. The server count and API paths cannot be changed under
+Settings. Changing the defaults in the file does not overwrite locally saved
+names.
 
 ## Languages
 
@@ -107,12 +138,12 @@ access control in front of it.
 ## Roadmap
 
 - **v1.1.005:** Complete Danish and English interfaces and documentation
-- **v1.2.xxx:** Support for up to four Pi-hole instances
+- **v1.2.006:** Support for two, three or four Pi-hole instances
 - **v1.3.xxx:** Additional languages
 - **v1.4.xxx:** Docker image and simplified installation
 
-The implementation for multiple instances will be dynamic, while a maximum of
-four instances will be the officially supported and tested layout.
+The dashboard supports two to four active instances. Additional instances
+require both the matching server count in `index.html` and a proxy route in nginx.
 
 ## Contributing
 

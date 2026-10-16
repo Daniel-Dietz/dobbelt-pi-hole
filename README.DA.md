@@ -2,9 +2,9 @@
 
 [English](README.md) | **Dansk**
 
-Et let kontrolpanel til samlet administration af to Pi-hole v6-installationer.
+Et let kontrolpanel til samlet administration af to, tre eller fire Pi-hole v6-installationer.
 Løsningen består af én selvstændig `index.html` uden backend, database eller
-buildproces. Browseren kommunikerer direkte med begge Pi-hole-installationers
+buildproces. Browseren kommunikerer direkte med de aktive Pi-hole-installationers
 REST API gennem en nginx reverse proxy.
 
 Kontrolpanelet indeholder:
@@ -15,14 +15,16 @@ Kontrolpanelet indeholder:
 - Lokale DNS-poster med visning af forskelle mellem installationerne
 - Kendte klienter og forslag til ukendte enheder
 - Administration af adlists
-- Gravity-opdatering på hver installation
-- Handlinger, der kan udføres på én eller begge installationer
+- Gravity-opdatering på hver installation med tidspunktet for seneste opdatering
+- Handlinger, der kan udføres på én eller alle aktive installationer
 - Dansk og engelsk brugerflade
 
-De to Pi-hole-installationer forbliver selvstændige DNS-servere. Projektet
+Pi-hole-installationerne forbliver selvstændige DNS-servere. Projektet
 opretter ikke failover, virtuel IP, primær eller sekundær server eller automatisk
 baggrundssynkronisering. Formålet er at gøre det enkelt at administrere de
 relevante indstillinger ens fra ét kontrolpanel.
+
+![Pi-hole dashboard](images/dashboard.png)
 
 ## Letvægt som udgangspunkt
 
@@ -33,18 +35,18 @@ Kontrolpanelet er bevidst holdt enkelt:
 - Ingen database
 - Ingen buildproces
 - Ingen Node.js, PHP eller Python
-- Indstillinger gemmes lokalt i browseren
+- Antal servere samt deres navne på tværs af klienter sættes i HTML-filen; egne navne og visningsindstillinger gemmes lokalt i browseren
 - Direkte kommunikation med Pi-hole v6 API gennem nginx
 
 Chart.js indlæses som en separat lokal fil og bruges kun til graferne.
 
 ## Krav
 
-- To Pi-hole **v6**-installationer med REST API. Løsningen fungerer ikke med
+- To til fire Pi-hole **v6**-installationer med REST API. Løsningen fungerer ikke med
   det gamle PHP API i Pi-hole v5.
 - nginx eller en tilsvarende reverse proxy foran kontrolpanelet. Forespørgsler
-  til `/api1/...` og `/api2/...` skal videresendes til de to faktiske
-  Pi-hole-installationer. Dermed undgås CORS-problemer.
+  til `/api1/...` og `/api2/...` samt `/api3/...` og `/api4/...`, når de bruges,
+  skal videresendes til de tilsvarende Pi-hole-installationer. Dermed undgås CORS-problemer.
 - Et app password til hver Pi-hole. Det oprettes under **Settings → API** i den
   enkelte Pi-holes eget webinterface.
 
@@ -61,23 +63,50 @@ Chart.js indlæses som en separat lokal fil og bruges kun til graferne.
 
 3. Kopiér `nginx.conf.DA.example` til din nginx-konfiguration.
 4. Tilpas domænet, Pi-hole-adresserne, certifikatstierne og placeringen af
-   webfilerne.
+   webfilerne. Sæt `DEFAULT_SERVER_COUNT` i `index.html` til `2`, `3` eller `4`.
+   nginx-eksemplet har `/api1/` og `/api2/` aktive som standard. Fjern
+   kommentartegnene fra `/api3/`-blokken, og tilpas den ved tre installationer.
+   Ved fire installationer aktiveres og tilpasses både `/api3/` og `/api4/`.
 5. Kontrollér og genindlæs nginx:
 
    ```bash
    nginx -t && systemctl reload nginx
    ```
 
-6. Åbn kontrolpanelets adresse og log ind på begge Pi-hole-installationer med
+6. Åbn kontrolpanelets adresse og log ind på alle aktive Pi-hole-installationer med
    deres app passwords.
 
-Kontrolpanelet forventer de faste relative API-stier `/api1` og `/api2`.
-nginx-skabelonen videresender disse til de faktiske Pi-hole-installationer.
-Det er derfor ikke nødvendigt at redigere `index.html` for at angive deres
-adresser.
+## Antal servere og navne
 
-De viste servernavne kan ændres under **Indstillinger**. Navnene gemmes i
-browserens `localStorage`, mens API-stierne fortsat er `/api1` og `/api2`.
+Antallet af aktive Pi-hole sættes **kun i `index.html`**:
+
+```js
+const DEFAULT_SERVER_COUNT = 2; // 2, 3 eller 4
+```
+
+De første to, tre eller fire poster i `DEFAULT_SERVERS` bruges. API-stierne er
+`/api1`, `/api2`, `/api3` og `/api4`. nginx skal have en proxy til hver aktiv
+installation. De faktiske værtsnavne eller IP-adresser angives i nginx og ikke
+i browserens indstillinger.
+
+Standardnavne på tværs af klienter angives med `label` i `DEFAULT_SERVERS`:
+
+```js
+const DEFAULT_SERVERS = [
+    { id: "1", label: "Pi-hole 1", base: "/api1", color: "c-1", chip: "s1" },
+    { id: "2", label: "Pi-hole 2", base: "/api2", color: "c-2", chip: "s2" },
+    { id: "3", label: "Pi-hole 3", base: "/api3", color: "c-3", chip: "s3" },
+    { id: "4", label: "Pi-hole 4", base: "/api4", color: "c-4", chip: "s4" },
+];
+```
+
+Serverfarverne er henholdsvis blå, gul, lilla og orange. Visningen tilpasser sig
+antallet og skærmbredden med en maksimal sidebredde på 1900 px.
+
+Navnene på de aktive installationer kan også ændres under **Indstillinger**.
+Disse navne gemmes i browserens `localStorage` og erstatter standardnavnene i
+netop den browser. Antallet og API-stierne kan ikke ændres under Indstillinger.
+Ændringer af standardnavne i filen overskriver ikke lokalt gemte navne.
 
 ## Sprog
 
@@ -107,12 +136,12 @@ adgangskontrol foran det.
 ## Roadmap
 
 - **v1.1.005:** Komplet dansk og engelsk brugerflade og dokumentation
-- **v1.2.xxx:** Understøttelse af op til fire Pi-hole-installationer
+- **v1.2.006:** Understøttelse af to, tre eller fire Pi-hole-installationer
 - **v1.3.xxx:** Flere sprog
 - **v1.4.xxx:** Docker-image og forenklet installation
 
-Koden til flere installationer skal være dynamisk, mens op til fire
-installationer bliver det officielt understøttede og testede layout.
+Kontrolpanelet understøtter to til fire aktive installationer. Ekstra
+installationer kræver både det tilsvarende antal i `index.html` og en proxy i nginx.
 
 ## Bidrag
 
