@@ -1910,9 +1910,9 @@ for (const scenario of SUBMISSION_DURING_LANGUAGE_RENDER) for (const overlap of 
       } = fixture;
     for (const [selector, value] of Object.entries(scenario.fields)) await page.locator(selector).fill(value);
     await page.locator(scenario.target).selectOption('1');
-    // Hold another instance's language-render read, not the target's new
-    // preflight GET. This keeps rendering pending while allowing the write.
-    const gate = fixture.pauseReads(scenario.endpoint, '2');
+    // Hold both pending language-render reads and the mutation's mandatory
+    // preflight. No write is permitted until the preflight is released.
+    const gate = fixture.pauseReads(scenario.endpoint);
     await page.locator('#languageSelect').selectOption('en');
     for (const [selector, value] of Object.entries(scenario.fields)) {
       assert.equal(await page.locator(selector).inputValue(), value, 'The synchronous language render must restore the draft before submission');
