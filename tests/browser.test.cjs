@@ -70,7 +70,7 @@ after(async () => { await browser?.close(); });
 async function openDashboard(t, options = {}) {
   const { language = 'da', browserLanguages = ['en-US'], count = 2, connected = true,
     storageUnavailable = false, hash = 'dashboard', missingCharts = false, streamingGravity = false,
-    paginatedQueries = false, savedQueryFilters = null } = options;
+    paginatedQueries = false, savedQueryFilters = null, authResponseGate = null } = options;
   const context = await browser.newContext({ locale: browserLanguages[0], timezoneId: 'UTC', viewport: { width: 1600, height: 1100 } });
   t.after(() => context.close());
   const requests = [], unexpected = [], errors = [], readGates = new Map();
@@ -140,7 +140,13 @@ async function openDashboard(t, options = {}) {
       await gate.promise;
     }
     const json = value => route.fulfill({ contentType: 'application/json', body: JSON.stringify(value) });
-    if (endpoint === '/auth') return method === 'POST' ? json({ session: { sid: 'fixture-login-' + id } }) : route.fulfill({ status: 204 });
+    if (endpoint === '/auth') {
+      if (method === 'POST') {
+        if (authResponseGate) await authResponseGate;
+        return json({ session: { sid: 'fixture-login-' + id } });
+      }
+      return route.fulfill({ status: 204 });
+    }
     if (endpoint === '/dns/blocking') { if (method === 'POST') data.blocking = body.blocking; return json({ blocking: data.blocking ? 'enabled' : 'disabled' }); }
     if (method !== 'GET') {
       if (endpoint.startsWith('/domains/') && method === 'POST') data.domains.push(...body.domain.map(domain => ({ ...body, domain, enabled: true })));
@@ -332,15 +338,25 @@ for (const code of ['da', 'en', 'de']) test(`${code}: CRUD payloads, confirmatio
 });
 
 test('restricted browser storage keeps login and language switching usable', async t => {
-  const fixture = await openDashboard(t, { language: null, browserLanguages: ['de-CH'], connected: false, storageUnavailable: true }), { page } = fixture;
+  let releaseAuth;
+  const authResponseGate = new Promise(resolve => { releaseAuth = resolve; });
+  t.after(() => releaseAuth());
+  const fixture = await openDashboard(t, { language: null, browserLanguages: ['de-CH'], connected: false, storageUnavailable: true, authResponseGate }), { page } = fixture;
   assert.equal(await page.locator('html').getAttribute('lang'), 'de');
   await page.locator('[data-loginpw="1"]').fill('fixture-password-Only');
   await page.locator('#languageSelect').selectOption('en');
   await page.waitForFunction(() => document.querySelector('[data-loginpw="1"]')?.value === 'fixture-password-Only');
+  const authRequested = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api1/auth');
   await page.locator('[data-loginform="1"] button').click();
-  await page.locator('#dashGrid .big-num').first().waitFor();
-  assert.deepEqual(fixture.requests.find(request => request.path === '/auth' && request.method === 'POST')?.body, { password: 'fixture-password-Only' });
+  const authRequest = await authRequested;
+  // The combined total card exists before login completes. Switching language
+  // while the auth response is held must not be mistaken for a completed login.
   await language(page, 'de', 'dashboard');
+  assert.equal(await page.locator('#serverPills .pill.on').count(), 0);
+  releaseAuth();
+  await page.locator('#serverPills .pill.on').waitFor();
+  assert.deepEqual(authRequest.postDataJSON(), { password: 'fixture-password-Only' });
+  await language(page, 'en', 'dashboard');
   assert.equal(await page.locator('#serverPills .pill.on').count(), 1);
   await assertNoCorruption(fixture);
 });
