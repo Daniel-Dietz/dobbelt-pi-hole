@@ -1,6 +1,7 @@
 """Configuration-contract checks; these require only the Python standard library."""
 
 import copy
+import base64
 import hashlib
 import importlib.util
 import json
@@ -196,7 +197,7 @@ class ProxyRenderingTests(unittest.TestCase):
                             "nameserver 2001:0db8::53 # IPv6\nnameserver 127.0.0.11\n", encoding="utf-8")
             self.assertEqual(renderer.read_resolvers(path), ["127.0.0.11", "2001:db8::53"])
             config = renderer.validate_config(valid_config())
-            output = renderer.render_nginx(config, "/generated/config.json", "/srv/dashboard", renderer.read_resolvers(path))
+            output = renderer.render_nginx(config, "/generated/config.json", ROOT, renderer.read_resolvers(path))
             self.assertIn("resolver 127.0.0.11 [2001:db8::53]", output)
             for contents in ("nameserver not-an-ip\n", "nameserver 127.0.0.11 extra\n", "nameserver fe80::1%eth0\n"):
                 path.write_text(contents, encoding="utf-8")
@@ -206,10 +207,10 @@ class ProxyRenderingTests(unittest.TestCase):
     def test_hostname_routes_require_a_resolver_but_literal_addresses_do_not(self):
         config = renderer.validate_config(valid_config())
         with self.assertRaises(renderer.ConfigError):
-            renderer.render_nginx(config, "/generated/config.json", "/srv/dashboard", [])
+            renderer.render_nginx(config, "/generated/config.json", ROOT, [])
         config["servers"][0]["apiUrl"] = "http://192.0.2.10/api"
         config["servers"][1]["apiUrl"] = "http://[2001:db8::10]/proxy/api"
-        output = renderer.render_nginx(config, "/generated/config.json", "/srv/dashboard", [])
+        output = renderer.render_nginx(config, "/generated/config.json", ROOT, [])
         self.assertIn("http://[2001:db8::10]/proxy/api", output)
 
     def test_tls_verification_defaults_to_on_and_can_be_explicitly_disabled(self):
@@ -217,16 +218,74 @@ class ProxyRenderingTests(unittest.TestCase):
         config["servers"][0]["apiUrl"] = "https://pihole-one.example/api"
         del config["servers"][1]["verifyTls"]
         normalized = renderer.validate_config(config)
-        verified = renderer.render_nginx(normalized, "/generated/config.json", "/srv/dashboard", ["127.0.0.11"],
+        verified = renderer.render_nginx(normalized, "/generated/config.json", ROOT, ["127.0.0.11"],
                                           ca_bundle="/certs/fixture-ca.pem")
         self.assertIn("proxy_ssl_verify on;", verified)
         self.assertNotIn("proxy_ssl_verify off;", verified)
         self.assertIn("/certs/fixture-ca.pem", verified)
         for server in config["servers"]:
             server["verifyTls"] = False
-        unverified = renderer.render_nginx(renderer.validate_config(config), "/generated/config.json", "/srv/dashboard", ["127.0.0.11"])
+        unverified = renderer.render_nginx(renderer.validate_config(config), "/generated/config.json", ROOT, ["127.0.0.11"])
         self.assertIn("proxy_ssl_verify off;", unverified)
         self.assertNotIn("proxy_ssl_verify on;", unverified)
+
+    def test_proxy_isolates_front_proxy_credentials_and_preserves_streaming_policy(self):
+        output = renderer.render_nginx(renderer.validate_config(valid_config()), "/generated/config.json", ROOT, ["127.0.0.11"])
+        for directive in (
+            'proxy_set_header Authorization "";', 'proxy_set_header Cookie "";',
+            "proxy_hide_header Set-Cookie;", "proxy_hide_header WWW-Authenticate;",
+            "proxy_cache off;", "proxy_intercept_errors off;", "proxy_buffering off;",
+            "proxy_read_timeout 300s;", "proxy_ssl_protocols TLSv1.2 TLSv1.3;",
+        ):
+            self.assertIn(directive, output)
+        self.assertIn("proxy_ignore_headers X-Accel-Redirect X-Accel-Buffering", output)
+        self.assertIn("server_tokens off;", output)
+        for header in ("Content-Security-Policy", "X-Content-Type-Options", "X-Frame-Options", "Referrer-Policy",
+                       "Permissions-Policy", "Cross-Origin-Resource-Policy", "Cache-Control"):
+            matching = [line for line in output.splitlines() if line.strip().startswith("add_header " + header + " ")]
+            self.assertEqual(len(matching), 1)
+            self.assertTrue(matching[0].endswith(" always;"), header)
+
+
+class ContentSecurityPolicyTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory(prefix="dobbelt-csp-test-")
+        self.addCleanup(self.directory.cleanup)
+        self.index = Path(self.directory.name) / "index.html"
+
+    def test_hashes_inline_scripts_exactly_with_html_newline_normalization(self):
+        script = '\nwindow.example = "Grüße & <text>";\n'
+        other = "window.second = true;"
+        self.index.write_bytes(('<script src="chart.umd.min.js"></script><script>' + script.replace("\n", "\r\n")
+                                + "</script><script>" + other + "</script>").encode("utf-8"))
+        policy = renderer.content_security_policy(self.index)
+        directives = dict(part.strip().split(" ", 1) for part in policy.split(";") if part.strip())
+        expected = ["'sha256-" + base64.b64encode(hashlib.sha256(value.encode("utf-8")).digest()).decode("ascii") + "'"
+                    for value in (script, other)]
+        self.assertEqual(directives["script-src"], "'self' " + " ".join(expected))
+        self.assertNotIn("unsafe-inline", directives["script-src"])
+        self.assertNotIn("unsafe-eval", directives["script-src"])
+        self.assertEqual(directives["script-src-attr"], "'none'")
+        self.assertIn("'unsafe-inline'", directives["style-src"], "Dynamic styles remain supported")
+
+    def test_script_change_replaces_the_allowed_hash(self):
+        self.index.write_text("<script>window.version = 1;</script>", encoding="utf-8")
+        previous = renderer.content_security_policy(self.index)
+        self.index.write_text("<script>window.version = 2;</script>", encoding="utf-8")
+        current = renderer.content_security_policy(self.index)
+        self.assertNotEqual(previous, current)
+        previous_hash = previous.split("'sha256-", 1)[1].split("'", 1)[0]
+        self.assertNotIn(previous_hash, current)
+
+    def test_missing_or_unreadable_application_fails_closed(self):
+        with self.assertRaises(renderer.ConfigError):
+            renderer.content_security_policy(self.index)
+        for content in (b"<html>No app</html>", b"<script>incomplete", b"<script>\0</script>",
+                        b"<script>\xff</script>", b" " * (renderer.MAX_APP_BYTES + 1)):
+            with self.subTest(content=content[:30]):
+                self.index.write_bytes(content)
+                with self.assertRaises(renderer.ConfigError):
+                    renderer.content_security_policy(self.index)
 
 
 class FileAndCLITests(unittest.TestCase):
@@ -242,7 +301,7 @@ class FileAndCLITests(unittest.TestCase):
     def run_renderer(self, *extra_args):
         return subprocess.run([
             sys.executable, str(RENDERER), "--config", str(self.source), "--output-dir", str(self.output),
-            "--web-root", "/srv/dashboard", "--resolver-file", str(self.resolver_file),
+            "--web-root", str(ROOT), "--resolver-file", str(self.resolver_file),
             *extra_args,
         ], cwd=ROOT, capture_output=True, text=True, timeout=10)
 

@@ -1,18 +1,21 @@
 # Double Pi-hole dashboard: optional HTTPS front proxy (nginx http context).
-# The dashboard itself runs on 127.0.0.1:8080 through Docker Compose or the
-# generated configuration from tools/render_config.py --listen-address 127.0.0.1.
-# Adjust dns.example.com and the certificate/key paths below.
+# The target below suits Docker Compose or a generated local backend listening
+# on 127.0.0.1:8080. Adjust dns.example.com and the certificate/key paths.
+# For a native LXC on another machine, change only the proxy_pass host to the
+# CT's IP address, e.g. http://192.168.1.50:8080, and restrict access to the CT
+# backend port using your existing firewall. See docs/LXC.md.
 #
-# Configure every Pi-hole once in the private config.json. The renderer generates
-# its fingerprinted API routes and public browser configuration. Do not add
-# separate /api1.../api4 upstream definitions here. See docs/CONFIGURATION.md.
+# Configure each Pi-hole once in the private config.json. The renderer generates
+# fingerprinted API routes and public browser configuration. Do not add separate
+# /api1.../api4 upstream definitions here. See docs/CONFIGURATION.md.
 #
-# Keep proxy_pass without a URI suffix or rewrite so encoded paths and queries
-# reach the generated proxy unchanged. Disabled buffering supports Gravity output.
-# Apply any access controls to this front proxy and keep port 8080 on loopback.
-# The generated server provides CSP/security headers; its embedded application
-# scripts require script-src 'unsafe-inline'. Upstream Pi-hole certificate
-# verification is configured separately with verifyTls in the canonical JSON.
+# Keep proxy_pass without a URI suffix or rewrite to preserve encoded paths and
+# queries. Disabled buffering supports streamed Gravity output. Apply access
+# controls to this front proxy and prevent unintended direct backend access.
+# The generated server supplies CSP hashes and security headers; regenerate its
+# configuration after changing embedded scripts. It strips browser Authorization
+# and Cookie headers before forwarding to Pi-hole. Upstream certificate checks
+# are configured separately with verifyTls in the canonical JSON.
 
 server {
     listen 443 ssl;

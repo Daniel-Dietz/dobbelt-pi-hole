@@ -11,6 +11,7 @@ import copy
 import hashlib
 import http.client
 import json
+import re
 import os
 from pathlib import Path
 import shutil
@@ -235,6 +236,22 @@ class ContainerTests(unittest.TestCase):
                               headers={"Content-Type": "application/json", "X-FTL-SID": "retired-session"})
         self.assertEqual(value["error"]["code"], "dashboard_config_changed")
 
+    def assert_security_headers(self, headers):
+        self.assertEqual(headers.get("Server"), "nginx")
+        self.assertEqual(headers.get("X-Content-Type-Options"), "nosniff")
+        self.assertEqual(headers.get("X-Frame-Options"), "DENY")
+        self.assertEqual(headers.get("Cross-Origin-Resource-Policy"), "same-origin")
+        self.assertEqual(headers.get("Referrer-Policy"), "no-referrer")
+        self.assertIn("no-store", headers.get("Cache-Control", ""))
+        self.assertIn("camera=()", headers.get("Permissions-Policy", ""))
+        policy = headers.get("Content-Security-Policy", "")
+        self.assertIn("frame-ancestors 'none'", policy)
+        directives = dict(part.strip().split(" ", 1) for part in policy.split(";") if part.strip())
+        self.assertIn("'sha256-", directives["script-src"])
+        self.assertNotIn("unsafe-inline", directives["script-src"])
+        self.assertNotIn("unsafe-eval", directives["script-src"])
+        return policy
+
     def test_public_configuration_and_routes_for_two_three_and_four_servers(self):
         for count in (2, 3, 4):
             with self.subTest(count=count):
@@ -249,6 +266,7 @@ class ContainerTests(unittest.TestCase):
                 status, headers, body = request(app["origin"], "/config.json")
                 self.assertEqual(status, 200)
                 self.assertIn("no-store", headers.get("Cache-Control", ""))
+                policy = self.assert_security_headers(headers)
                 self.assertNotIn(b"apiUrl", body)
                 self.assertNotIn(b"verifyTls", body)
                 self.assertNotIn(b"pihole-fixture-", body)
@@ -259,6 +277,12 @@ class ContainerTests(unittest.TestCase):
                 status, _headers, page = request(app["origin"], "/")
                 self.assertEqual(status, 200)
                 self.assertIn(b"languageSelect", page)
+                # Independently hash the actual delivered script, including its whitespace.
+                scripts = re.findall(rb"<script>(.*?)</script>", page, flags=re.DOTALL | re.IGNORECASE)
+                self.assertEqual(len(scripts), 1)
+                script = scripts[0].replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+                expected_hash = base64.b64encode(hashlib.sha256(script).digest()).decode("ascii")
+                self.assertIn("'sha256-" + expected_hash + "'", policy)
                 status, _headers, chart = request(app["origin"], "/chart.umd.min.js")
                 self.assertEqual(status, 200)
                 self.assertGreater(len(chart), 1000)
@@ -281,6 +305,8 @@ class ContainerTests(unittest.TestCase):
                 response = self.get_json(app, base + suffix, method=method, body=body, headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "X-FTL-SID": "fixture-forwarded-session", "X-Fixture-Header": "must-survive",
+                    "Authorization": "Basic Zml4dHVyZTpmcm9udC1wcm94eS1vbmx5",
+                    "Cookie": "front-proxy-session=fixture-only",
                 })
                 self.assertEqual(response["method"], method)
                 self.assertEqual(response["path"], "/api" + suffix)
@@ -289,6 +315,8 @@ class ContainerTests(unittest.TestCase):
                 self.assertEqual(response["headers"]["x-fixture-header"], "must-survive")
                 self.assertEqual(response["headers"]["content-type"], "application/json; charset=utf-8")
                 self.assertEqual(response["headers"]["host"], "pihole-fixture-1:8081")
+                self.assertNotIn("authorization", response["headers"])
+                self.assertNotIn("cookie", response["headers"])
         response = self.get_json(app, expected_base(config["servers"][1]) + suffix, method="POST", body=body,
                                  headers={"Content-Type": "application/json"})
         self.assertEqual(response["backend"], "pihole-fixture-2")
@@ -300,6 +328,41 @@ class ContainerTests(unittest.TestCase):
         self.get_json(app, base + "/__fixture__/unauthorized", status=401)
         status, _headers, body = request(app["origin"], base + "/__fixture__/no-content")
         self.assertEqual((status, body), (204, b""))
+        status, headers, body = request(app["origin"], base + "/__fixture__/untrusted-headers")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["backend"], "pihole-fixture-1", "Upstream X-Accel-Redirect must not reroute the request")
+        self.assertNotIn("Set-Cookie", headers)
+        self.assertNotIn("WWW-Authenticate", headers)
+        for path, expected_status in (("/missing", 404), ("/api1/retired", 409), (base + "/__fixture__/unauthorized", 401)):
+            with self.subTest(path=path):
+                status, headers, _body = request(app["origin"], path)
+                self.assertEqual(status, expected_status)
+                self.assert_security_headers(headers)
+
+    def test_gravity_stream_delivers_a_chunk_before_the_upstream_finishes(self):
+        config = self.config()
+        app = self.start_dashboard(config)
+        address = urlsplit(app["origin"])
+        connection = http.client.HTTPConnection(address.hostname, address.port, timeout=5)
+        try:
+            connection.request("POST", expected_base(config["servers"][0]) + "/action/gravity?color=true",
+                               body=b"{}", headers={"Content-Type": "application/json", "X-FTL-SID": "fixture-gravity-session"})
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.readline(), b"fixture-start\n")
+            self.assertEqual(self.get_json(self.backends["1"], "/__fixture__/stream-state"), {"open": True})
+            self.get_json(self.backends["1"], "/__fixture__/release-stream", method="POST")
+            self.assertEqual(response.read(), b"fixture-done\n")
+            records = self.backend_requests(1)
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0]["method"], "POST")
+            self.assertEqual(records[0]["path"], "/api/action/gravity?color=true")
+            self.assertEqual(records[0]["headers"]["x-ftl-sid"], "fixture-gravity-session")
+        finally:
+            try:
+                self.get_json(self.backends["1"], "/__fixture__/release-stream", method="POST")
+            finally:
+                connection.close()
 
     def test_stale_and_legacy_routes_reject_writes_without_contacting_backends(self):
         config = self.config()

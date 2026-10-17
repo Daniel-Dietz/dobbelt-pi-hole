@@ -17,6 +17,8 @@ class FixtureServer(ThreadingHTTPServer):
         self.fixture_name = name
         self.requests = []
         self.request_lock = threading.Lock()
+        self.stream_release = threading.Event()
+        self.stream_open = False
 
 
 class FixtureHandler(BaseHTTPRequestHandler):
@@ -25,11 +27,13 @@ class FixtureHandler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         pass
 
-    def send_json(self, value, status=200):
+    def send_json(self, value, status=200, extra_headers=None):
         body = json.dumps(value, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        for name, value in (extra_headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -47,6 +51,13 @@ class FixtureHandler(BaseHTTPRequestHandler):
             with self.server.request_lock:
                 self.server.requests.clear()
             return self.send_json({"reset": True})
+        if path == "/__fixture__/stream-state":
+            with self.server.request_lock:
+                opened = self.server.stream_open
+            return self.send_json({"open": opened})
+        if path == "/__fixture__/release-stream" and self.command == "POST":
+            self.server.stream_release.set()
+            return self.send_json({"released": True})
 
         record = {
             "backend": self.server.fixture_name,
@@ -62,6 +73,38 @@ class FixtureHandler(BaseHTTPRequestHandler):
         if path == "/api/__fixture__/no-content":
             self.send_response(204)
             self.end_headers()
+            return
+        if path == "/api/__fixture__/untrusted-headers":
+            return self.send_json(record, extra_headers={
+                "Set-Cookie": "fixture-upstream-cookie=blocked; Path=/; HttpOnly",
+                "WWW-Authenticate": 'Basic realm="upstream fixture"',
+                "X-Accel-Redirect": "/config.json",
+                "X-Accel-Buffering": "yes",
+            })
+        if path == "/api/action/gravity" and self.command == "POST":
+            self.server.stream_release.clear()
+            with self.server.request_lock:
+                self.server.stream_open = True
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.send_header("X-Accel-Buffering", "yes")
+            self.end_headers()
+            try:
+                first = b"fixture-start\n"
+                self.wfile.write(f"{len(first):x}\r\n".encode("ascii") + first + b"\r\n")
+                self.wfile.flush()
+                # Tests release this only after reading the first chunk through nginx.
+                # A deadline bounds cleanup if a regression prevents that first read.
+                self.server.stream_release.wait(timeout=10)
+                last = b"fixture-done\n"
+                self.wfile.write(f"{len(last):x}\r\n".encode("ascii") + last + b"\r\n0\r\n\r\n")
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            finally:
+                with self.server.request_lock:
+                    self.server.stream_open = False
             return
         if path == "/api/auth" and self.command == "POST":
             record["session"] = {"sid": "fixture-session-" + self.server.fixture_name}

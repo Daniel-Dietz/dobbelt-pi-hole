@@ -1,18 +1,21 @@
 # Dobbelt Pi-hole-kontrolpanel: valgfri HTTPS-proxy (i nginx' http-kontekst).
-# Selve kontrolpanelet kører på 127.0.0.1:8080 via Docker Compose eller en
-# konfiguration dannet med tools/render_config.py --listen-address 127.0.0.1.
-# Tilpas dns.example.com og stierne til certifikatet og den private nøgle.
+# Målet nedenfor passer til Docker Compose eller en lokal backend, der lytter
+# på 127.0.0.1:8080. Tilpas dns.example.com og certifikat-/nøglestierne.
+# Kører en native LXC på en anden maskine, ændres kun proxy_pass-værten til
+# CT'ens IP-adresse, f.eks. http://192.168.1.50:8080. Begræns adgangen til
+# backendporten med den eksisterende firewall. Se docs/LXC.md.
 #
-# Angiv hver Pi-hole én gang i den private config.json. Værktøjet danner de
-# tilhørende API-stier med fingeraftryk samt browserens offentlige konfiguration.
+# Angiv hver Pi-hole én gang i den private config.json. Værktøjet danner
+# API-stier med fingeraftryk samt browserens offentlige konfiguration.
 # Tilføj ikke separate /api1.../api4-proxyer her. Se docs/CONFIGURATION.md.
 #
-# Behold proxy_pass uden URI-suffiks eller omskrivning, så kodede stier og query-
-# parametre når frem uændret. Deaktiveret buffering understøtter Gravity-output.
-# Læg eventuel adgangskontrol på denne proxy, og bind port 8080 til loopback.
-# Den genererede server leverer CSP og sikkerhedsheadere; de indlejrede scripts
-# kræver script-src 'unsafe-inline'. Certifikatkontrol ved forbindelse til
-# Pi-hole angives separat med verifyTls i den centrale JSON-fil.
+# Behold proxy_pass uden URI-suffiks eller omskrivning, så kodede stier og
+# query-parametre bevares. Deaktiveret buffering understøtter Gravity-output.
+# Læg adgangskontrol på denne proxy, og begræns utilsigtet direkte backendadgang.
+# Den genererede server leverer CSP-hashværdier og sikkerhedsheadere; dan dens
+# konfiguration igen efter scriptændringer. Browserens Authorization- og Cookie-
+# headere fjernes før videresendelse til Pi-hole. Certifikatkontrol ved forbindelse
+# til Pi-hole angives separat med verifyTls i den centrale JSON-fil.
 
 server {
     listen 443 ssl;

@@ -41,6 +41,13 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Install test browser
         run: npx playwright install --with-deps chromium
+      - name: Fetch and verify the production Chart.js bundle
+        run: |
+          chart_path="$RUNNER_TEMP/chart-4.4.1.umd.min.js"
+          curl --fail --show-error --silent --location --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 120 --retry 3 \
+            --output "$chart_path" https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js
+          printf '81ffafe13c37e1b25793b020d446f4d9739b949dadb7f9f79d709a0cad781c2f  %s\n' "$chart_path" | sha256sum --check --status
+          printf 'CHART_JS_PATH=%s\n' "$chart_path" >> "$GITHUB_ENV"
       - name: Verify all languages in the browser
         run: npm run test:browser
 
@@ -61,3 +68,21 @@ jobs:
         run: docker build --pull --tag "$DASHBOARD_TEST_IMAGE" .
       - name: Exercise the image with isolated Pi-hole fixtures
         run: python3 -m unittest discover -s tests -p 'test_container.py' -v
+
+  native-guest:
+    name: Native Debian 13 guest installation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DASHBOARD_LXC_GUEST_TEST_IMAGE: dobbelt-pi-hole:lxc-guest-ci
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate Proxmox host provisioning with CLI fixtures
+        run: python3 -m unittest discover -s tests -p 'test_create_lxc.py' -v
+      - name: Build a Debian 13 guest with systemd and no nginx
+        run: docker build --pull --file tests/Dockerfile.lxc-guest --tag "$DASHBOARD_LXC_GUEST_TEST_IMAGE" .
+      - name: Install and exercise the native service in an isolated guest
+        run: python3 -m unittest discover -s tests -p 'test_lxc_guest.py' -v
