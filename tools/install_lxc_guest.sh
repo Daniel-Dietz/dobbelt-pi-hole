@@ -105,14 +105,20 @@ for existing_nginx in /etc/nginx /etc/default/nginx /etc/init.d/nginx \
     [[ ! -e $existing_nginx && ! -L $existing_nginx ]] \
         || fail "existing nginx configuration, binary or unit at $existing_nginx; this installer supports fresh guests only"
 done
-nginx_units=$(systemctl list-unit-files --no-legend --no-pager 'nginx*') \
+# A pattern with no matches can make systemctl exit nonzero. Query complete
+# lists so a failed inspection remains distinguishable from an empty result.
+nginx_units=$(systemctl list-unit-files --plain --no-legend --no-pager) \
     || fail "cannot inspect nginx unit files before installing into a fresh guest"
-[[ -z $nginx_units ]] \
-    || fail "existing nginx systemd unit or mask; this installer supports fresh guests only"
-nginx_units=$(systemctl list-units --no-legend --no-pager 'nginx*') \
+while read -r nginx_unit _; do
+    [[ $nginx_unit != nginx* ]] \
+        || fail "existing nginx systemd unit or mask $nginx_unit; this installer supports fresh guests only"
+done <<< "$nginx_units"
+nginx_units=$(systemctl list-units --plain --no-legend --no-pager) \
     || fail "cannot inspect loaded nginx units before installing into a fresh guest"
-[[ -z $nginx_units ]] \
-    || fail "existing nginx systemd workload; this installer supports fresh guests only"
+while read -r nginx_unit _; do
+    [[ $nginx_unit != nginx* ]] \
+        || fail "existing nginx systemd workload $nginx_unit; this installer supports fresh guests only"
+done <<< "$nginx_units"
 
 canonical=/etc/dobbelt-pi-hole/config.json
 [[ ! -L /etc/dobbelt-pi-hole && ! -L $canonical ]] || fail "configuration directory/file must not be symbolic links"
