@@ -1935,3 +1935,113 @@ for (const scenario of SUBMISSION_DURING_LANGUAGE_RENDER) for (const overlap of 
     await assertNoCorruption(fixture);
   });
 }
+
+
+test('Issue #8: failed domain reads remain unknown and cannot offer an add action', /** A failed GET must not become an empty collection or permit a write based on absence. */ async t => {
+  const fixture = await openDashboard(t, { language: 'en' });
+  const { page } = fixture;
+  await page.route('**/*', /** Fail the second instance's domain GET while preserving every other fixture route. */ async route => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === 'GET' && url.pathname.includes('/api2/') && url.pathname.endsWith('/domains')) {
+      return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { message: 'upstream unavailable' } }) });
+    }
+    return route.fallback();
+  });
+  await visit(page, 'domains');
+  await page.waitForFunction(/** Wait until the affected instance explicitly displays its unreadable state. */ () => document.querySelector('#domArea')?.textContent.includes('Unknown'));
+  assert.equal(await page.locator('[data-add-domain-server="2"]').count(), 0);
+  assert.ok((await page.locator('#domArea').textContent()).includes('Data unavailable'));
+  await assertNoCorruption(fixture);
+});
+
+test('Issue #8: all rejected domain deletes never report a successful deletion', /** Prove HTTP 403 on every target does not produce a success toast or remove the row. */ async t => {
+  const fixture = await openDashboard(t, { language: 'en' });
+  const { page, serverData } = fixture;
+  await visit(page, 'domains');
+  await page.route('**/*', /** Reject only destructive domain requests, leaving fresh reads available. */ async route => {
+    if (route.request().method() === 'DELETE' && new URL(route.request().url()).pathname.includes('/domains/')) {
+      return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { message: 'permission denied' } }) });
+    }
+    return route.fallback();
+  });
+  page.once('dialog', /** Confirm the deliberately rejected deletion request. */ dialog => dialog.accept());
+  await page.locator('[data-del-domain-row]').first().click();
+  await page.waitForFunction(/** Require explicit failed outcomes for both instances before checking state. */ () => (document.querySelector('#toastArea')?.textContent.match(/change or preflight failed/g) || []).length >= 2);
+  assert.equal(serverData['1'].domains.length, 1);
+  assert.equal(serverData['2'].domains.length, 1);
+  assert.ok(!(await page.locator('#toastArea').textContent()).includes('change confirmed'));
+  await assertNoCorruption(fixture);
+});
+
+test('Issue #8: partial domain deletion identifies the confirmed and failed target', /** A successful first delete and a rejected second delete must retain distinct outcomes. */ async t => {
+  const fixture = await openDashboard(t, { language: 'en' });
+  const { page, serverData } = fixture;
+  await visit(page, 'domains');
+  await page.route('**/*', /** Reject DELETE only at instance two and pass instance one through to its fixture. */ async route => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === 'DELETE' && url.pathname.includes('/api2/') && url.pathname.includes('/domains/')) {
+      return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { message: 'denied' } }) });
+    }
+    return route.fallback();
+  });
+  page.once('dialog', /** Accept the two-target operation. */ dialog => dialog.accept());
+  await page.locator('[data-del-domain-row]').first().click();
+  await page.waitForFunction(/** Require both the confirmed and failed outcome messages. */ () => {
+    const output = document.querySelector('#toastArea')?.textContent || '';
+    return output.includes('change confirmed') && output.includes('change or preflight failed');
+  });
+  assert.equal(serverData['1'].domains.length, 0);
+  assert.equal(serverData['2'].domains.length, 1);
+  await assertNoCorruption(fixture);
+});
+
+test('Issue #8: a lost successful write is unknown and a manual retry rechecks it', /** Simulate a server committing a domain before its reply is lost; no second POST is allowed. */ async t => {
+  const fixture = await openDashboard(t, { language: 'en' });
+  const { page, serverData } = fixture;
+  let posts = 0;
+  await visit(page, 'domains');
+  await page.route('**/*', /** Commit the first POST into the fixture state but make its response disappear. */ async route => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === 'POST' && url.pathname.includes('/domains/allow/exact')) {
+      posts++;
+      serverData['1'].domains.push({ domain: 'lostreply.example', type: 'allow', kind: 'exact', enabled: true, comment: 'pending', groups: [0] });
+      return route.abort('failed');
+    }
+    return route.fallback();
+  });
+  await page.locator('#dDomain').fill('lostreply.example');
+  await page.locator('#dComment').fill('pending');
+  await page.locator('#dType').selectOption('allow');
+  await page.locator('#targetDomain').selectOption('1');
+  await page.locator('#domainForm button[type="submit"]').click();
+  await page.waitForFunction(/** Wait for an uncertain outcome rather than a false success. */ () => (document.querySelector('#toastArea')?.textContent || '').includes('write outcome unknown'));
+  assert.equal(await page.locator('#dDomain').inputValue(), 'lostreply.example');
+  assert.equal(posts, 1);
+  await page.locator('#domainForm button[type="submit"]').click();
+  await page.waitForFunction(/** Fresh preflight should prove the desired state is present and clear the original draft. */ () => document.querySelector('#dDomain')?.value === '');
+  assert.equal(posts, 1, 'A manual retry must not write again when fresh data shows the desired state');
+  await assertNoCorruption(fixture);
+});
+
+for (const scenario of [
+  { tab: 'hosts', method: 'PUT', endpoint: '/config/dns/hosts/', fields: [['#hIp','192.168.1.96'], ['#hName','pending.example']], submit: '#hostForm button[type="submit"]', target: '#targetHost' },
+  { tab: 'clients', method: 'POST', endpoint: '/clients', fields: [['#cClient','192.168.1.96'], ['#cComment','pending']], submit: '#clientForm button[type="submit"]', target: '#targetClient' },
+  { tab: 'lists', method: 'POST', endpoint: '/lists', fields: [['#lUrl','https://pending.example/hosts'], ['#lComment','pending']], submit: '#listForm button[type="submit"]', target: '#targetList' }
+]) test('Issue #8: rejected ' + scenario.tab + ' writes preserve form input', /** Verify each management screen retains its draft and reports explicit failure. */ async t => {
+  const fixture = await openDashboard(t, { language: 'en' });
+  const { page } = fixture;
+  await visit(page, scenario.tab);
+  await page.route('**/*', /** Reject the requested mutation but allow its safety preflight GET. */ async route => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === scenario.method && url.pathname.includes(scenario.endpoint)) {
+      return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { message: 'permission denied' } }) });
+    }
+    return route.fallback();
+  });
+  for (const [selector, value] of scenario.fields) await page.locator(selector).fill(value);
+  await page.locator(scenario.target).selectOption('1');
+  await page.locator(scenario.submit).click();
+  await page.waitForFunction(/** Wait for a verified rejection rather than relying on the button's initial enabled state. */ () => (document.querySelector('#toastArea')?.textContent || '').includes('change or preflight failed'));
+  for (const [selector, value] of scenario.fields) assert.equal(await page.locator(selector).inputValue(), value);
+  await assertNoCorruption(fixture);
+});
