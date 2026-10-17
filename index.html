@@ -3806,7 +3806,10 @@ async function performCheckedWrites(button, targets, op) {
       let rows;
       try { rows = op.extract(await apiCall(server, op.path(server))); }
       catch (error) { outcomes.push({ server, status: "failed", error: error.message }); continue; }
-      if (op.isCurrent(server, rows)) { outcomes.push({ server, status: "unchanged" }); continue; }
+      let alreadyCurrent;
+      try { alreadyCurrent = op.isCurrent(server, rows); }
+      catch (error) { outcomes.push({ server, status: "failed", error: error.message }); continue; }
+      if (alreadyCurrent) { outcomes.push({ server, status: "unchanged" }); continue; }
       try {
         const result = await op.write(server, rows);
         const errors = result?.processed?.errors || [];
