@@ -4071,38 +4071,18 @@ async function renderDomains(container, generation) {
     if (!domain) {
       return;
     }
+    const form = event.currentTarget;
     const targets = targetsFor(document.getElementById("targetDomain"));
-    for (const server of targets) {
-      if (server.connected) {
-        try {
-          await apiCall(server, "/domains/" + type + "/" + kind, {
-            method: "POST",
-            body: {
-              domain: [domain],
-              comment,
-              type,
-              kind,
-              groups: [0]
-            }
-          });
-          toast(msg("domains.added", {
-            server: server.label
-          }), "ok");
-        } catch (error) {
-          toast(msg("domains.requestError", {
-            server: server.label,
-            error: error.message
-          }), "err");
-        }
-      } else {
-        toast(msg("domains.notLoggedIn", {
-          server: server.label
-        }), "err");
-      }
-    }
-    document.getElementById("dDomain").value = "";
-    document.getElementById("dComment").value = "";
-    loadDomains();
+    const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targets, {
+      path: () => "/domains",
+      extract: response => requireCollection(response, "domains"),
+      isCurrent: (server, records) => records.some(record => record.domain === domain && record.type === type && record.kind === kind),
+      write: server => apiCall(server, "/domains/" + type + "/" + kind, {
+        method: "POST", body: { domain: [domain], comment, type, kind, groups: [0] }
+      })
+    });
+    clearConfirmedDraft(outcomes, form, [["#dDomain", domain], ["#dComment", comment]]);
+    if (outcomes && form.isConnected && generation === state.renderGen) loadDomains();
   });
   bindLoginHandlers(container, loadDomains);
   await loadDomains();
@@ -4425,32 +4405,17 @@ async function renderHosts(container, generation) {
     if (!ipAddress || !hostname) {
       return;
     }
+    const form = event.currentTarget;
     const rawHostRecord = ipAddress + " " + hostname;
     const targetServers = targetsFor(document.getElementById("targetHost"));
-    for (const targetServer of targetServers) {
-      if (targetServer.connected) {
-        try {
-          await apiCall(targetServer, "/config/dns/hosts/" + encodeURIComponent(rawHostRecord), {
-            method: "PUT"
-          });
-          toast(msg("hosts.added", {
-            server: targetServer.label
-          }), "ok");
-        } catch (error) {
-          toast(msg("hosts.requestError", {
-            server: targetServer.label,
-            error: error.message
-          }), "err");
-        }
-      } else {
-        toast(msg("hosts.notLoggedIn", {
-          server: targetServer.label
-        }), "err");
-      }
-    }
-    document.getElementById("hIp").value = "";
-    document.getElementById("hName").value = "";
-    loadHosts();
+    const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targetServers, {
+      path: () => "/config/dns/hosts",
+      extract: requireHostRecords,
+      isCurrent: (server, records) => records.includes(rawHostRecord),
+      write: server => apiCall(server, "/config/dns/hosts/" + encodeURIComponent(rawHostRecord), { method: "PUT" })
+    });
+    clearConfirmedDraft(outcomes, form, [["#hIp", ipAddress], ["#hName", hostname]]);
+    if (outcomes && form.isConnected && generation === state.renderGen) loadHosts();
   });
   bindLoginHandlers(container, loadHosts);
   await loadHosts();
@@ -4899,36 +4864,18 @@ async function renderClients(container, generation) {
     if (!identifier) {
       return;
     }
+    const form = event.currentTarget;
     const targetServers = targetsFor(document.getElementById("targetClient"));
-    for (const targetServer of targetServers) {
-      if (targetServer.connected) {
-        try {
-          await apiCall(targetServer, "/clients", {
-            method: "POST",
-            body: {
-              client: [identifier],
-              comment,
-              groups: [0]
-            }
-          });
-          toast(msg("clients.added", {
-            server: targetServer.label
-          }), "ok");
-        } catch (error) {
-          toast(msg("clients.requestError", {
-            server: targetServer.label,
-            error: error.message
-          }), "err");
-        }
-      } else {
-        toast(msg("clients.notLoggedIn", {
-          server: targetServer.label
-        }), "err");
-      }
-    }
-    document.getElementById("cClient").value = "";
-    document.getElementById("cComment").value = "";
-    loadClientData();
+    const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targetServers, {
+      path: () => "/clients",
+      extract: response => requireCollection(response, "clients"),
+      isCurrent: (server, records) => records.some(record => String(record.client).toUpperCase() === identifier.toUpperCase()),
+      write: server => apiCall(server, "/clients", {
+        method: "POST", body: { client: [identifier], comment, groups: [0] }
+      })
+    });
+    clearConfirmedDraft(outcomes, form, [["#cClient", identifier], ["#cComment", comment]]);
+    if (outcomes && form.isConnected && generation === state.renderGen) loadClientData();
   });
   bindLoginHandlers(container, loadClientData);
   await loadClientData();
@@ -5124,36 +5071,18 @@ async function renderLists(container, generation) {
     if (!listUrl) {
       return;
     }
+    const form = event.currentTarget;
     const targetServers = targetsFor(document.getElementById("targetList"));
-    for (const targetServer of targetServers) {
-      if (targetServer.connected) {
-        try {
-          await apiCall(targetServer, "/lists?type=" + encodeURIComponent(listType), {
-            method: "POST",
-            body: {
-              address: [listUrl],
-              comment,
-              groups: [0]
-            }
-          });
-          toast(msg("lists.added", {
-            server: targetServer.label
-          }), "ok");
-        } catch (error) {
-          toast(msg("lists.requestError", {
-            server: targetServer.label,
-            error: error.message
-          }), "err");
-        }
-      } else {
-        toast(msg("lists.notLoggedIn", {
-          server: targetServer.label
-        }), "err");
-      }
-    }
-    document.getElementById("lUrl").value = "";
-    document.getElementById("lComment").value = "";
-    loadLists();
+    const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targetServers, {
+      path: () => "/lists",
+      extract: response => requireCollection(response, "lists"),
+      isCurrent: (server, records) => records.some(record => record.address === listUrl && record.type === listType),
+      write: server => apiCall(server, "/lists?type=" + encodeURIComponent(listType), {
+        method: "POST", body: { address: [listUrl], comment, groups: [0] }
+      })
+    });
+    clearConfirmedDraft(outcomes, form, [["#lUrl", listUrl], ["#lComment", comment]]);
+    if (outcomes && form.isConnected && generation === state.renderGen) loadLists();
   });
   bindLoginHandlers(container, loadLists);
   await loadLists();
