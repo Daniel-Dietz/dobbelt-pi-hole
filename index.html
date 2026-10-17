@@ -15,15 +15,15 @@
 			Chart.js medfølger ikke og skal hentes separat som beskrevet under opsætningen.
 			Chart.js er et selvstændigt tredjepartsprojekt med sin egen licens.
 			
-			v1.3.007 - opdateret 2026-10-17
+			v1.4.008 - opdateret 2026-10-17
 			
-			Denne version understøtter 2–4 Pi-hole. Standardantal og navne angives i
-			DEFAULT_SERVER_COUNT og DEFAULT_SERVERS. Navne i browserens Indstillinger
-			overstyrer standardnavnene lokalt. Antallet styres kun af filen. API-stier defineres kun i kildekoden.
+			Denne version understøtter 2–4 Pi-hole. Instanser, standardnavne og sprog
+			angives i config/config.json. Værktøjet tools/render_config.py opretter
+			browserens config.json og nginx-ruter. Se docs/CONFIGURATION.md.
 		-->
 		<meta charset="UTF-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1">
-		<title data-i18n="app.title">Dobbelt-Pi-hole v1.3.007 · Dashboard</title>
+		<title data-i18n="app.title">Dobbelt-Pi-hole v1.4.008 · Dashboard</title>
 		<meta name="description" data-i18n-content="app.description" content="A combined dashboard for two, three or four Pi-hole v6 instances.">
 		<style>:root{--bg:#0d1117;--panel:#151b23;--panel2:#1c232d;--border:#2a323d;--text:#e6edf3;--muted:#8b98a5;--muted2:#5d6a78;--green:#3fb950;--red:#e05252;--amber:#d29922;--blue:#5b8def;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;--radius:8px;--c-1:#5b8def;--c-2:#e3b341;--c-3:#c297ff;--c-4:#ff8a3d;--header-1:#12181f;--header-2:#0d1117;--log-bg:#05070a;--log-text:#e6edf3}:root[data-theme="light"]{--bg:#f2f4f7;--panel:#fff;--panel2:#eef1f5;--border:#d7dde3;--text:#1c232d;--muted:#5b6673;--muted2:#8b98a5;--header-1:#fff;--header-2:#f2f4f7;--log-bg:#f2f4f7;--log-text:#1c232d}*{box-sizing:border-box}html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;overflow-x:hidden;transition:background .2s ease,color .2s ease}body{min-height:100vh;display:flex;flex-direction:column}code,.mono,input,select,textarea,table{font-family:var(--mono)}input,select,textarea,button{font-size:13px}header.topbar{display:flex;flex-direction:column;gap:10px;padding:14px 20px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,var(--header-1),var(--header-2))}.topbar-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.topbar-actions{display:flex;align-items:center;gap:8px}.language-select{min-width:72px;width:auto;padding:5px 7px;font-family:var(--sans)}header.topbar h1{font-size:17px;margin:0;font-weight:600;letter-spacing:.2px}header.topbar h1 .dim{color:var(--muted);font-weight:400}.pills{display:flex;gap:10px;flex-wrap:wrap}.pill{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:5px 12px 5px 8px;font-size:12.5px;color:var(--muted)}.pill .dot{width:9px;height:9px;border-radius:50%;background:var(--muted2);flex:none}.pill.on .dot{background:var(--green);box-shadow:0 0 6px var(--green)}.pill.off .dot{background:var(--red)}.pill b{color:var(--text)}.theme-toggle{width:52px;height:28px;border-radius:999px;border:none;cursor:pointer;padding:0;position:relative;flex:none;background:#0d1520;transition:background .25s ease}.theme-toggle-knob{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#38bdf8;color:#fff;display:flex;align-items:center;justify-content:center;transform:translateX(24px);transition:transform .25s ease,background .25s ease}.theme-toggle-knob svg{width:14px;height:14px}.theme-toggle .icon-sun{display:none}.theme-toggle .icon-moon{display:block}:root[data-theme="light"] .theme-toggle{background:#fde68a}:root[data-theme="light"] .theme-toggle-knob{transform:translateX(0);background:#f5a524}:root[data-theme="light"] .theme-toggle .icon-sun{display:block}:root[data-theme="light"] .theme-toggle .icon-moon{display:none}nav.tabs{display:flex;gap:2px;padding:0 14px;background:var(--panel);border-bottom:1px solid var(--border);overflow-x:auto}nav.tabs button{background:none;border:none;color:var(--muted);padding:11px 14px;cursor:pointer;font-size:13px;border-bottom:2px solid transparent;white-space:nowrap}nav.tabs button:hover{color:var(--text)}nav.tabs button.active{color:var(--text);border-bottom-color:var(--blue)}main{flex:1;padding:20px;max-width:1900px;width:100%;margin:0 auto}.grid{display:grid;gap:14px;min-width:0}.grid.cols-2{grid-template-columns:1fr 1fr}.grid.cols-3{grid-template-columns:repeat(3,1fr)}@media (min-width:821px) and (max-width:1300px){#dashGrid,#dashDetailGrid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}@media (max-width:820px){#dashGrid,#dashDetailGrid{grid-template-columns:1fr!important}.grid.cols-2,.grid.cols-3{grid-template-columns:1fr}}.donut-groups{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}.donut-group{display:grid;grid-template-columns:repeat(var(--server-count),minmax(0,1fr));gap:14px;min-width:0}@media (min-width:821px) and (max-width:1300px){.donut-groups{grid-template-columns:repeat(2,minmax(0,1fr))}.donut-group{grid-template-columns:minmax(0,1fr);align-content:start}}@media (max-width:820px){.donut-group{grid-template-columns:minmax(0,1fr)}}.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px;min-width:0;box-sizing:border-box}.card h2{margin:0 0 12px;font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}.card h2 .tag{font-size:11px;padding:2px 7px;border-radius:5px;font-weight:600;letter-spacing:.3px}.tag-1{background:color-mix(in srgb,var(--c-1) 22%,transparent);color:var(--c-1)}.tag-2{background:color-mix(in srgb,var(--c-2) 22%,transparent);color:var(--c-2)}.tag-3{background:color-mix(in srgb,var(--c-3) 22%,transparent);color:var(--c-3)}.tag-4{background:color-mix(in srgb,var(--c-4) 22%,transparent);color:var(--c-4)}.tag-combo{background:color-mix(in srgb,var(--green) 22%,transparent);color:var(--green)}.stat-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px}.stat-row:last-child{border-bottom:none}.stat-row .k{color:var(--muted)}.stat-row .v{font-weight:600}.big-num{font-size:26px;font-weight:700;line-height:1.1}.sub{color:var(--muted);font-size:12px}button.btn{background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:7px 13px;border-radius:6px;cursor:pointer;font-size:13px}button.btn:hover{border-color:var(--blue)}button.btn:disabled{opacity:.5;cursor:not-allowed}button.btn.primary{background:var(--blue);border-color:var(--blue);color:#06101f;font-weight:600}button.btn.danger{background:transparent;border-color:var(--red);color:var(--red)}button.btn.danger:hover{background:color-mix(in srgb,var(--red) 15%,transparent)}button.btn.success{background:var(--green);border-color:var(--green);color:#06210d;font-weight:600}button.btn.xs{padding:3px 8px;font-size:11.5px}button.btn.block{width:100%}.row-inline{display:flex;gap:8px;flex-wrap:wrap;align-items:center}input[type=text],input[type=password],input[type=number],select{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 9px;border-radius:6px;min-width:0}label.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);flex:1;min-width:140px}label.field input,label.field select{width:100%}table.datatable{width:100%;border-collapse:collapse;font-size:12.5px}table.datatable th{text-align:left;color:var(--muted);font-weight:600;font-size:11.5px;text-transform:none;padding:8px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--panel)}table.datatable td{padding:7px 8px;border-bottom:1px solid var(--border);vertical-align:middle}table.datatable tr:hover td{background:var(--panel2)}table.datatable tr.row-mismatch td{background:color-mix(in srgb,var(--red) 14%,var(--panel))}table.datatable tr.row-mismatch:hover td{background:color-mix(in srgb,var(--red) 20%,var(--panel))}.sync-col,.sync-actions{text-align:center!important;white-space:nowrap;width:64px}.sync-actions .btn{padding-left:7px;padding-right:7px}.server-chip{display:inline-block;padding:1px 7px;border-radius:5px;font-size:11px;font-weight:600}.server-chip.s1{background:color-mix(in srgb,var(--c-1) 20%,transparent);color:var(--c-1)}.server-chip.s2{background:color-mix(in srgb,var(--c-2) 20%,transparent);color:var(--c-2)}.server-chip.s3{background:color-mix(in srgb,var(--c-3) 20%,transparent);color:var(--c-3)}.server-chip.s4{background:color-mix(in srgb,var(--c-4) 20%,transparent);color:var(--c-4)}.badge{padding:1px 7px;border-radius:5px;font-size:11px;font-weight:600}.badge.on{background:color-mix(in srgb,var(--green) 20%,transparent);color:var(--green)}.badge.off{background:color-mix(in srgb,var(--red) 20%,transparent);color:var(--red)}.table-wrap{max-height:520px;overflow:auto;border:1px solid var(--border);border-radius:6px}.table-wrap table{margin:0}.list-table-wrap table{min-width:750px}.list-table-wrap th:first-child,.list-table-wrap td:first-child{min-width:200px;width:200px;overflow-wrap:anywhere}.client-table-wrap table{min-width:650px}.client-table-wrap th:first-child,.client-table-wrap td:first-child{min-width:140px}.client-table-wrap th:nth-child(2),.client-table-wrap td:nth-child(2){min-width:190px}.toast-area{position:fixed;bottom:16px;right:16px;display:flex;flex-direction:column;gap:8px;z-index:999;max-width:360px}.toast{background:var(--panel2);border:1px solid var(--border);border-left:4px solid var(--blue);padding:10px 12px;border-radius:6px;font-size:12.5px;box-shadow:0 6px 18px #0006}.toast.ok{border-left-color:var(--green)}.toast.err{border-left-color:var(--red)}details.help{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px}details.help summary{cursor:pointer;font-weight:600;font-size:13px}details.help .help-body{margin-top:10px;font-size:12.5px;color:var(--muted);line-height:1.55}details.help .help-body code{background:var(--panel2);padding:1px 5px;border-radius:4px;color:var(--text)}details.help .help-body h3{color:var(--text);font-size:12.5px;margin:14px 0 4px}pre.log{background:var(--log-bg);color:var(--log-text);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:12px;line-height:1.5;max-height:360px;overflow:auto;white-space:pre-wrap;word-break:break-all}.log-gray{color:#8b98a5}.log-red{color:#ff6b6b}.log-green{color:#3fb950}.log-yellow{color:#d29922}.log-blue{color:#5b8def}.log-purple{color:#c297ff}.log-cyan{color:#56d4dd}.text-bold{font-weight:700}.empty{color:var(--muted);font-size:13px;padding:20px;text-align:center}.muted{color:var(--muted)}.flex-between{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}select#targetSelect,.target-select{min-width:170px}hr.sep{border:none;border-top:1px solid var(--border);margin:14px 0}.kv{display:grid;grid-template-columns:120px 1fr;gap:6px 10px;font-size:12.5px}.bar-row{margin-bottom:9px;min-width:0}.bar-row .bar-label{display:flex;justify-content:space-between;gap:8px;font-size:12px;min-width:0}.bar-row .bar-label .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:75%;min-width:0;flex-shrink:1}.bar-row .bar-label .muted{flex-shrink:0}.bar-track{background:var(--panel2);border-radius:4px;height:6px;overflow:hidden;margin-top:3px}.bar-fill{height:100%;border-radius:4px}.bar-fill.allowed{background:var(--green)}.bar-fill.blocked{background:var(--red)}.bar-fill.neutral{background:var(--blue)}h3.mini-title{font-size:12.5px;color:var(--muted);margin:16px 0 8px;font-weight:600}h3.mini-title:first-of-type{margin-top:0}.kv .k{color:var(--muted)}</style>
 	</head>
@@ -70,7 +70,11 @@ API jeres Pi-holes rent faktisk taler. Skulle en fremtidig
 Pi-hole-version ændre et feltnavn, er det ALTID herunder du
 skal rette – resten af scriptet bruger kun disse funktioner.
 ============================================================ */
-const CONFIG_KEY = "ph_combo_cfg_v2";
+const CONFIG_KEY = "ph_combo_cfg_v2"; // Legacy browser labels; never used for targets.
+const LABELS_KEY = "ph_combo_labels_v1";
+const RUNTIME_CONFIG_URL = "./config.json";
+const CONFIG_TIMEOUT_MS = 10000;
+const SESSION_CHECK_TIMEOUT_MS = 10000;
 const UI_STATE_KEY = "ph_combo_ui_v1";
 const DEFAULT_UI_STATE = {
   queries: {
@@ -97,36 +101,6 @@ const DEFAULT_UI_STATE = {
     suggPage: 0
   }
 };
-
-// Standarder for alle klienter. Antallet styres kun her. Browserens Indstillinger kan overstyre navnene.
-const DEFAULT_SERVER_COUNT = 2; // 2, 3 eller 4
-
-const DEFAULT_SERVERS = [{
-  id: "1",
-  label: "Pi-hole 1",
-  base: "/api1",
-  color: "c-1",
-  chip: "s1"
-}, {
-  id: "2",
-  label: "Pi-hole 2",
-  base: "/api2",
-  color: "c-2",
-  chip: "s2"
-}, {
-  id: "3",
-  label: "Pi-hole 3",
-  base: "/api3",
-  color: "c-3",
-  chip: "s3"
-}, {
-  id: "4",
-  label: "Pi-hole 4",
-  base: "/api4",
-  color: "c-4",
-  chip: "s4"
-}];
-
 
 /* ---------------- Keyed translations ---------------- */
 const I18N = {
@@ -360,23 +334,38 @@ const I18N = {
     "gravity.httpError": "Fejl: HTTP {status}",
     "gravity.error": "Fejl: {error}",
     "settings.helpSummary": "Opsætning – læs dette hvis noget fejler med \"CORS\" eller \"Failed to fetch\"",
-    "settings.proxyRequirement": "Hver aktiv Pi-hole kræver sin egen proxy-sti på samme domæne som kontrolpanelet:",
-    "settings.proxyExample": "Eksempel i nginx (gentages for hver aktiv Pi-hole):",
-    "settings.proxyConfiguration": "API-stier ændres i DEFAULT_SERVERS og den tilsvarende nginx-konfiguration.",
+    "settings.proxyRequirement": "De konfigurerede Pi-hole-instanser bruger disse genererede proxy-stier på kontrolpanelets domæne:",
+    "settings.proxyExample": "Central konfigurationsfil:",
+    "settings.proxyConfiguration": "Rediger den centrale fil for at ændre Pi-hole-adresser, antal instanser eller standardnavne. Med Docker skal containeren genstartes, og denne side genindlæses, før ændringerne træder i kraft.",
     "settings.appPasswordTitle": "App password i stedet for din almindelige adgangskode",
     "settings.appPasswordHelp": "I hver Pi-hole-administration kan du oprette et app password under Settings → API. Brug det i loginfelterne her i stedet for din almindelige adgangskode.",
     "settings.sessionsTitle": "Sessioner",
-    "settings.sessionsHelp": "Login-sessionen (SID) gemmes kun i browserens sessionStorage. Den forsvinder, når du lukker fanen. Adgangskoder gemmes slet ikke.",
+    "settings.sessionsHelp": "Login-sessionen (SID) gemmes kun i denne fanes sessionStorage og er knyttet til den konfigurerede Pi-hole-adresse. En ændret adresse kræver et nyt login. Adgangskoder gemmes aldrig.",
     "settings.title": "Pi-hole",
-    "settings.namesHelp": "Navne gemmes kun i denne browser. Standardnavne angives i DEFAULT_SERVERS i filen.",
+    "settings.namesHelp": "Disse personlige navne gælder kun i denne browser. Standardnavne og Pi-hole-adresser kommer fra den centrale konfigurationsfil. Nulstilling gendanner de aktuelle standardnavne.",
     "settings.server": "Pi-hole {id}",
     "settings.label": "Label",
     "settings.save": "Gem",
-    "settings.saved": "Gemt. Genindlæser status…",
+    "settings.saved": "Personlige navne gemt.",
     "domains.requestError": "{server}: {error}",
     "hosts.requestError": "{server}: {error}",
     "clients.requestError": "{server}: {error}",
-    "lists.requestError": "{server}: {error}"
+    "lists.requestError": "{server}: {error}",
+    "settings.invalidName": "Indtast et navn på 1–120 tegn uden kontroltegn eller linjeskift.",
+    "settings.resetNames": "Gendan standardnavne",
+    "settings.namesReset": "Standardnavne gendannet i denne browser.",
+    "config.loading": "Indlæser kontrolpanelets konfiguration…",
+    "config.checkingSessions": "Kontrollerer eksisterende Pi-hole-sessioner…",
+    "config.title": "Kontrolpanelets konfiguration kunne ikke indlæses",
+    "config.help": "Kontrollér den centrale konfigurationsfil, genstart Docker-containeren eller generer konfigurationen igen ved manuel installation, og prøv derefter igen. Ingen Pi-hole-forbindelser er startet.",
+    "config.retry": "Prøv igen",
+    "config.httpError": "Konfigurationsfilen config.json kunne ikke indlæses (HTTP {status}).",
+    "config.networkError": "Konfigurationsfilen config.json kunne ikke hentes.",
+    "config.timeout": "Indlæsningen af config.json tog for lang tid. Kontrollér, at webserveren er tilgængelig.",
+    "config.invalidJson": "Konfigurationsfilen config.json indeholder ikke gyldig JSON.",
+    "config.invalidValue": "Konfigurationsfeltet »{field}« mangler eller er ugyldigt.",
+    "config.unsupportedVersion": "Konfigurationens version mangler eller understøttes ikke. Generer konfigurationen med værktøjerne fra denne version af kontrolpanelet.",
+    "config.changed": "Pi-hole-konfigurationen er ændret. Genindlæs denne side, før du fortsætter."
   },
   "en": {
     "app.title": "Dobbelt-Pi-hole v{version} · Dashboard",
@@ -608,23 +597,38 @@ const I18N = {
     "gravity.httpError": "Error: HTTP {status}",
     "gravity.error": "Error: {error}",
     "settings.helpSummary": "Setup – read this if you encounter \"CORS\" or \"Failed to fetch\" errors",
-    "settings.proxyRequirement": "Each active Pi-hole requires its own proxy path on the same domain as the dashboard:",
-    "settings.proxyExample": "nginx example (repeat for each active Pi-hole):",
-    "settings.proxyConfiguration": "Change API paths in DEFAULT_SERVERS and the corresponding nginx configuration.",
+    "settings.proxyRequirement": "The configured Pi-hole instances use these generated proxy paths on the dashboard’s domain:",
+    "settings.proxyExample": "Central configuration file:",
+    "settings.proxyConfiguration": "Edit the central file to change Pi-hole addresses, instance count or default names. With Docker, restart the container and reload this page to apply changes.",
     "settings.appPasswordTitle": "Use an app password instead of your regular password",
     "settings.appPasswordHelp": "In each Pi-hole admin interface, open Settings → API and create an app password. Enter it here instead of your regular password.",
     "settings.sessionsTitle": "Sessions",
-    "settings.sessionsHelp": "The login session (SID) is stored only in the browser’s sessionStorage. It is removed when you close the tab. Passwords are never stored.",
+    "settings.sessionsHelp": "The login session (SID) is stored only in this tab’s sessionStorage and belongs to the configured Pi-hole address. Changing the address requires a new login. Passwords are never stored.",
     "settings.title": "Pi-hole",
-    "settings.namesHelp": "Names are saved only in this browser. Set default names in DEFAULT_SERVERS in the file.",
+    "settings.namesHelp": "These personal names apply only in this browser. Default names and Pi-hole addresses come from the central configuration file. Resetting names restores the current defaults.",
     "settings.server": "Pi-hole {id}",
     "settings.label": "Label",
     "settings.save": "Save",
-    "settings.saved": "Saved. Reloading status…",
+    "settings.saved": "Personal names saved.",
     "domains.requestError": "{server}: {error}",
     "hosts.requestError": "{server}: {error}",
     "clients.requestError": "{server}: {error}",
-    "lists.requestError": "{server}: {error}"
+    "lists.requestError": "{server}: {error}",
+    "settings.invalidName": "Enter a name with 1–120 characters and no control characters or line breaks.",
+    "settings.resetNames": "Reset names to defaults",
+    "settings.namesReset": "Default names restored in this browser.",
+    "config.loading": "Loading dashboard configuration…",
+    "config.checkingSessions": "Checking existing Pi-hole sessions…",
+    "config.title": "Dashboard configuration could not be loaded",
+    "config.help": "Check the central configuration file, restart the Docker container or regenerate the configuration for a manual installation, then try again. No Pi-hole connections have been started.",
+    "config.retry": "Try again",
+    "config.httpError": "The configuration file config.json could not be loaded (HTTP {status}).",
+    "config.networkError": "The configuration file config.json could not be reached.",
+    "config.timeout": "Loading config.json took too long. Check that the web server is available.",
+    "config.invalidJson": "The configuration file config.json does not contain valid JSON.",
+    "config.invalidValue": "The configuration field “{field}” is missing or invalid.",
+    "config.unsupportedVersion": "The configuration version is missing or unsupported. Generate the configuration with the tools from this dashboard version.",
+    "config.changed": "The Pi-hole configuration has changed. Reload this page before continuing."
   },
   "de": {
     "app.title": "Dobbelt-Pi-hole v{version} · Übersicht",
@@ -856,28 +860,43 @@ const I18N = {
     "gravity.httpError": "Fehler: HTTP {status}",
     "gravity.error": "Fehler: {error}",
     "settings.helpSummary": "Einrichtung – Hilfe bei Fehlern wie „CORS“ oder „Failed to fetch“",
-    "settings.proxyRequirement": "Jeder aktive Pi-hole benötigt einen eigenen Proxy-Pfad unter derselben Domain wie das Dashboard:",
-    "settings.proxyExample": "nginx-Beispiel (für jeden aktiven Pi-hole wiederholen):",
-    "settings.proxyConfiguration": "Ändern Sie die API-Pfade in DEFAULT_SERVERS und in der zugehörigen nginx-Konfiguration.",
+    "settings.proxyRequirement": "Die konfigurierten Pi-hole-Instanzen verwenden diese erzeugten Proxy-Pfade unter der Domain des Dashboards:",
+    "settings.proxyExample": "Zentrale Konfigurationsdatei:",
+    "settings.proxyConfiguration": "Ändern Sie Pi-hole-Adressen, die Anzahl der Instanzen oder Standardnamen in der zentralen Datei. Starten Sie bei Docker anschließend den Container neu und laden Sie diese Seite neu, damit die Änderungen wirksam werden.",
     "settings.appPasswordTitle": "App-Passwort anstelle des regulären Passworts verwenden",
     "settings.appPasswordHelp": "Öffnen Sie in der Adminoberfläche jedes Pi-hole den Bereich Settings → API und erstellen Sie ein App-Passwort. Verwenden Sie hier dieses App-Passwort anstelle Ihres regulären Passworts.",
     "settings.sessionsTitle": "Sitzungen",
-    "settings.sessionsHelp": "Die Anmeldesitzung (SID) wird ausschließlich im sessionStorage des Browsers gespeichert und beim Schließen des Tabs entfernt. Passwörter werden nicht gespeichert.",
+    "settings.sessionsHelp": "Die Anmeldesitzung (SID) wird nur im sessionStorage dieses Tabs gespeichert und ist an die konfigurierte Pi-hole-Adresse gebunden. Eine geänderte Adresse erfordert eine neue Anmeldung. Passwörter werden nicht gespeichert.",
     "settings.title": "Pi-hole",
-    "settings.namesHelp": "Namen werden nur in diesem Browser gespeichert. Standardnamen werden in DEFAULT_SERVERS in der Datei festgelegt.",
+    "settings.namesHelp": "Diese persönlichen Namen gelten nur in diesem Browser. Standardnamen und Pi-hole-Adressen stammen aus der zentralen Konfigurationsdatei. Beim Zurücksetzen werden die aktuellen Standardnamen wiederhergestellt.",
     "settings.server": "Pi-hole {id}",
     "settings.label": "Bezeichnung",
     "settings.save": "Speichern",
-    "settings.saved": "Gespeichert. Status wird neu geladen…",
+    "settings.saved": "Persönliche Namen gespeichert.",
     "domains.requestError": "{server}: {error}",
     "hosts.requestError": "{server}: {error}",
     "clients.requestError": "{server}: {error}",
-    "lists.requestError": "{server}: {error}"
+    "lists.requestError": "{server}: {error}",
+    "settings.invalidName": "Geben Sie einen Namen mit 1–120 Zeichen ohne Steuerzeichen oder Zeilenumbrüche ein.",
+    "settings.resetNames": "Standardnamen wiederherstellen",
+    "settings.namesReset": "Die Standardnamen wurden in diesem Browser wiederhergestellt.",
+    "config.loading": "Dashboard-Konfiguration wird geladen…",
+    "config.checkingSessions": "Vorhandene Pi-hole-Sitzungen werden geprüft…",
+    "config.title": "Die Dashboard-Konfiguration konnte nicht geladen werden",
+    "config.help": "Prüfen Sie die zentrale Konfigurationsdatei, starten Sie den Docker-Container neu oder erzeugen Sie die Konfiguration bei manueller Installation erneut. Versuchen Sie es danach noch einmal. Es wurden keine Verbindungen zu Pi-hole gestartet.",
+    "config.retry": "Erneut versuchen",
+    "config.httpError": "Die Konfigurationsdatei config.json konnte nicht geladen werden (HTTP {status}).",
+    "config.networkError": "Die Konfigurationsdatei config.json konnte nicht erreicht werden.",
+    "config.timeout": "Das Laden von config.json hat zu lange gedauert. Prüfen Sie, ob der Webserver erreichbar ist.",
+    "config.invalidJson": "Die Konfigurationsdatei config.json enthält kein gültiges JSON.",
+    "config.invalidValue": "Das Konfigurationsfeld „{field}“ fehlt oder ist ungültig.",
+    "config.unsupportedVersion": "Die Konfigurationsversion fehlt oder wird nicht unterstützt. Erzeugen Sie die Konfiguration mit den Werkzeugen dieser Dashboard-Version.",
+    "config.changed": "Die Pi-hole-Konfiguration wurde geändert. Laden Sie diese Seite neu, bevor Sie fortfahren."
   }
 };
 
 /* Keyed messages are shared by all three languages. Catalogs contain plain text only. */
-const APP_VERSION = "1.3.007";
+const APP_VERSION = "1.4.008";
 const LANGUAGE_KEY = "ph_combo_language";
 const SUPPORTED_LANGUAGES = Object.freeze({
   da: { label: "Dansk", locale: "da-DK" },
@@ -905,10 +924,12 @@ function normalizeLanguage(value) {
   return Object.hasOwn(SUPPORTED_LANGUAGES, code) ? code : null;
 }
 
-/** Resolve an explicit preference, then the browser's ordered list, then English. */
-function resolveLanguage(saved, browserLanguages = []) {
+/** User preference, central default, ordered browser preferences, then English. */
+function resolveLanguage(saved, browserLanguages = [], configuredDefault = "auto") {
   const preferred = normalizeLanguage(saved);
   if (preferred) return preferred;
+  const configured = normalizeLanguage(configuredDefault);
+  if (configured) return configured;
   for (const language of Array.isArray(browserLanguages) ? browserLanguages : [browserLanguages]) {
     const code = normalizeLanguage(language);
     if (code) return code;
@@ -919,6 +940,7 @@ function resolveLanguage(saved, browserLanguages = []) {
 let currentLanguage = resolveLanguage(storedValue(LANGUAGE_KEY),
   [...(navigator.languages || []), navigator.language]);
 let pendingLanguageFormState = null;
+let languageChosenThisPage = false;
 
 function localeCode() {
   return SUPPORTED_LANGUAGES[currentLanguage]?.locale || SUPPORTED_LANGUAGES.en.locale;
@@ -1044,9 +1066,11 @@ function restoreFormState(snapshot) {
 /** Apply a language to the shell and active tab without changing configuration or logins. */
 async function setLanguage(language, rerender = true) {
   const code = normalizeLanguage(language) || "en";
+  languageChosenThisPage = true;
   const previous = pendingLanguageFormState?.generation === state.renderGen
     && pendingLanguageFormState.tab === state.activeTab ? pendingLanguageFormState.snapshot : null;
-  const snapshot = rerender ? mergeFormState(previous, captureFormState()) : null;
+  const snapshot = rerender && configurationStatus === "ready"
+    ? mergeFormState(previous, captureFormState()) : null;
   currentLanguage = code;
   storeValue(LANGUAGE_KEY, code);
   document.documentElement.lang = code;
@@ -1055,6 +1079,10 @@ async function setLanguage(language, rerender = true) {
   applyI18n();
   renderTabs();
   renderPills();
+  if (configurationStatus !== "ready") {
+    renderConfigurationState();
+    return;
+  }
   if (rerender && state.activeTab) {
     const tab = state.activeTab;
     const rendering = switchTab(tab, false);
@@ -1085,28 +1113,81 @@ function initI18n() {
 function uiConfirm(message) { return window.confirm(message); }
 function uiPrompt(message, defaultValue = "") { return window.prompt(message, defaultValue); }
 
-function loadConfig() {
-  let t = {};
-  try {
-    t = JSON.parse(storedValue(CONFIG_KEY) || "{}");
-  } catch {}
-  t && "object" == typeof t || (t = {});
-  const e = Array.isArray(t) ? t : Array.isArray(t.servers) ? t.servers : [];
-  return {
-    count: [2, 3, 4].includes(DEFAULT_SERVER_COUNT) ? DEFAULT_SERVER_COUNT : 2,
-    servers: DEFAULT_SERVERS.map(t => ({
-      ...t,
-      label: String(e.find(e => e && e.id === t.id)?.label || "").trim() || t.label
-    }))
-  };
+class ConfigurationError extends Error {
+  constructor(key, params = {}) {
+    super(key);
+    this.key = key;
+    this.params = params;
+  }
 }
+
+/** Accept only the public projection produced by tools/render_config.py. */
+function validateRuntimeConfig(input) {
+  const invalid = field => { throw new ConfigurationError("config.invalidValue", { field }); };
+  const objectWithKeys = (value, allowed, field) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)
+      || Object.keys(value).some(key => !allowed.includes(key))) invalid(field);
+  };
+  objectWithKeys(input, ["version", "defaultLanguage", "servers"], "config");
+  if (input.version !== 1) throw new ConfigurationError("config.unsupportedVersion");
+  const defaultLanguage = input.defaultLanguage === undefined ? "auto" : input.defaultLanguage;
+  if (!["auto", "da", "en", "de"].includes(defaultLanguage)) invalid("defaultLanguage");
+  if (!Array.isArray(input.servers) || input.servers.length < 2 || input.servers.length > 4) invalid("servers");
+  const ids = new Set();
+  const servers = input.servers.map((server, index) => {
+    const field = `servers[${index}]`;
+    objectWithKeys(server, ["id", "label", "base"], field);
+    if (typeof server.id !== "string" || !/^[1-4]$/u.test(server.id) || ids.has(server.id)) invalid(`${field}.id`);
+    ids.add(server.id);
+    if (!validLocalLabel(server.label)) invalid(`${field}.label`);
+    if (typeof server.base !== "string"
+      || !new RegExp(`^/api${server.id}/[a-f0-9]{64}$`, "u").test(server.base)) invalid(`${field}.base`);
+    return { id: server.id, label: server.label.trim(), base: server.base,
+      color: `c-${server.id}`, chip: `s${server.id}` };
+  });
+  return { version: 1, defaultLanguage, servers };
+}
+
+function validLocalLabel(value) {
+  return typeof value === "string" && value.trim().length > 0 && [...value.trim()].length <= 120
+    && !/[\u0000-\u001f\u007f-\u009f\ud800-\udfff]/u.test(value);
+}
+
+/** A session belongs to a configured upstream, even when its display ID is reused. */
+function sessionStorageKey(server) {
+  return "ph_sid_v2:" + server.base;
+}
+
+/** Migrate display names only; legacy browser configuration cannot supply endpoints. */
+function loadLabelOverrides(servers) {
+  const saved = storedValue(LABELS_KEY);
+  const overrides = {};
+  try {
+    if (saved === null) {
+      const legacy = JSON.parse(storedValue(CONFIG_KEY) || "{}");
+      const entries = Array.isArray(legacy) ? legacy : Array.isArray(legacy?.servers) ? legacy.servers : [];
+      for (const server of servers) {
+        const label = entries.find(entry => entry?.id === server.id)?.label;
+        if (validLocalLabel(label) && label.trim() !== server.label) overrides[server.base] = label.trim();
+      }
+    } else {
+      const labels = JSON.parse(saved)?.overrides;
+      for (const server of servers) {
+        const label = labels && Object.hasOwn(labels, server.base) ? labels[server.base] : null;
+        if (validLocalLabel(label) && label.trim() !== server.label) overrides[server.base] = label.trim();
+      }
+    }
+  } catch { /* Invalid browser preferences do not invalidate central configuration. */ }
+  storeValue(LABELS_KEY, JSON.stringify({ overrides }));
+  storeValue(CONFIG_KEY, null);
+  return overrides;
+}
+
 function saveConfig() {
-  storeValue(CONFIG_KEY, JSON.stringify({
-    servers: configuredServers.map(t => ({
-      id: t.id,
-      label: t.label
-    }))
-  }));
+  const overrides = Object.fromEntries(configuredServers
+    .filter(server => server.label !== server.defaultLabel)
+    .map(server => [server.base, server.label]));
+  storeValue(LABELS_KEY, JSON.stringify({ overrides }));
 }
 function loadUiState() {
   try {
@@ -1133,20 +1214,87 @@ const uiState = loadUiState();
 function saveUiState() {
   storeValue(UI_STATE_KEY, JSON.stringify(uiState));
 }
-const initialConfig = loadConfig(),
-  configuredServers = initialConfig.servers.map(t => ({
-    ...t,
-    sid: storedValue("ph_sid_" + t.id, "sessionStorage") || null,
-    connected: !1,
-    checking: !0
-  })),
-  state = {
-    servers: configuredServers.slice(0, initialConfig.count),
-    activeTab: "dashboard",
-    renderGen: 0,
-    clientNames: new Map(),
-    gravityRuns: new Map()
-  };
+let configuredServers = [];
+let configurationStatus = "loading";
+let configurationError = null;
+let configurationGeneration = 0;
+const state = {
+  servers: [],
+  activeTab: "dashboard",
+  renderGen: 0,
+  clientNames: new Map(),
+  gravityRuns: new Map()
+};
+
+function renderConfigurationState() {
+  const root = document.getElementById("tabContent");
+  if (configurationStatus === "loading") {
+    root.innerHTML = `<div class="card" id="configLoading" role="status"><p class="empty">${htmlMsg(state.servers.length ? "config.checkingSessions" : "config.loading")}</p></div>`;
+  } else if (configurationStatus === "error") {
+    root.innerHTML = `<div class="card" id="configError" role="alert">
+      <h2>${htmlMsg("config.title")}</h2>
+      <p>${htmlMsg(configurationError.key, configurationError.params)}</p>
+      <p class="sub">${htmlMsg("config.help")}</p>
+      <button class="btn primary" id="configRetry" type="button">${htmlMsg("config.retry")}</button>
+    </div>`;
+    document.getElementById("configRetry").addEventListener("click", () => { void loadRuntimeConfiguration(); });
+  }
+}
+
+/** No sessions or operational tabs are started until this file is valid. */
+async function loadRuntimeConfiguration() {
+  const generation = ++configurationGeneration;
+  configurationStatus = "loading";
+  configurationError = null;
+  renderTabs();
+  renderConfigurationState();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), CONFIG_TIMEOUT_MS);
+  let config;
+  try {
+    const response = await fetch(RUNTIME_CONFIG_URL, { cache: "no-store", redirect: "error", signal: controller.signal });
+    if (!response.ok) throw new ConfigurationError("config.httpError", { status: response.status });
+    let input;
+    try { input = await response.json(); }
+    catch (error) {
+      if (controller.signal.aborted) throw error;
+      throw new ConfigurationError("config.invalidJson");
+    }
+    config = validateRuntimeConfig(input);
+  } catch (error) {
+    if (generation !== configurationGeneration) return;
+    configurationStatus = "error";
+    configurationError = error instanceof ConfigurationError ? error
+      : new ConfigurationError(controller.signal.aborted ? "config.timeout" : "config.networkError");
+    renderConfigurationState();
+    return;
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (generation !== configurationGeneration) return;
+  if (!languageChosenThisPage) {
+    currentLanguage = resolveLanguage(storedValue(LANGUAGE_KEY),
+      [...(navigator.languages || []), navigator.language], config.defaultLanguage);
+    document.documentElement.lang = currentLanguage;
+    document.getElementById("languageSelect").value = currentLanguage;
+    applyI18n();
+  }
+  const overrides = loadLabelOverrides(config.servers);
+  configuredServers = config.servers.map(server => ({ ...server, defaultLabel: server.label,
+    label: overrides[server.base] || server.label,
+    sid: storedValue(sessionStorageKey(server), "sessionStorage") || null,
+    connected: false, checking: true }));
+  for (const id of ["1", "2", "3", "4"]) storeValue("ph_sid_" + id, null, "sessionStorage");
+  state.servers = configuredServers;
+  renderConfigurationState();
+  await Promise.all(state.servers.map(checkSession));
+  if (generation !== configurationGeneration) return;
+  state.activeTab = tabFromHash();
+  configurationStatus = "ready";
+  renderTabs();
+  renderPills();
+  await switchTab(state.activeTab);
+}
 function escapeHtml(t) {
   if ("string" != typeof t) return t;
   const e = {
@@ -1250,7 +1398,8 @@ class AuthError extends Error {}
 async function apiCall(t, e, {
   method: n = "GET",
   body: a,
-  rawResponse: s = !1
+  rawResponse: s = !1,
+  signal: requestSignal
 } = {}) {
   const l = {
     "Content-Type": "application/json"
@@ -1259,10 +1408,14 @@ async function apiCall(t, e, {
   const r = await fetch(t.base.replace(/\/$/, "") + e, {
     method: n,
     headers: l,
-    body: void 0 !== a ? JSON.stringify(a) : void 0
+    body: void 0 !== a ? JSON.stringify(a) : void 0,
+    signal: requestSignal
   });
+  if (r.status === 409 && (await r.clone().json().catch(() => null))?.error?.code === "dashboard_config_changed") {
+    throw new Error(msg("config.changed"));
+  }
   if (s) return r;
-  if (401 === r.status) throw t.connected = !1, t.sid = null, storeValue("ph_sid_" + t.id, null, "sessionStorage"), new AuthError(msg("auth.notConnectedOn", { server: t.label }));
+  if (401 === r.status) throw t.connected = !1, t.sid = null, storeValue(sessionStorageKey(t), null, "sessionStorage"), new AuthError(msg("auth.notConnectedOn", { server: t.label }));
   if (204 === r.status) return null;
   const i = (r.headers.get("content-type") || "").includes("application/json") ? await r.json().catch(() => null) : await r.text();
   if (!r.ok) {
@@ -1282,11 +1435,12 @@ async function login(t, e) {
       })
     }),
     a = await n.json().catch(() => null);
+  if (n.status === 409 && a?.error?.code === "dashboard_config_changed") throw new Error(msg("config.changed"));
   if (!n.ok || !a || !a.session) {
     const t = a && a.error && a.error.message || msg("auth.loginFailed");
     throw new Error(t);
   }
-  t.sid = a.session.sid, t.connected = !0, storeValue("ph_sid_" + t.id, t.sid, "sessionStorage");
+  t.sid = a.session.sid, t.connected = !0, storeValue(sessionStorageKey(t), t.sid, "sessionStorage");
 }
 async function logout(t) {
   try {
@@ -1294,16 +1448,22 @@ async function logout(t) {
       method: "DELETE"
     });
   } catch {}
-  t.sid = null, t.connected = !1, storeValue("ph_sid_" + t.id, null, "sessionStorage");
+  t.sid = null, t.connected = !1, storeValue(sessionStorageKey(t), null, "sessionStorage");
 }
 async function checkSession(t) {
   if (!t.sid) return t.connected = !1, void (t.checking = !1);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SESSION_CHECK_TIMEOUT_MS);
   try {
-    await apiCall(t, "/dns/blocking"), t.connected = !0;
+    await apiCall(t, "/dns/blocking", { signal: controller.signal });
+    if (controller.signal.aborted) throw controller.signal.reason;
+    t.connected = !0;
   } catch {
-    t.connected = !1, t.sid = null, storeValue("ph_sid_" + t.id, null, "sessionStorage");
+    t.connected = !1, t.sid = null, storeValue(sessionStorageKey(t), null, "sessionStorage");
+  } finally {
+    clearTimeout(timeout);
+    t.checking = !1;
   }
-  t.checking = !1;
 }
 let dashboardCharts = [];
 function destroyDashboardCharts() {
@@ -1340,10 +1500,15 @@ function updateTabHash(t) {
 }
 function renderTabs() {
   const t = document.getElementById("tabs");
+  if (configurationStatus !== "ready") { t.innerHTML = ""; return; }
   t.innerHTML = TABS.map(([t, e]) => `<button data-tab="${t}" class="${state.activeTab === t ? "active" : ""}">${htmlMsg(e)}</button>`).join("");
   for (const e of t.querySelectorAll("button")) e.addEventListener("click", () => switchTab(e.dataset.tab));
 }
 function renderPills() {
+  if (configurationStatus !== "ready") {
+    document.getElementById("serverPills").innerHTML = "";
+    return;
+  }
   document.getElementById("serverPills").innerHTML = state.servers.map(t => {
     const e = t.checking ? "" : t.connected ? "on" : "off",
       n = htmlMsg(t.checking ? "auth.checking" : t.connected ? "auth.connected" : "auth.notConnected");
@@ -1351,6 +1516,7 @@ function renderPills() {
   }).join("");
 }
 async function switchTab(t, e = !0) {
+  if (configurationStatus !== "ready") return;
   "dashboard" === state.activeTab && "dashboard" !== t && destroyDashboardCharts(), state.activeTab = t, e && updateTabHash(t);
   const n = ++state.renderGen;
   renderTabs();
@@ -2641,8 +2807,8 @@ async function renderSettings(t) {
       <summary>${htmlMsg("settings.helpSummary")}</summary>
       <div class="help-body">
         <p>${htmlMsg("settings.proxyRequirement")}</p>
-        <ul>${state.servers.map(server => `<li><span class="server-chip ${escapeHtml(server.chip)}">${escapeHtml(server.label)}</span>: <code>${escapeHtml(server.base)}</code></li>`).join("")}</ul>
-        <p>${htmlMsg("settings.proxyExample")} <code>location /api1/ { proxy_pass https://pi-hole1.example.com/api/; ... }</code></p>
+        <ul>${state.servers.map(server => `<li><span class="server-chip ${escapeHtml(server.chip)}">${escapeHtml(server.label)}</span>: <code style="overflow-wrap:anywhere">${escapeHtml(server.base)}</code></li>`).join("")}</ul>
+        <p>${htmlMsg("settings.proxyExample")} <code>config/config.json</code></p>
         <p>${htmlMsg("settings.proxyConfiguration")}</p>
         <h3>${htmlMsg("settings.appPasswordTitle")}</h3>
         <p>${htmlMsg("settings.appPasswordHelp")}</p>
@@ -2657,21 +2823,38 @@ async function renderSettings(t) {
         ${state.servers.map(server => `<div class="row-inline" style="margin-bottom:10px;">
           <span class="server-chip ${escapeHtml(server.chip)}">${htmlMsg("settings.server", {id: server.id})}</span><label class="field" style="max-width:260px;"><span>${htmlMsg("settings.label")}</span><input type="text" data-label="${escapeHtml(server.id)}" value="${escapeHtml(server.label)}" required></label>
         </div>`).join("")}
-        <button class="btn primary" type="submit">${htmlMsg("settings.save")}</button>
+        <div class="row-inline">
+          <button class="btn primary" type="submit">${htmlMsg("settings.save")}</button>
+          <button class="btn" id="resetLabels" type="button">${htmlMsg("settings.resetNames")}</button>
+        </div>
       </form>
     </div>`;
-  document.getElementById("settingsForm").addEventListener("submit", async event => {
+  const form = document.getElementById("settingsForm");
+  const labelInputs = [...form.querySelectorAll("[data-label]")];
+  const validateLabel = input => input.setCustomValidity(validLocalLabel(input.value) ? "" : msg("settings.invalidName"));
+  for (const input of labelInputs) {
+    input.addEventListener("input", () => validateLabel(input));
+    validateLabel(input);
+  }
+  form.addEventListener("submit", async event => {
     event.preventDefault();
-    for (const input of t.querySelectorAll("[data-label]")) {
+    labelInputs.forEach(validateLabel);
+    if (!form.reportValidity()) return;
+    for (const input of labelInputs) {
       const server = configuredServers.find(server => server.id === input.dataset.label);
-      server.label = input.value.trim() || DEFAULT_SERVERS.find(defaultServer => defaultServer.id === server.id).label;
+      server.label = input.value.trim();
     }
     saveConfig();
     toast(msg("settings.saved"), "ok");
     renderPills();
-    await Promise.all(state.servers.map(checkSession));
-    renderPills();
     await switchTab("settings");
+  });
+  document.getElementById("resetLabels").addEventListener("click", () => {
+    for (const server of configuredServers) server.label = server.defaultLabel;
+    saveConfig();
+    toast(msg("settings.namesReset"), "ok");
+    renderPills();
+    void switchTab("settings");
   });
 }
 
@@ -2685,17 +2868,23 @@ function applyTheme(t) {
 function initThemeToggle() {
   applyTheme(loadTheme()), document.getElementById("themeToggle").addEventListener("click", () => {
     const t = "light" === document.documentElement.getAttribute("data-theme") ? "dark" : "light";
-    applyTheme(t), storeValue(THEME_KEY, t), switchTab(state.activeTab);
+    applyTheme(t), storeValue(THEME_KEY, t);
+    if (configurationStatus === "ready") void switchTab(state.activeTab);
+    else renderConfigurationState();
   });
 }
 async function bootstrap() {
-  initI18n(), initThemeToggle(), state.activeTab = tabFromHash(), renderPills(), await Promise.all(state.servers.map(checkSession)), renderPills(), await switchTab(state.activeTab);
+  initI18n();
+  initThemeToggle();
+  state.activeTab = tabFromHash();
+  await loadRuntimeConfiguration();
 }
 // Start the dashboard.
 window.addEventListener("hashchange", () => {
   const t = tabFromHash();
   t !== state.activeTab && switchTab(t, !1);
-}), renderTabs(), bootstrap();
+});
+void bootstrap();
 
 </script>
 	</body>

@@ -3,10 +3,11 @@
 [English](README.md) | [Dansk](README.DA.md) | **Deutsch**
 
 Ein schlankes Dashboard zur gemeinsamen Verwaltung von zwei, drei oder vier
-Pi-hole-v6-Instanzen. Die Anwendung besteht aus einer einzigen eigenständigen
-`index.html` und benötigt weder Backend noch Datenbank oder Build-Prozess.
-Der Browser kommuniziert über einen nginx-Reverse-Proxy direkt mit den
-REST-APIs der aktiven Pi-hole-Instanzen.
+Pi-hole-v6-Instanzen. Die Oberfläche bleibt eine einzelne `index.html` ohne
+Anwendungsbackend, Datenbank oder Frontend-Build-Prozess. Die Instanzen werden
+in einer externen JSON-Datei konfiguriert. Ein kleines Python-Werkzeug erzeugt
+daraus die Browserkonfiguration und nginx-Proxy-Routen; unter Docker geschieht
+dies automatisch beim Start.
 
 Das Dashboard bietet:
 
@@ -33,11 +34,12 @@ einheitlich zu verwalten.
 Das Dashboard ist bewusst einfach aufgebaut:
 
 - Eine HTML-Datei mit HTML, CSS und JavaScript
-- Kein Backend
+- Kein Anwendungsbackend
 - Keine Datenbank
-- Kein Build-Prozess
-- Kein Node.js, PHP oder Python
-- Serveranzahl und Standardnamen in der HTML-Datei; eigene Namen und Anzeigeeinstellungen lokal im Browser
+- Kein Frontend-Build-Prozess
+- Python nur zur Prüfung und Erzeugung der Konfiguration bei der Installation oder beim Containerstart
+- Serveradressen, Anzahl, Standardnamen und Standardsprache in einer externen JSON-Datei
+- Eigene Namen und Anzeigeeinstellungen lokal im Browser
 - Direkte Kommunikation mit den Pi-hole-v6-APIs über nginx
 
 Chart.js wird als separate lokale Datei eingebunden und ausschließlich für
@@ -47,94 +49,134 @@ die Diagramme verwendet.
 
 - Zwei bis vier Pi-hole-Instanzen der Version **v6** mit REST-API. Das Dashboard
   funktioniert nicht mit der alten PHP-API von Pi-hole v5.
-- nginx oder ein vergleichbarer Reverse-Proxy vor dem Dashboard. Anfragen an
-  `/api1/...` und `/api2/...` sowie bei Bedarf `/api3/...` und `/api4/...`
-  müssen an die jeweilige Pi-hole-Instanz weitergeleitet werden. Dadurch
-  werden CORS-Probleme vermieden.
+- Docker mit Compose oder nginx und Python ab Version 3.10 für die manuelle Installation.
+- Netzwerkzugriff vom nginx des Dashboards auf alle konfigurierten Pi-hole-APIs.
 - Ein App-Passwort für jede Pi-hole-Instanz. Dieses wird in der jeweiligen
   Pi-hole-Verwaltungsoberfläche unter **Settings → API** erstellt.
 
-## Einrichtung
+## Einrichtung mit Docker
 
-1. Kopiere `index.html` in das von nginx bereitgestellte Verzeichnis, zum
-   Beispiel `/srv/web/pihole-dashboard/index.html`.
-2. Lade Chart.js in dasselbe Verzeichnis herunter:
+Führe im lokal ausgecheckten Repository zunächst Folgendes aus:
+
+```bash
+cp config/config.example.json config/config.json
+```
+
+Trage in `config/config.json` die Namen und API-Adressen deiner zwei bis vier
+Instanzen ein und starte anschließend das Dashboard:
+
+```bash
+docker compose up --build -d
+docker compose logs dashboard
+```
+
+Öffne **http://localhost:8080** und melde dich mit dem jeweiligen App-Passwort
+bei jeder aktiven Pi-hole-Instanz an. Compose bindet den Port standardmäßig
+nur an die Loopback-Adresse des Docker-Hosts. Verwende einen HTTPS-Reverse-Proxy
+auf diesem Host oder passe die Portbindung in `compose.yaml` bewusst an,
+wenn das Dashboard direkt im lokalen Netzwerk erreichbar sein soll.
+[nginx.conf.DE.example](nginx.conf.DE.example) zeigt einen optionalen
+vorgeschalteten HTTPS-Proxy.
+
+Das Verzeichnis `./config` wird unter `/config` schreibgeschützt eingebunden.
+Beim Start prüft der Container `/config/config.json`, erzeugt beide
+Konfigurationen und prüft nginx, bevor der Dienst startet. Bei fehlender oder
+ungültiger Konfiguration bricht der Start ab. Chart.js ist im Image enthalten;
+beim Start werden keine externen Dateien heruntergeladen.
+
+Starte den Container nach Änderungen an der Konfiguration neu und lade den
+Dashboard-Tab erneut:
+
+```bash
+docker compose restart dashboard
+```
+
+## Manuelle Einrichtung mit nginx
+
+1. Kopiere `index.html` in das Webverzeichnis, beispielsweise
+   `/srv/web/pihole-dashboard/index.html`, und lade Chart.js daneben herunter:
 
    ```bash
-   cd /srv/web/pihole-dashboard
-   curl -o chart.umd.min.js https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js
+   curl --fail --location -o /srv/web/pihole-dashboard/chart.umd.min.js \
+     https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js
    ```
 
-3. Übernimm `nginx.conf.DE.example` in deine nginx-Konfiguration.
-4. Passe Domain, Pi-hole-Adressen, Zertifikatspfade und Webverzeichnis an.
-   Setze `DEFAULT_SERVER_COUNT` in `index.html` auf `2`, `3` oder `4`.
-   Im nginx-Beispiel sind `/api1/` und `/api2/` standardmäßig aktiv.
-   Entferne bei drei Instanzen die Kommentarzeichen vor dem gesamten
-   `/api3/`-Block und passe seine Adresse an. Aktiviere bei vier Instanzen
-   zusätzlich den `/api4/`-Block und passe auch dessen Adresse an.
-5. Prüfe die Konfiguration und lade nginx neu:
+2. Kopiere [config/config.example.json](config/config.example.json) an einen
+   privaten Speicherort wie `/etc/dobbelt-pi-hole/config.json` und passe Namen
+   und API-Adressen an. Diese Quelldatei gehört außerhalb des Webverzeichnisses.
+3. Erzeuge die öffentliche Konfiguration und die nginx-Routen aus derselben Datei:
+
+   ```bash
+   python3 tools/render_config.py \
+     --config /etc/dobbelt-pi-hole/config.json \
+     --output-dir /etc/nginx/dobbelt-pi-hole \
+     --web-root /srv/web/pihole-dashboard \
+     --listen-address 127.0.0.1
+   ```
+
+4. Ergänze im vorhandenen `http`-Block von nginx die Zeile
+   `include /etc/nginx/dobbelt-pi-hole/nginx.conf;`. Der erzeugte Server lauscht
+   auf `127.0.0.1:8080`. [nginx.conf.DE.example](nginx.conf.DE.example) dient bei Bedarf
+   als vorgeschalteter HTTPS-Proxy; passe Domain und Zertifikatspfade an.
+5. Prüfe die Konfiguration und lade nginx neu. Öffne anschließend das Dashboard
+   und melde dich an:
 
    ```bash
    nginx -t && systemctl reload nginx
    ```
 
-6. Öffne die Dashboard-URL und melde dich mit den jeweiligen App-Passwörtern
-   bei allen aktiven Pi-hole-Instanzen an.
+Führe nach Änderungen an der JSON-Datei den Generator erneut aus und lade
+nginx neu. Die [Konfigurationsanleitung](docs/CONFIGURATION.md) (auf Englisch)
+erläutert alle Felder, TLS, Dateiberechtigungen und die Migration älterer Installationen.
 
 ## Serveranzahl und Namen
 
-Die Anzahl der aktiven Pi-hole-Instanzen wird **ausschließlich in `index.html`**
-festgelegt:
+**`config.json` ist die einzige Quelle für die Instanzkonfiguration.** Das Array
+`servers` enthält zwei, drei oder vier Objekte mit einer festen `id` (`"1"` bis
+`"4"`), `label` und `apiUrl`. Seine Länge bestimmt die Anzahl der Server,
+seine Reihenfolge die Anzeigereihenfolge. Für HTTPS-Verbindungen zu Pi-hole
+ist `verifyTls` standardmäßig `true`. Siehe
+[Beispieldatei](config/config.example.json) und [JSON-Schema](config/config.schema.json).
 
-```js
-const DEFAULT_SERVER_COUNT = 2; // 2, 3 oder 4
-```
+Die Serverfarben sind an die IDs gebunden: Blau, Gelb, Violett und Orange.
+Das Layout passt sich an die Serveranzahl und Bildschirmbreite an, bis zu
+maximal 1900 Pixeln Seitenbreite. Die API-Routen werden automatisch erzeugt;
+es gibt keine zweite Liste von Pi-hole-Adressen in nginx oder HTML zu pflegen.
 
-Es werden die ersten zwei, drei oder vier Einträge aus `DEFAULT_SERVERS`
-verwendet. Die API-Pfade lauten `/api1`, `/api2`, `/api3` und `/api4`.
-Konfiguriere in nginx für jede aktive Instanz eine entsprechende
-Proxy-Weiterleitung. Die tatsächlichen Hostnamen oder IP-Adressen der
-Pi-hole-Instanzen werden in nginx eingetragen, nicht in den Einstellungen
-des Browsers.
+Namen lassen sich außerdem unter **Einstellungen** ändern. Sie werden im
+`localStorage` des Browsers gespeichert und ersetzen dort die konfigurierten
+Standardnamen. **Standardnamen wiederherstellen** übernimmt die aktuellen
+Vorgaben aus der Datei. Anzahl und Adressen der Instanzen werden in der
+JSON-Datei verwaltet. Eine Weboberfläche zum Bearbeiten dieser zentralen
+Konfiguration ist für eine spätere Version geplant.
 
-Die Standardnamen für alle Browser werden über `label` in `DEFAULT_SERVERS`
-festgelegt:
-
-```js
-const DEFAULT_SERVERS = [
-    { id: "1", label: "Pi-hole 1", base: "/api1", color: "c-1", chip: "s1" },
-    { id: "2", label: "Pi-hole 2", base: "/api2", color: "c-2", chip: "s2" },
-    { id: "3", label: "Pi-hole 3", base: "/api3", color: "c-3", chip: "s3" },
-    { id: "4", label: "Pi-hole 4", base: "/api4", color: "c-4", chip: "s4" },
-];
-```
-
-Die Serverfarben sind in dieser Reihenfolge Blau, Gelb, Violett und Orange.
-Das Layout passt sich an die konfigurierte Serveranzahl und die Bildschirmbreite
-an. Die maximale Seitenbreite beträgt 1900 Pixel.
-
-Die Namen der aktiven Instanzen lassen sich auch unter **Einstellungen**
-ändern. Diese Namen werden im `localStorage` des Browsers gespeichert und
-ersetzen dort die Standardnamen aus der Datei. Serveranzahl und API-Pfade
-lassen sich unter Einstellungen nicht ändern. Änderungen der Standardnamen
-in der Datei überschreiben keine lokal gespeicherten Namen.
+Beim Upgrade von v1.3.007 oder älter überträgst du die Instanzangaben aus HTML
+und nginx in die JSON-Datei und ersetzt die bisherigen API-Proxy-Blöcke durch
+die erzeugte Konfiguration. Vorhandene lokale Anzeigenamen werden übernommen;
+pro Instanz ist jedoch eine **einmalige erneute Anmeldung** erforderlich,
+weil Sitzungen jetzt an das konfigurierte API-Ziel gebunden sind. Ändert sich
+später eine API-Adresse, meldet ein alter Tab die Konfigurationsänderung und
+muss vor weiteren Anfragen neu geladen werden. Umbenennen oder Umsortieren
+derselben Instanzen ändert ihre API-Identität nicht.
 
 ## Sprachen
 
 Die Benutzeroberfläche ist auf **English**, **Dansk** und **Deutsch**
 verfügbar. Die Sprachauswahl oben im Dashboard stellt die Oberfläche sofort
 um, einschließlich Dialogtexten, dynamischen Meldungen, Tabellen und
-Diagramme. Zahlen, Prozentwerte, Datum und Uhrzeit werden entsprechend der
+Diagrammen. Zahlen, Prozentwerte, Datum und Uhrzeit werden entsprechend der
 ausgewählten Sprache formatiert.
 
 Beim Öffnen wird die Sprache in dieser Reihenfolge ermittelt:
 
 1. Eine unterstützte Sprache, die zuvor im Browser ausgewählt und im
    `localStorage` gespeichert wurde.
-2. Die erste unterstützte Sprache aus der nach Präferenz sortierten
+2. Die konfigurierte `defaultLanguage`, sofern sie `da`, `en` oder `de` ist.
+   Der Standardwert `auto` führt weiter zur Sprachauswahl des Browsers.
+3. Die erste unterstützte Sprache aus der nach Präferenz sortierten
    Sprachliste des Browsers. Regionale Varianten wie `de-DE`, `de-AT`,
    `en-GB` und `da-DK` werden unterstützt.
-3. Englisch, falls keine unterstützte Sprache gefunden wird.
+4. Englisch, falls keine unterstützte Sprache gefunden wird.
 
 Die Übersetzungen verwenden feste Nachrichtenschlüssel und benannte
 Parameter in vollständigen `en`-, `da`- und `de`-Sprachkatalogen direkt in
@@ -162,8 +204,8 @@ Sprachen verfügbar:
 - Nicht vertrauenswürdige Werte wie Clientnamen, Domains und Kommentare
   werden vor der Anzeige maskiert.
 - JavaScript ist direkt in die HTML-Datei eingebettet. Das begrenzt, wie
-  restriktiv eine Content Security Policy sein kann. Weitere Hinweise stehen
-  in `nginx.conf.DE.example`.
+  restriktiv eine Content Security Policy sein kann. Die erzeugte nginx-Konfiguration
+  enthält eine Richtlinie für die eingebetteten Skripte und die lokale Chart.js-Datei.
 - Beim Betrieb auf einem Synology NAS kann ein DSM-Zugriffssteuerungsprofil
   den Zugriff auf bestimmte IP-Adressen oder lokale Netzwerke beschränken.
 
@@ -175,11 +217,8 @@ direkt aus dem Internet erreichbar sein.
 - **v1.1.005:** Vollständige dänische und englische Oberfläche und Dokumentation
 - **v1.2.006:** Unterstützung für zwei, drei oder vier Pi-hole-Instanzen
 - **v1.3.007:** Schlüsselbasierte Mehrsprachigkeit mit vollständiger dänischer, englischer und deutscher Oberfläche und Dokumentation
-- **v1.4.xxx:** Docker-Image und vereinfachte Installation
-
-Das Dashboard unterstützt zwei bis vier aktive Instanzen. Zusätzliche
-Instanzen benötigen sowohl die passende Serveranzahl in `index.html` als
-auch eine entsprechende Proxy-Weiterleitung in nginx.
+- **v1.4.008:** Externe JSON-Konfiguration, erzeugte API-Routen und Docker-Image
+- **Geplant:** Weboberfläche zum Bearbeiten der zentralen Instanzkonfiguration
 
 ## Mitwirken
 
@@ -203,6 +242,7 @@ Pi-hole v6 aktualisiert.
 Das Projekt steht unter der MIT-Lizenz und darf gemäß deren Bedingungen
 verwendet, kopiert, verändert und weiterverbreitet werden. Siehe `LICENSE`.
 
-Chart.js ist nicht enthalten und muss wie in der Einrichtungsanleitung
-beschrieben separat heruntergeladen werden. Chart.js ist ein unabhängiges
-Drittanbieterprojekt mit einer eigenen Lizenz.
+Das Docker-Image enthält Chart.js 4.4.1 und dessen MIT-Lizenz unter
+`/usr/share/licenses/chart.js/LICENSE`. Bei manueller Installation wird Chart.js
+wie oben beschrieben separat heruntergeladen. Chart.js ist ein unabhängiges
+Drittanbieterprojekt.

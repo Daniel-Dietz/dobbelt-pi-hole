@@ -203,7 +203,7 @@ test("supported language metadata contains native labels and formatting locales"
   assert.match(app.read("APP_VERSION"), /^\d+\.\d+\.\d+$/u);
 });
 
-test("language resolution honors saved preferences, regional tags and browser order", () => {
+test("language resolution honors user preference, configured defaults and regional browser order", () => {
   const app = loadApp();
   for (const [input, expected] of [["da-DK", "da"], ["DE-at", "de"], [" de-CH ", "de"], ["en-GB", "en"], ["en_US", "en"]]) {
     assert.equal(app.read(`normalizeLanguage(${JSON.stringify(input)})`), expected);
@@ -219,13 +219,98 @@ test("language resolution honors saved preferences, regional tags and browser or
     [null, ["en-US", "de-DE"], "en"],
     ["fr-FR", ["ja-JP", "th-TH"], "en"],
     [null, [], "en"],
-    [null, null, "en"]
+    [null, null, "en"],
+    ["de-DE", ["da-DK"], "de", "en"],
+    [null, ["de-DE"], "da", "da"],
+    ["unsupported", ["de-DE"], "en", "en"],
+    [null, ["de-CH"], "de", "auto"]
   ];
-  for (const [saved, languages, expected] of cases) {
-    assert.equal(app.read(`resolveLanguage(${JSON.stringify(saved)}, ${JSON.stringify(languages)})`), expected);
+  for (const [saved, languages, expected, configured = "auto"] of cases) {
+    assert.equal(app.read(`resolveLanguage(${JSON.stringify(saved)}, ${JSON.stringify(languages)}, ${JSON.stringify(configured)})`), expected);
   }
   assert.equal(loadApp({ saved: "de-AT", languages: ["en-GB"] }).read("currentLanguage"), "de");
   assert.equal(loadApp({ saved: "invalid", languages: ["fr-FR", "da-DK"] }).read("currentLanguage"), "da");
+});
+
+function publicConfig(count = 2, defaultLanguage = "auto") {
+  return { version: 1, defaultLanguage, servers: Array.from({ length: count }, (_, index) => {
+    const id = String(index + 1);
+    return { id, label: "Configured Pi-hole " + id, base: "/api" + id + "/" + id.repeat(64) };
+  }) };
+}
+
+test("runtime configuration validates the supported count and derives display metadata without mutation", () => {
+  const app = loadApp();
+  for (const count of [2, 3, 4]) for (const defaultLanguage of ["auto", "da", "en", "de"]) {
+    const input = publicConfig(count, defaultLanguage);
+    input.servers.reverse();
+    app.context.testConfig = structuredClone(input);
+    assert.deepEqual(app.value("validateRuntimeConfig(testConfig)"), {
+      ...input, servers: input.servers.map(server => ({ ...server, color: "c-" + server.id, chip: "s" + server.id }))
+    });
+    assert.deepEqual(app.context.testConfig, input, "Validation must leave the caller's editable data unchanged");
+  }
+  const input = publicConfig();
+  delete input.defaultLanguage;
+  input.servers[0].label = "  Grüße <DNS> & {server}  ";
+  input.servers[1].label = "😀".repeat(120);
+  app.context.testConfig = input;
+  const normalized = app.value("validateRuntimeConfig(testConfig)");
+  assert.equal(normalized.defaultLanguage, "auto");
+  assert.equal(normalized.servers[0].label, "Grüße <DNS> & {server}");
+  assert.equal(normalized.servers[1].label, input.servers[1].label, "The label limit counts Unicode characters");
+});
+
+test("invalid runtime documents and unsafe endpoint forms are rejected in full", () => {
+  const app = loadApp();
+  const changed = mutate => { const input = publicConfig(); mutate(input); return input; };
+  const cases = [
+    ["null document", null], ["array document", []], ["string document", "config.json"],
+    ["missing version", changed(config => { delete config.version; })],
+    ["string version", changed(config => { config.version = "1"; })],
+    ["future version", changed(config => { config.version = 2; })],
+    ["unexpected top-level field", changed(config => { config.count = 4; })],
+    ["unsupported default language", changed(config => { config.defaultLanguage = "fr"; })],
+    ["noncanonical configured language", changed(config => { config.defaultLanguage = "de-DE"; })],
+    ["null configured language", changed(config => { config.defaultLanguage = null; })],
+    ["missing servers", changed(config => { delete config.servers; })],
+    ["nonarray servers", changed(config => { config.servers = {}; })],
+    ["empty servers", changed(config => { config.servers = []; })],
+    ["one server", publicConfig(1)], ["five servers", publicConfig(5)],
+    ["null server", changed(config => { config.servers[0] = null; })],
+    ["array server", changed(config => { config.servers[0] = []; })],
+    ["unexpected server field", changed(config => { config.servers[0].upstream_url = "http://private.invalid/api/"; })],
+    ["missing ID", changed(config => { delete config.servers[0].id; })],
+    ["numeric ID", changed(config => { config.servers[0].id = 1; })],
+    ["unknown ID", changed(config => { config.servers[0].id = "5"; })],
+    ["noncanonical ID", changed(config => { config.servers[0].id = "01"; })],
+    ["duplicate IDs", changed(config => { config.servers[1].id = "1"; })],
+    ["duplicate targets", changed(config => { config.servers[1].base = config.servers[0].base; })],
+    ["missing label", changed(config => { delete config.servers[0].label; })],
+    ["nontext label", changed(config => { config.servers[0].label = 42; })],
+    ["blank label", changed(config => { config.servers[0].label = "  "; })],
+    ["oversized label", changed(config => { config.servers[0].label = "x".repeat(121); })],
+    ["multiline label", changed(config => { config.servers[0].label = "First\nSecond"; })],
+    ["control character label", changed(config => { config.servers[0].label = "DNS\u0000"; })],
+    ["delete character label", changed(config => { config.servers[0].label = "DNS\u007f"; })],
+    ["C1 control character label", changed(config => { config.servers[0].label = "DNS\u0085"; })],
+    ["lone high surrogate label", changed(config => { config.servers[0].label = "DNS\ud800"; })],
+    ["lone low surrogate label", changed(config => { config.servers[0].label = "DNS\udc00"; })],
+    ["missing base", changed(config => { delete config.servers[0].base; })],
+    ["nontext base", changed(config => { config.servers[0].base = 42; })],
+  ];
+  for (const base of [
+    "/api1", "/api1/", "/api1/" + "a".repeat(63), "/api1/" + "a".repeat(65),
+    "/api1/" + "A".repeat(64), "/api1/" + "g".repeat(64), "/api2/" + "a".repeat(64),
+    "/api1/" + "a".repeat(64) + "/", "/api1/" + "a".repeat(64) + "?target=other",
+    "/api1/" + "a".repeat(64) + "#other", "https://private.invalid/api1/" + "a".repeat(64),
+    "//private.invalid/api1/" + "a".repeat(64), "/api1/../api2/" + "a".repeat(64),
+    "/api1/%2e%2e/" + "a".repeat(64), "/api1\\" + "a".repeat(64),
+  ]) cases.push(["unsafe base " + base, changed(config => { config.servers[0].base = base; })]);
+  for (const [description, input] of cases) {
+    app.context.testConfig = input;
+    assert.throws(() => app.read("validateRuntimeConfig(testConfig)"), description);
+  }
 });
 
 test("missing translations fall back to English, then the literal key", () => {

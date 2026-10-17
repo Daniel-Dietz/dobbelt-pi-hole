@@ -1,111 +1,42 @@
-# ------------------------------------------------------------------
-# Dobbelt Pi-hole-kontrolpanel — nginx reverse-proxy eksempel
+# Dobbelt Pi-hole-kontrolpanel: valgfri HTTPS-proxy (i nginx' http-kontekst).
+# Selve kontrolpanelet kører på 127.0.0.1:8080 via Docker Compose eller en
+# konfiguration dannet med tools/render_config.py --listen-address 127.0.0.1.
+# Tilpas dns.example.com og stierne til certifikatet og den private nøgle.
 #
-# Hvad skal tilpasses:
-#   dns.eksempel.dk         -> domænenavnet man tilgår dette værktøj.
-#   pihole1.eksempel.dk     -> værtsnavn eller IP-adresse til din første Pi-hole-installation
-#   pihole2.eksempel.dk     -> værtsnavn eller IP-adresse til din anden Pi-hole-installation
-#   pihole3.eksempel.dk     -> tredje Pi-hole, hvis DEFAULT_SERVER_COUNT er 3 eller 4
-#   pihole4.eksempel.dk     -> fjerde Pi-hole, hvis DEFAULT_SERVER_COUNT er 4
-#   /etc/nginx/ssl/...      -> dit SSL certifikat og privat nøgle.
-#   /srv/web/dobbeltpihole  -> hvor du placerer index.html og chart.umd.min.js
+# Angiv hver Pi-hole én gang i den private config.json. Værktøjet danner de
+# tilhørende API-stier med fingeraftryk samt browserens offentlige konfiguration.
+# Tilføj ikke separate /api1.../api4-proxyer her. Se docs/CONFIGURATION.md.
 #
-# Hvorfor en proxy til dette: Kontrolpanelets JavaScript henter data fra
-# /api1/... til /api4/... som relative stier på samme domæne.
-# nginx videresender til de tilsvarende Pi-hole, så man undgår CORS.
-# Antallet sættes kun med DEFAULT_SERVER_COUNT i index.html (2, 3 eller 4).
-# De første to proxyer er aktive; aktiver de kommenterede blokke efter behov.
-# Pi-holes CORS-håndtering er ikke konsekvent på tværs af alle endpoints.
-# Derfor er dette den enkleste måde at få en stabil løsning på.
-# ------------------------------------------------------------------
+# Behold proxy_pass uden URI-suffiks eller omskrivning, så kodede stier og query-
+# parametre når frem uændret. Deaktiveret buffering understøtter Gravity-output.
+# Læg eventuel adgangskontrol på denne proxy, og bind port 8080 til loopback.
+# Den genererede server leverer CSP og sikkerhedsheadere; de indlejrede scripts
+# kræver script-src 'unsafe-inline'. Certifikatkontrol ved forbindelse til
+# Pi-hole angives separat med verifyTls i den centrale JSON-fil.
 
 server {
-    listen 443 ssl http2;
-    server_name dns.eksempel.dk;
+    listen 443 ssl;
+    server_name dns.example.com;
 
-    ssl_certificate     /etc/nginx/ssl/dns.eksempel.dk/fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/dns.eksempel.dk/privkey.pem;
+    ssl_certificate     /etc/nginx/ssl/dns.example.com/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/dns.example.com/privkey.pem;
 
-    root /srv/web/dobbeltpihole;
-    index index.html;
-    autoindex off;
-
-    # --- Grundlæggende sikkerhedsheadere ------------------------------
-    # Bemærkning om script-src 'unsafe-inline': Kontrolpanelet leveres som
-    # én selvstændig HTML-fil med JavaScript direkte i filen. Browseren skal
-    # derfor have tilladelse til at afvikle inline JavaScript. Det betyder,
-    # at denne CSP ikke blokerer et indsat inline <script>, hvis et sådant
-    # script skulle slippe igennem uden korrekt neutralisering et sted i
-    # programmet. Politikken begrænser primært, hvilke kilder der må
-    # kommunikeres med, indlejres eller indlæses elementer fra.
-    #
-    # Hvis kontrolpanelet skal deles med andre og ikke kun bruges af dig selv,
-    # kan <script>-blokken flyttes til en separat app.js-fil. Derefter kan
-    # 'unsafe-inline' fjernes fra script-src, hvilket lukker dette hul.
-    # Ved personlig brug er risikoen begrænset, da det kun er dig selv,
-    # der vil kunne blive berørt.
-    # Hvis kontrolpanelet afvikles på en Synology NAS, kan der desuden
-    # oprettes og tilknyttes en "Profil til adgangskontrol" i DSM.
-    # Profilen kan begrænse adgangen til bestemte IP-adresser eller lokale
-    # netværk, så kontrolpanelet ikke er tilgængeligt for uvedkommende.
-
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self';" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Frame-Options "DENY" always;
-    add_header Referrer-Policy "same-origin" always;
-
-    # --- Reverse proxy til 2–4 Pi-hole installationer ---------------------------
-    location /api1/ {
-        proxy_pass https://pihole1.eksempel.dk/api/;
-        proxy_ssl_verify off;              # Fjern hvis pihole1 har et offentligt (ikke selv-signeret) certifikat
-        proxy_set_header Host pihole1.eksempel.dk;
-        proxy_ssl_server_name on;
-        proxy_connect_timeout 10s;
-        proxy_read_timeout 30s;
-    }
-
-    location /api2/ {
-        proxy_pass https://pihole2.eksempel.dk/api/;
-        proxy_ssl_verify off;              # Fjern hvis pihole2 har et offentligt (ikke selv-signeret) certifikat
-        proxy_set_header Host pihole2.eksempel.dk;
-        proxy_ssl_server_name on;
-        proxy_connect_timeout 10s;
-        proxy_read_timeout 30s;
-    }
-
-    # Valgfri Pi-hole 3: fjern kommentartegnene fra hele blokken og tilpas adressen.
-    # location /api3/ {
-    #     proxy_pass https://pihole3.eksempel.dk/api/;
-    #     proxy_ssl_verify off;              # Fjern hvis pihole3 har et offentligt (ikke selv-signeret) certifikat
-    #     proxy_set_header Host pihole3.eksempel.dk;
-    #     proxy_ssl_server_name on;
-    #     proxy_connect_timeout 10s;
-    #     proxy_read_timeout 30s;
-    # }
-
-    # Valgfri Pi-hole 4: fjern kommentartegnene fra hele blokken og tilpas adressen.
-    # location /api4/ {
-    #     proxy_pass https://pihole4.eksempel.dk/api/;
-    #     proxy_ssl_verify off;              # Fjern hvis pihole4 har et offentligt (ikke selv-signeret) certifikat
-    #     proxy_set_header Host pihole4.eksempel.dk;
-    #     proxy_ssl_server_name on;
-    #     proxy_connect_timeout 10s;
-    #     proxy_read_timeout 30s;
-    # }
-
-    # --- Selve kontrolpanelet ------------------------------------------
     location / {
-        try_files $uri $uri/ =404;
-    }
-
-    location ~ /\. {
-        deny all;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 300s;
     }
 }
 
-# Valgfri: Omdiriger http til https
 server {
     listen 80;
-    server_name dns.eksempel.dk;
+    server_name dns.example.com;
     return 301 https://$host$request_uri;
 }

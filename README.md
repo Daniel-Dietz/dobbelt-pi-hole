@@ -4,9 +4,10 @@
 
 
 A lightweight dashboard for managing two, three or four Pi-hole v6 instances from one
-interface. The solution consists of a single self-contained `index.html` with
-no backend, database or build process. The browser communicates directly with
-the active Pi-hole REST APIs through an nginx reverse proxy.
+interface. The application remains a single `index.html`, with no application
+backend, database or frontend build process. One external JSON file configures
+the instances; a small Python tool generates the browser configuration and
+nginx proxy routes from it. Docker runs this tool automatically at startup.
 
 The dashboard includes:
 
@@ -32,11 +33,12 @@ the relevant settings consistently from a single dashboard.
 The dashboard is deliberately simple:
 
 - One HTML file containing HTML, CSS and JavaScript
-- No backend
+- No application backend
 - No database
-- No build process
-- No Node.js, PHP or Python
-- Server count and default names configured in the HTML file; custom names and interface preferences stored locally in the browser
+- No frontend build process
+- Python is used only to validate and generate configuration at deployment or container startup
+- Server addresses, count, default names and default language configured in one external JSON file
+- Custom names and interface preferences stored locally in the browser
 - Direct communication with the Pi-hole v6 APIs through nginx
 
 Chart.js is loaded as a separate local file and is only used for charts.
@@ -45,70 +47,108 @@ Chart.js is loaded as a separate local file and is only used for charts.
 
 - Two to four Pi-hole **v6** instances with the REST API. The dashboard does not work
   with the old Pi-hole v5 PHP API.
-- nginx or a similar reverse proxy in front of the dashboard. Requests to
-  `/api1/...` and `/api2/...`, plus `/api3/...` and `/api4/...` when used,
-  must be forwarded to their corresponding Pi-hole instances. This avoids CORS issues.
+- Docker with Compose, or nginx and Python 3.10 or later for a manual installation.
+- Network access from the dashboard's nginx to each configured Pi-hole API.
 - An app password for each Pi-hole. Create it under **Settings → API** in each
   Pi-hole administration interface.
 
-## Setup
+## Docker setup
 
-1. Copy `index.html` to the directory served by nginx, for example
-   `/srv/web/pihole-dashboard/index.html`.
-2. Download Chart.js to the same directory:
+From a checkout of this repository:
+
+```bash
+cp config/config.example.json config/config.json
+```
+
+Edit `config/config.json` with the labels and API URLs of your two to four
+instances, then start the dashboard:
+
+```bash
+docker compose up --build -d
+docker compose logs dashboard
+```
+
+Open **http://localhost:8080** and log in to each active Pi-hole with its app
+password. Compose binds to the Docker host's loopback address by default.
+Use an HTTPS reverse proxy on that host, or deliberately change the port binding
+in `compose.yaml` if the dashboard should be reachable on your LAN.
+[nginx.conf.example](nginx.conf.example) is an optional HTTPS front proxy.
+
+The `./config` directory is mounted read-only at `/config`. At startup, the
+container validates `/config/config.json`, generates both configurations and
+checks nginx before starting it. A missing or invalid configuration stops
+startup. Chart.js is bundled in the image; startup requires no asset download.
+
+After editing the configuration, apply it and reload the dashboard tab:
+
+```bash
+docker compose restart dashboard
+```
+
+## Manual nginx setup
+
+1. Copy `index.html` to your web directory, for example
+   `/srv/web/pihole-dashboard/index.html`, and download Chart.js beside it:
 
    ```bash
-   cd /srv/web/pihole-dashboard
-   curl -o chart.umd.min.js https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js
+   curl --fail --location -o /srv/web/pihole-dashboard/chart.umd.min.js \
+     https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js
    ```
 
-3. Copy `nginx.conf.example` to your nginx configuration.
-4. Adjust the domain, Pi-hole addresses, certificate paths and web root.
-   Set `DEFAULT_SERVER_COUNT` in `index.html` to `2`, `3` or `4`. The nginx
-   example enables `/api1/` and `/api2/` by default. Uncomment and adjust the
-   `/api3/` block for three instances, and both `/api3/` and `/api4/` for four.
-5. Test and reload nginx:
+2. Copy [config/config.example.json](config/config.example.json) to a private
+   location such as `/etc/dobbelt-pi-hole/config.json` and edit its instance
+   labels and API URLs. Keep this source file outside the web directory.
+3. Generate the public configuration and nginx routes from that same file:
+
+   ```bash
+   python3 tools/render_config.py \
+     --config /etc/dobbelt-pi-hole/config.json \
+     --output-dir /etc/nginx/dobbelt-pi-hole \
+     --web-root /srv/web/pihole-dashboard \
+     --listen-address 127.0.0.1
+   ```
+
+4. Add `include /etc/nginx/dobbelt-pi-hole/nginx.conf;` inside nginx's existing
+   `http` block. The generated server listens on `127.0.0.1:8080`. Use
+   [nginx.conf.example](nginx.conf.example) for an optional HTTPS front proxy,
+   adjusting its domain and certificate paths.
+5. Test and reload nginx, then open the dashboard and log in:
 
    ```bash
    nginx -t && systemctl reload nginx
    ```
 
-6. Open the dashboard URL and log in to each active Pi-hole instance with their app
-   passwords.
+Run the generator and reload nginx again after changing the JSON file.
+The [configuration guide](docs/CONFIGURATION.md) explains all fields, TLS,
+file permissions and migration from earlier versions.
 
 ## Server count and names
 
-The number of active Pi-hole instances is set **only in `index.html`**:
+**`config.json` is the single source of instance configuration.** The `servers`
+array contains two, three or four objects, each with a stable `id` (`"1"` to
+`"4"`), `label` and `apiUrl`. Its length determines the server count and its
+order determines the display order. `verifyTls` defaults to `true` for HTTPS
+upstreams. See the [example](config/config.example.json) and
+[JSON schema](config/config.schema.json).
 
-```js
-const DEFAULT_SERVER_COUNT = 2; // 2, 3 or 4
-```
+Server colours remain tied to their IDs: blue, yellow, purple and orange.
+The layout adapts to the configured number and the screen width, up to a
+maximum page width of 1900 px. API routes are generated automatically;
+there is no second list of Pi-hole addresses to maintain in nginx or HTML.
 
-The first two, three or four entries in `DEFAULT_SERVERS` are used. The API
-paths are `/api1`, `/api2`, `/api3` and `/api4`; configure nginx for each active
-instance. Actual Pi-hole host names or IP addresses belong in nginx, not in
-the browser settings.
+Names can also be changed under **Settings**. These names are saved in the
+browser's `localStorage` and override the configured names in that browser.
+Use **Reset names to defaults** to restore the current file's defaults.
+Instance count and addresses are managed in the JSON file. A web interface for
+editing that central configuration is planned for a later release.
 
-Default display names for all clients are set using `label` in `DEFAULT_SERVERS`:
-
-```js
-const DEFAULT_SERVERS = [
-    { id: "1", label: "Pi-hole 1", base: "/api1", color: "c-1", chip: "s1" },
-    { id: "2", label: "Pi-hole 2", base: "/api2", color: "c-2", chip: "s2" },
-    { id: "3", label: "Pi-hole 3", base: "/api3", color: "c-3", chip: "s3" },
-    { id: "4", label: "Pi-hole 4", base: "/api4", color: "c-4", chip: "s4" },
-];
-```
-
-Server colours are blue, yellow, purple and orange, respectively. The layout
-adapts to the configured number and the screen width, up to a maximum page
-width of 1900 px.
-
-Names can also be changed under **Settings** for the active instances. These
-names are saved in the browser's `localStorage` and override the file's default
-names in that browser. The server count and API paths cannot be changed under
-Settings. Changing the defaults in the file does not overwrite locally saved
-names.
+When upgrading from v1.3.007 or earlier, move your HTML and nginx instance
+settings into the JSON file and replace the old API proxy blocks with the
+generated configuration. Existing browser display names are migrated, but each
+instance requires a **one-time login** because sessions are now tied to the
+configured API destination. If an API URL changes later, an old tab receives a
+configuration-change message and must reload before sending further requests.
+Renaming or reordering the same instances does not change their API identities.
 
 ## Languages
 
@@ -121,9 +161,11 @@ The initial language is selected in this order:
 
 1. A supported language previously selected and saved in the browser's
    `localStorage`.
-2. The first supported language in the browser's ordered language preferences.
+2. The configured `defaultLanguage`, if set to `da`, `en` or `de`. The default
+   `auto` continues to browser preferences.
+3. The first supported language in the browser's ordered language preferences.
    Regional variants such as `de-DE`, `de-AT`, `en-GB` and `da-DK` are supported.
-3. English if no supported language is found.
+4. English if no supported language is found.
 
 Translations use stable message keys and named parameters in complete
 `en`, `da` and `de` catalogs embedded in `index.html`. Adding a language does
@@ -150,8 +192,8 @@ languages:
 - Untrusted values such as client names, domains and comments are escaped
   before being displayed.
 - JavaScript is embedded directly in the HTML file. This limits how restrictive
-  a Content Security Policy can be. See the comment in
-  `nginx.conf.example`.
+  a Content Security Policy can be. The generated nginx configuration includes
+  a policy compatible with the embedded scripts and local Chart.js file.
 - When hosting the dashboard on a Synology NAS, a DSM access control profile
   can restrict access to selected IP addresses or local networks.
 
@@ -163,10 +205,8 @@ access control in front of it.
 - **v1.1.005:** Complete Danish and English interfaces and documentation
 - **v1.2.006:** Support for two, three or four Pi-hole instances
 - **v1.3.007:** Key-based multilingual support with complete Danish, English and German interfaces and documentation
-- **v1.4.xxx:** Docker image and simplified installation
-
-The dashboard supports two to four active instances. Additional instances
-require both the matching server count in `index.html` and a proxy route in nginx.
+- **v1.4.008:** External JSON configuration, generated API routes and a Docker image
+- **Planned:** Web interface for editing the central instance configuration
 
 ## Contributing
 
@@ -188,6 +228,6 @@ Pi-hole v6 in 2026.
 The project is released under the MIT License and may be used, copied, modified
 and redistributed in accordance with the terms of the license. See `LICENSE`.
 
-Chart.js is not included and must be downloaded separately as described in the
-setup instructions. Chart.js is an independent third-party project with its
-own license.
+The Docker image bundles Chart.js 4.4.1 and its MIT license at
+`/usr/share/licenses/chart.js/LICENSE`. Manual installations download Chart.js
+separately as described above. Chart.js is an independent third-party project.
