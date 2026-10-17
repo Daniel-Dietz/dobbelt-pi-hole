@@ -2052,7 +2052,7 @@ for (const scenario of [
   { tab: 'clients', endpoint: '/clients', area: '#clientArea', add: '[data-add-client-server="2"]' },
   { tab: 'lists', endpoint: '/lists', area: '#listArea', add: '[data-add-list="2"]' },
   { tab: 'clients', endpoint: '/clients/_suggestions', area: '#suggArea', add: '[data-add-sugg]' }
-]) test(\`Issue #8: failed \${scenario.endpoint} read stays unknown instead of missing\`,
+]) test(`Issue #8: failed ${scenario.endpoint} read stays unknown instead of missing`,
   /** Check one failed instance read without suppressing confirmed records from a healthy peer. */
   async t => {
     const fixture = await openDashboard(t, { language: 'en' });
