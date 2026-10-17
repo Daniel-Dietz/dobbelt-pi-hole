@@ -2224,7 +2224,9 @@ for (const scenario of [
         }
         return route.fallback();
       });
-    await visit(page, scenario.tab);
+    // The usual visit() helper requires a table body, which correctly does not
+    // exist after HTTP 401: wait for the login forms instead.
+    await page.locator(`[data-tab="${scenario.tab}"]`).click();
     await page.waitForFunction(/** Require two usable login forms when all sessions have expired. */
       area => document.querySelector(area)?.querySelectorAll('[data-loginform]').length === 2, scenario.area);
     assert.equal(await page.locator(scenario.area + ' [data-loginpw]').count(), 2);

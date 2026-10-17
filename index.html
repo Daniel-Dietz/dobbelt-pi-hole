@@ -2017,8 +2017,8 @@ function mergeFormState(previous, current) {
 }
 
 /**
- * Record edits made while a language render is still populating the active tab.
- * Ignore unrelated controls and events from an obsolete render generation.
+ * Track user input/change revisions for current form fields and update the pending
+ * language snapshot only when its tab and render generation are still current.
  */
 function recordPendingFormEdit(event) {
   const element = event.target;
