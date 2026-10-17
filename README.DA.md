@@ -296,12 +296,14 @@ eksisterende filnavne bevares af hensyn til dokumentationslinks.
 
 ## Aktuelle driftsbegrænsninger
 
-- **Handlinger på tværs af installationer:** hver Pi-hole modtager sine egne
-  forespørgsler. Der er ingen fælles transaktion eller generel tilbageførsel
-  på tværs af alle mål. Nogle fejlslagne skrivehandlinger kan stadig give en
-  succesmeddelelse, og fejlslagne læsninger kan fremstå som manglende poster.
-  Kontrollér den faktiske tilstand på hver Pi-hole efter en fejl, før du prøver
-  igen; korrekte resultater og ukendte tilstande er beskrevet i
+- **Handlinger på tværs af installationer:** hver Pi-hole behandles
+  uafhængigt; der er ingen fælles transaktion eller automatisk tilbageførsel.
+  Domæner, lokal DNS, klienter og lister skelner mellem bekræftede ændringer,
+  afvisninger, ikke-forbundne mål og ukendte skriveresultater. Hvert mål læses
+  før en ændring. En mislykket læsning betyder ikke, at posten mangler, og
+  ufærdige resultater rydder ikke formularen. Efter et tabt svar skal den
+  aktuelle tilstand kontrolleres før et bevidst nyt forsøg; handlinger
+  gentages aldrig automatisk. Se
   [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8).
 - **Forespørgsler og browsertilstand:** generelle tidsgrænser for forespørgsler,
   beskyttelse mod kapløb ved indlæsning af forespørgselsloggen og tydeligere
