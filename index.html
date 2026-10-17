@@ -1040,7 +1040,8 @@ const I18N = {
     "queries.total.other": "{count} forespørgsler i alt for det valgte tidsrum.",
     "queries.truncated.one": "{count} forespørgsel hentet for det valgte tidsrum – der er muligvis flere end vist; indsnævr tidsrummet for et fuldstændigt resultat.",
     "queries.truncated.other": "{count} forespørgsler hentet for det valgte tidsrum – der er muligvis flere end vist; indsnævr tidsrummet for et fuldstændigt resultat.",
-        "multi.invalidRead": "Ufuldstændigt svar fra Pi-hole.",
+        "multi.conflict": "Modstridende regel findes allerede; kontrollér målserveren.",
+    "multi.invalidRead": "Ufuldstændigt svar fra Pi-hole.",
     "multi.unknown": "Ukendt",
     "multi.disconnected": "Ikke forbundet",
     "multi.unavailable": "Data kunne ikke hentes fra: {servers}. Posterne regnes ikke som manglende.",
@@ -1312,7 +1313,8 @@ const I18N = {
     "queries.total.other": "{count} queries in total for the selected time range.",
     "queries.truncated.one": "{count} query loaded for the selected time range – more queries may be available. Narrow the time range for complete results.",
     "queries.truncated.other": "{count} queries loaded for the selected time range – more queries may be available. Narrow the time range for complete results.",
-        "multi.invalidRead": "Incomplete response from Pi-hole.",
+        "multi.conflict": "A conflicting rule already exists; inspect the target instance.",
+    "multi.invalidRead": "Incomplete response from Pi-hole.",
     "multi.unknown": "Unknown",
     "multi.disconnected": "Not connected",
     "multi.unavailable": "Data unavailable from: {servers}. These records are not considered missing.",
@@ -1584,7 +1586,8 @@ const I18N = {
     "queries.total.other": "Insgesamt {count} Anfragen im gewählten Zeitraum.",
     "queries.truncated.one": "{count} Anfrage wurde für den gewählten Zeitraum geladen – möglicherweise sind weitere Anfragen vorhanden. Grenzen Sie den Zeitraum für ein vollständiges Ergebnis ein.",
     "queries.truncated.other": "{count} Anfragen wurden für den gewählten Zeitraum geladen – möglicherweise sind weitere Anfragen vorhanden. Grenzen Sie den Zeitraum für ein vollständiges Ergebnis ein.",
-        "multi.invalidRead": "Unvollständige Antwort von Pi-hole.",
+        "multi.conflict": "Es besteht bereits eine widersprüchliche Regel; Zielinstanz prüfen.",
+    "multi.invalidRead": "Unvollständige Antwort von Pi-hole.",
     "multi.unknown": "Unbekannt",
     "multi.disconnected": "Nicht verbunden",
     "multi.unavailable": "Daten nicht verfügbar von: {servers}. Diese Einträge gelten nicht als fehlend.",
@@ -4516,33 +4519,20 @@ async function renderClients(container, generation) {
       addButton.addEventListener("click", /** Copy a client to one connected instance, preserving a source record's group assignments. */ async () => {
         const targetServer = serverById(addButton.dataset.addClientServer);
         const client = clients[Number(addButton.dataset.clientRow)];
-        if (!targetServer.connected) {
-          toast(msg("clients.notLoggedIn", {
-            server: targetServer.label
-          }), "err");
+        const sourceRecord = Object.values(client.byServer)[0];
+        if (!sourceRecord || !Array.isArray(sourceRecord.groups) || !Object.hasOwn(sourceRecord, "comment")) {
+          toast(msg("multi.invalidRead"), "err");
           return;
         }
-        const sourceRecord = Object.values(client.byServer)[0] || {};
-        try {
-          await apiCall(targetServer, "/clients", {
-            method: "POST",
-            body: {
-              client: [client.client],
-              comment: client.comment,
-              groups: sourceRecord.groups || [0]
-            }
-          });
-          toast(msg("clients.added", {
-            server: targetServer.label
-          }), "ok");
-        } catch (error) {
-          clientReadStates.set(server.id, "unknown");
-          toast(msg("clients.requestError", {
-            server: targetServer.label,
-            error: error.message
-          }), "err");
-        }
-        loadClientData();
+        const outcomes = await performCheckedWrites(addButton, [targetServer], {
+          path: () => "/clients",
+          extract: response => requireCollection(response, "clients"),
+          isCurrent: (server, records) => records.some(record => String(record.client).toUpperCase() === client.client.toUpperCase()),
+          write: server => apiCall(server, "/clients", {
+            method: "POST", body: { client: [client.client], comment: sourceRecord.comment, groups: sourceRecord.groups }
+          })
+        });
+        if (outcomes && container.isConnected && generation === state.renderGen) loadClientData();
       });
     }
     for (const deleteButton of clientArea.querySelectorAll("[data-del-client-row]")) {
@@ -4627,33 +4617,17 @@ async function renderClients(container, generation) {
         const suggestionIndex = addButton.dataset.addSugg;
         const comment = addButton.closest("tr").querySelector(".sugg-name").value.trim();
         const targetServers = targetsFor(document.getElementById("targetSugg" + suggestionIndex));
-        for (const targetServer of targetServers) {
-          if (targetServer.connected) {
-            try {
-              await apiCall(targetServer, "/clients", {
-                method: "POST",
-                body: {
-                  client: [addButton.dataset.key],
-                  comment,
-                  groups: [0]
-                }
-              });
-              toast(msg("clients.added", {
-                server: targetServer.label
-              }), "ok");
-            } catch (error) {
-              toast(msg("clients.requestError", {
-                server: targetServer.label,
-                error: error.message
-              }), "err");
-            }
-          } else {
-            toast(msg("clients.notLoggedIn", {
-              server: targetServer.label
-            }), "err");
-          }
-        }
-        loadClientData();
+        const outcomes = await performCheckedWrites(addButton, targetServers, {
+          path: () => "/clients",
+          extract: response => requireCollection(response, "clients"),
+          isCurrent: (server, records) => records.some(record => String(record.client).toUpperCase() === addButton.dataset.key.toUpperCase()),
+          write: server => apiCall(server, "/clients", {
+            method: "POST",
+            body: { client: [addButton.dataset.key], comment, groups: [0] }
+          })
+        });
+        if (outcomes?.every(result => ["confirmed", "unchanged"].includes(result.status))
+          && container.isConnected && generation === state.renderGen) loadClientData();
       });
     }
     const previousPageButton = document.getElementById("suggPagePrev");
@@ -4943,31 +4917,18 @@ async function renderLists(container, generation) {
       for (const addButton of listArea.querySelectorAll("[data-add-list]")) {
         addButton.addEventListener("click", /** Add the selected list address, type and comment to one connected instance with default group zero. */ async () => {
           const targetServer = serverById(addButton.dataset.addList);
-          if (targetServer.connected) {
-            try {
-              await apiCall(targetServer, "/lists?type=" + encodeURIComponent(addButton.dataset.type), {
-                method: "POST",
-                body: {
-                  address: [addButton.dataset.url],
-                  comment: addButton.dataset.comment || "",
-                  groups: [0]
-                }
-              });
-              toast(msg("lists.added", {
-                server: targetServer.label
-              }), "ok");
-            } catch (error) {
-              toast(msg("lists.requestError", {
-                server: targetServer.label,
-                error: error.message
-              }), "err");
-            }
-            loadLists();
-          } else {
-            toast(msg("lists.notLoggedIn", {
-              server: targetServer.label
-            }), "err");
-          }
+          const listUrl = addButton.dataset.url;
+          const listType = addButton.dataset.type;
+          const outcomes = await performCheckedWrites(addButton, [targetServer], {
+            path: () => "/lists",
+            extract: response => requireCollection(response, "lists"),
+            isCurrent: (server, records) => records.some(record => record.address === listUrl && record.type === listType),
+            write: server => apiCall(server, "/lists?type=" + encodeURIComponent(listType), {
+              method: "POST",
+              body: { address: [listUrl], comment: addButton.dataset.comment || "", groups: [0] }
+            })
+          });
+          if (outcomes && container.isConnected && generation === state.renderGen) loadLists();
         });
       }
     } else {
