@@ -28,7 +28,33 @@ relevante indstillinger ens fra ét kontrolpanel.
 
 ![Pi-hole dashboard](images/dashboard.png)
 
-## Letvægt som udgangspunkt
+## Aktuel status og dokumentation
+
+**Gennemgået 2026-10-17:** den aktuelle applikationsversion er **1.5.009**.
+Ekstern konfiguration, Docker-installation, den native LXC-installer og
+beskyttelse mod API- og loginomdirigeringer er implementeret på `main`.
+[Udviklingsoversigten i #6](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/6)
+beskriver det resterende arbejde og dets acceptkriterier;
+[roadmap nedenfor](#roadmap) gengiver den samme rækkefølge.
+
+Installation kræver i øjeblikket en lokal kopi af kildekoden og, ved Docker,
+et lokalt bygget image. Versionerede udgivelsesfiler og offentliggjorte images
+er planlagt i [#17](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/17).
+Afprøvning og godkendelse af installation og gendannelse på en rigtig
+Proxmox-vært er fortsat åben i
+[#24](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/24).
+
+| Vejledning | Indhold |
+| --- | --- |
+| Denne README | Funktioner, [Docker](#opsætning-med-docker), [Proxmox LXC](#automatisk-opsætning-i-proxmox-lxc), [manuel nginx](#manuel-opsætning-med-nginx), aktuelle begrænsninger og roadmap |
+| [Konfiguration](docs/CONFIGURATION.md) | JSON-felter, API-rettigheder, genererede ruter, TLS, konfigurationsændringer og migrering |
+| [LXC-installation og drift](docs/LXC.md) | Værtskrav, CLI-parametre, tjenestekommandoer, fejlsøgning, backup og gendannelse |
+| [Oversættelser og frontend-kontroller](docs/I18N.md) | Sprogkataloger, tilføjelse af sprog, enheds- og browsertests |
+
+De detaljerede vejledninger under `docs/` er på engelsk; alle tre README-filer
+beskriver installation, aktuel status og roadmap med issues på deres eget sprog.
+
+## Arkitektur og installation
 
 Kontrolpanelet er bevidst holdt enkelt:
 
@@ -43,6 +69,21 @@ Kontrolpanelet er bevidst holdt enkelt:
 
 Chart.js indlæses som en separat lokal fil og bruges kun til graferne.
 
+**nginx er webserver og proxy til Pi-hole-API'et i alle tre installationsformer.**
+Du åbner kontrolpanelet i din egen browser; der kører ingen browser i Docker
+eller LXC. Python håndterer installation og generering af konfiguration.
+Node.js og Playwright er udviklingsværktøjer, der bruges til tests.
+
+| Installation | Applikationstjeneste | Kontrolpanelets standardadresse |
+| --- | --- | --- |
+| Docker Compose | nginx i containeren med et image bygget fra denne lokale kildekode | Docker-værtens `127.0.0.1:8080` |
+| Native Proxmox LXC | nginx under `dobbelt-pi-hole.service` i en Debian 13-CT | CT'ens IPv4-adresse, port `8080` |
+| Manuel nginx | Din nginx-tjeneste med den genererede konfiguration | `127.0.0.1:8080` med eksempelkommandoen nedenfor |
+
+Kontrolpanelet administrerer eksisterende Pi-hole-installationer. Installationen
+installerer ikke Pi-hole og ændrer ikke de DNS-servere, dine netværksklienter får
+oplyst.
+
 ## Krav
 
 - To til fire Pi-hole **v6**-installationer med REST API. Løsningen fungerer ikke med
@@ -53,11 +94,19 @@ Chart.js indlæses som en separat lokal fil og bruges kun til graferne.
 - Et app password til hver Pi-hole. Det oprettes under **Settings → API** i den
   enkelte Pi-holes eget webinterface.
 
+Et vellykket login med app password giver ikke tilladelse til alle ændringer.
+Ændringer af lokale DNS-poster afhænger af Pi-holes indstilling
+`webserver.api.app_sudo`; læs om
+[API-rettigheder](docs/CONFIGURATION.md#pi-hole-api-permissions), før du ændrer
+rettighederne.
+
 ## Opsætning med Docker
 
-Fra en lokal kopi af dette repository:
+Hent en lokal kopi af kildekoden, og forbered konfigurationen:
 
 ```bash
+git clone https://github.com/Daniel-Dietz/dobbelt-pi-hole.git
+cd dobbelt-pi-hole
 cp config/config.example.json config/config.json
 ```
 
@@ -197,8 +246,10 @@ Navne kan også ændres under **Indstillinger**. De gemmes i browserens
 `localStorage` og erstatter de konfigurerede navne i netop den browser.
 **Gendan standardnavne** gendanner de aktuelle standardnavne fra filen.
 Antal installationer og deres adresser administreres i JSON-filen. En
-webgrænseflade til redigering af den centrale konfiguration er planlagt til
-senere.
+webgrænseflade til lokal import, redigering og eksport af JSON er planlagt i
+[#19](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/19). Beskyttet lagring
+og aktivering på serveren er et særskilt senere trin,
+[#20](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/20).
 
 Ved opgradering fra v1.3.007 eller tidligere flyttes installationsoplysningerne
 fra HTML og nginx til JSON-filen. De gamle API-proxyblokke erstattes med den
@@ -239,11 +290,48 @@ Opsætningsvejledning og nginx-eksempler findes også på alle tre sprog:
 | Dansk | [README.DA.md](README.DA.md) | [nginx.conf.DA.example](nginx.conf.DA.example) |
 | Deutsch | [README.DE.md](README.DE.md) | [nginx.conf.DE.example](nginx.conf.DE.example) |
 
+## Aktuelle driftsbegrænsninger
+
+- **Handlinger på tværs af installationer:** hver Pi-hole modtager sine egne
+  forespørgsler. Der er ingen fælles transaktion eller generel tilbageførsel
+  på tværs af alle mål. Nogle fejlslagne skrivehandlinger kan stadig give en
+  succesmeddelelse, og fejlslagne læsninger kan fremstå som manglende poster.
+  Kontrollér den faktiske tilstand på hver Pi-hole efter en fejl, før du prøver
+  igen; korrekte resultater og ukendte tilstande er beskrevet i
+  [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8).
+- **Forespørgsler og browsertilstand:** generelle tidsgrænser for forespørgsler,
+  beskyttelse mod kapløb ved indlæsning af forespørgselsloggen og tydeligere
+  sessions- og rettighedstilstande er fortsat planlagt i
+  [#9](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/9) og
+  [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10). Temaskift kan
+  kassere ufærdige formularer; bevarelse af kladder, bedre tastaturbetjening
+  og bredere browser- og mobiltests er beskrevet i
+  [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11).
+- **Konfigurationsændringer:** JSON valideres ved opstart, men en genstart med
+  ugyldigt indhold kan gøre tjenesten utilgængelig. Behold en fungerende kopi
+  af den private konfiguration. Forhåndsvalidering, koordineret aktivering og
+  automatisk gendannelse er planlagt i
+  [#12](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/12).
+- **Overvågning:** `/healthz` bekræfter, at nginx svarer; det kontrollerer ikke,
+  om Pi-hole kan nås, eller om API-login virker. En diagnosekommando er planlagt
+  i [#13](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/13). Samlede
+  statistikker kan være ufuldstændige, når en installation er utilgængelig;
+  tydelig visning af dataenes alder og fuldstændighed samt valgfri automatisk
+  opdatering er planlagt i
+  [#22](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/22).
+- **Opdatering og gendannelse:** LXC-værktøjet opretter kun nye CT'er. Behold den
+  nuværende installation og dens backups, mens du forbereder en erstatning.
+  Se den [aktuelle vejledning til opdatering og backup](docs/LXC.md#updates-backup-and-recovery);
+  afprøvet gendannelse af Docker/LXC er beskrevet i
+  [#18](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/18), mens reel
+  Proxmox-afprøvning og godkendelse behandles særskilt i
+  [#24](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/24).
+
 ## Sikkerhed
 
 - Løsningen er beregnet til personlig brug eller personer, du har tillid til.
-  Alle, der kan logge ind, får administratoradgang til de tilknyttede
-  Pi-hole-installationer.
+  Alle, der kan logge ind, kan udføre de handlinger, deres Pi-hole-session
+  tillader. Kontrolpanelet har ikke særskilte brugerkonti eller rollestyring.
 - Login-sessioner gemmes i browserens `sessionStorage` og forsvinder, når fanen
   lukkes. Adgangskoder gemmes ikke.
 - Kontrolpanelet neutraliserer værdier, der ikke er tillid til, før de vises,
@@ -259,17 +347,93 @@ Opsætningsvejledning og nginx-eksempler findes også på alle tre sprog:
   adgangskontrol i DSM begrænse adgangen til bestemte IP-adresser eller lokale
   netværk.
 
+HTTPS på den foranstillede proxy beskytter browserforbindelsen. En
+HTTP-forbindelse fra denne proxy til en fjern LXC-backend forbliver ukrypteret;
+HTTPS-certifikatkontrol for nginx-forbindelser til Pi-hole er endnu en særskilt
+indstilling. Begræns direkte adgang til backend som beskrevet i
+[LXC-netværksvejledningen](docs/LXC.md#access-and-firewall-placement).
+En afprøvet installationsprofil med beskyttede forbindelser er planlagt i
+[#15](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/15). Logopbevaring og
+færre følsomme oplysninger i adgangslogs er planlagt i
+[#14](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/14); den nuværende
+logning følger Docker-værtens logindstillinger, CT'ens journal-/syslogindstillinger
+eller den eksisterende nginx-logkonfiguration ved manuel installation.
+
 Kontrolpanelet bør ikke eksponeres direkte på internettet uden passende
 adgangskontrol foran det.
 
-## Roadmap
+## Implementerede milepæle
+
+Disse versioner beskriver implementerede milepæle i kildekoden og er ikke et
+katalog over offentliggjorte udgivelsesfiler.
 
 - **v1.1.005:** Komplet dansk og engelsk brugerflade og dokumentation
 - **v1.2.006:** Understøttelse af to, tre eller fire Pi-hole-installationer
-- **v1.3.007:** Nøglebaseret flersproget understøttelse med komplet dansk, engelsk og tysk brugerflade og dokumentation
-- **v1.4.008:** Ekstern JSON-konfiguration, genererede API-proxyer og Docker-image
-- **v1.5.009:** Automatisk native installation i Proxmox LXC samt stærkere nginx-isolering og CSP
-- **Planlagt:** Webgrænseflade til redigering af den centrale installationsopsætning
+- **v1.3.007:** Nøglebaseret dansk, engelsk og tysk lokalisering samt regressionstests — [PR #1](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/1)
+- **v1.4.008:** Ekstern JSON-konfiguration, genererede API-proxyer og et Docker-image, der kan bygges lokalt — [PR #3](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/3)
+- **v1.5.009:** Automatisk native installation i Proxmox LXC samt stærkere nginx-isolering og CSP — [PR #5](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/5)
+- **Efterfølgende rettelse på `main`:** API- og loginomdirigeringer afvises — [#7](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/7), flettet ind med [PR #25](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/25)
+
+## Roadmap
+
+[Oversigten i #6](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/6) er den
+gældende kilde til fremdrift. **Status 2026-10-17: 1 af 18 arbejdspakker
+afsluttet; 17 åbne. Næste: #8.** Tabellen følger den anbefalede
+arbejdsrækkefølge. Kun kolonnen med forudsætninger angiver tekniske afhængigheder
+inden for dette roadmap; en tidligere række er ikke automatisk en
+forudsætning. De enkelte issues fastlægger omfang og acceptkriterier. Der er
+endnu ikke tildelt fremtidige versionsnumre eller leveringsdatoer.
+
+| Rækkefølge | Issue og omfang | Status | Forudsætninger |
+| --- | --- | --- | --- |
+| 01 | [#7](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/7) — Afvis API- og loginomdirigeringer til andre installationers ruter | Afsluttet | Ingen |
+| 02 | [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8) — Læse- og skriveresultater pr. installation, delvise fejl og ukendte datatilstande | Åben — næste | #7 |
+| 03 | [#9](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/9) — Begræns forespørgsler, beskyt mod indlæsningskapløb i forespørgselsloggen, og adskil sessions- og forbindelsestilstande | Åben | #7, #8 |
+| 04 | [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10) — API-kompatibilitet, rettigheder samt fejlslagen eller ukendt blokeringsstatus | Åben | #9 |
+| 05 | [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11) — Bevar kladder, forbedr tastaturbetjening, og udvid browser- og mobiltests | Åben | #8, #9 |
+| 06 | [#12](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/12) — Forhåndskontrol af konfiguration, koordineret aktivering og tilbageførsel | Åben | Ingen |
+| 07 | [#13](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/13) — Læsende diagnose af konfiguration, tjeneste og forbindelser | Åben | #12 |
+| 08 | [#14](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/14) — Logopbevaring og færre følsomme oplysninger i nginx-adgangslogs | Åben | Ingen |
+| 09 | [#15](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/15) — Beskyttet netværks- og TLS-installation med fjern LXC-backend | Åben | #13 |
+| 10 | [#16](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/16) — Centrale afhængighedsmetadata, fastlåste CI-referencer og opdateringskontroller | Åben | #7 |
+| 11 | [#17](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/17) — Gennemgåede udgivelser, Docker-images, native installationsfiler og versionsidentitet | Åben | #12, #13, #16 |
+| 12 | [#18](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/18) — Afprøvet opdatering, tilbageførsel og portabel gendannelse af Docker/LXC | Åben | #12, #13, #17 |
+| 13 | [#19](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/19) — Flersproget lokal JSON-konfigurationsassistent med import og eksport | Åben | #10, #11, #12 |
+| 14 | [#20](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/20) — Beskyttet lagring og aktivering af central konfiguration på serveren | Åben | #12, #13, #15, #18, #19 |
+| 15 | [#21](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/21) — Midlertidig pause af blokering med timer på Pi-hole-serveren | Åben | #8, #9, #10 |
+| 16 | [#22](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/22) — Dataenes alder og fuldstændighed samt ressourcebesparende valgfri automatisk opdatering | Åben | #8, #9, #10, #21 |
+| 17 | [#23](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/23) — Sammenligning af installationer, forhåndsvisning af synkronisering og udvalgte ændringer | Åben | #8, #9, #10, #22 |
+| 18 | [#24](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/24) — Afprøvning og godkendelse af installation og gendannelse på en rigtig Proxmox-testvært | Åben | #12, #13, #15, #17, #18 |
+
+Den lokale assistent i #19 skal eksportere JSON; administration på serveren
+er særskilt afgrænset i #20. Ingen af delene findes på den nuværende side
+**Indstillinger**. Synkronisering mellem installationer i #23 forbliver en
+udtrykkelig brugerhandling; uovervåget replikering og DNS-failover er uden for
+det planlagte omfang.
+
+## Kontrol og test
+
+[i18n-workflowet](.github/workflows/i18n.yml) dækker oversættelsesadfærd,
+Chromium-tests med kontrollerede testdata, genereret konfiguration og
+Docker-integration samt Proxmox-CLI-fixtures og installation i en Debian 13
+systemd-testcontainer. Disse kontroller dokumenterer ikke reel installation
+eller gendannelse på Proxmox. Firefox, WebKit og målrettede mobiltests er
+fortsat planlagt i #11.
+
+Fra projektets rodmappe kan kontrollerne uden ekstra afhængigheder køres med
+Node.js 24 og Python:
+
+```bash
+node --test tests/i18n.test.cjs
+python3 -m unittest discover -s tests -p 'test_render_config.py' -v
+python3 -m unittest discover -s tests -p 'test_create_lxc.py' -v
+```
+
+Se [opsætning af browsertests](docs/I18N.md#verification),
+[Docker-integrationstests](docs/CONFIGURATION.md#upgrading-and-checks) og
+[native gæstetests](docs/LXC.md#verification-scope) for deres afhængigheder og
+kommandoer. Node.js, npm og Playwright er ikke nødvendige på et installeret
+kontrolpanel.
 
 ## Bidrag
 
@@ -279,6 +443,15 @@ navngivne parametre i alle sprogkataloger, og medtag oversættelser af statisk
 tekst, dynamiske tilstande og tilgængelighedstekster.
 Se [oversættelsesvejledningen](docs/I18N.md) (på engelsk) for hjælpefunktioner,
 tilføjelse af sprog og kørsel af de automatiske kontroller.
+
+Kontrollér aktuel `main`, det relevante issue, dets afhængigheder og eksisterende
+PR'er, før du begynder på en arbejdspakke. Følg arbejdsgangen i
+[#6](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/6): én
+implementerings-PR ad gangen, relevante tests og opdateringer på DA/EN/DE,
+Codex-review af PR'ens endelige commit og vellykket CI før merge, derefter
+dokumentation af vellykket main-CI før lukning af issuet. Hold roadmap i alle
+tre README-filer i overensstemmelse med oversigten, når arbejde afsluttes.
+En dokumentationsændring alene afslutter ikke et funktionsissue.
 
 ## Licens
 

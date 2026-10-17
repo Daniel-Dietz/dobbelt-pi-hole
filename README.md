@@ -2,7 +2,6 @@
 
 **English** | [Dansk](README.DA.md) | [Deutsch](README.DE.md)
 
-
 A lightweight dashboard for managing two, three or four Pi-hole v6 instances from one
 interface. The browser loads `index.html`, an external JSON configuration and
 a local Chart.js file. There is no application backend, database or frontend
@@ -29,7 +28,32 @@ the relevant settings consistently from a single dashboard.
 
 ![Pi-hole dashboard](images/dashboard.png)
 
-## Lightweight by design
+## Current status and documentation
+
+**Reviewed on 2026-10-17:** the current application version is **1.5.009**.
+External configuration, Docker deployment, the native LXC installer and
+API/login redirect protection are implemented on `main`. The
+[development tracker #6](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/6)
+records the remaining work and its acceptance criteria; the
+[roadmap below](#roadmap) summarizes the same sequence.
+
+Installation currently uses a source checkout and, for Docker, a locally built
+image. Versioned release artifacts and published images are planned in
+[#17](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/17).
+Real Proxmox installation and recovery acceptance remains open in
+[#24](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/24).
+
+| Guide | Contents |
+| --- | --- |
+| This README | Features, [Docker](#docker-setup), [Proxmox LXC](#automated-proxmox-lxc-setup), [manual nginx](#manual-nginx-setup), current limits and roadmap |
+| [Configuration](docs/CONFIGURATION.md) | JSON fields, API permissions, generated routes, TLS, configuration changes and migration |
+| [LXC installation and operations](docs/LXC.md) | Host prerequisites, CLI options, service commands, troubleshooting, backup and recovery |
+| [Translations and frontend checks](docs/I18N.md) | Language catalogs, adding languages, unit and browser tests |
+
+The detailed guides under `docs/` are in English; all three READMEs cover
+installation, current status and the issue roadmap in their respective language.
+
+## Architecture and deployment
 
 The dashboard is deliberately simple:
 
@@ -44,6 +68,20 @@ The dashboard is deliberately simple:
 
 Chart.js is loaded as a separate local file and is only used for charts.
 
+**nginx is the web server and Pi-hole API proxy in all three deployment modes.**
+You open the dashboard in your own browser; no browser runs in Docker or LXC.
+Python handles provisioning and configuration generation. Node.js and
+Playwright are development tools used for tests.
+
+| Deployment | Application service | Default dashboard address |
+| --- | --- | --- |
+| Docker Compose | nginx in the container, image built from this checkout | Docker host `127.0.0.1:8080` |
+| Native Proxmox LXC | nginx under `dobbelt-pi-hole.service` in a Debian 13 CT | CT IPv4 address, port `8080` |
+| Manual nginx | Your nginx service with the generated configuration | `127.0.0.1:8080` with the example command below |
+
+The dashboard installation manages existing Pi-hole instances. It does not
+install Pi-hole or change the DNS servers advertised to your network clients.
+
 ## Requirements
 
 - Two to four Pi-hole **v6** instances with the REST API. The dashboard does not work
@@ -54,11 +92,18 @@ Chart.js is loaded as a separate local file and is only used for charts.
 - An app password for each Pi-hole. Create it under **Settings → API** in each
   Pi-hole administration interface.
 
+A successful app-password login does not authorize every change. Local DNS
+edits depend on Pi-hole's `webserver.api.app_sudo` setting; review the
+[API permissions](docs/CONFIGURATION.md#pi-hole-api-permissions) before changing
+privileges.
+
 ## Docker setup
 
-From a checkout of this repository:
+Obtain a source checkout, then prepare the configuration:
 
 ```bash
+git clone https://github.com/Daniel-Dietz/dobbelt-pi-hole.git
+cd dobbelt-pi-hole
 cp config/config.example.json config/config.json
 ```
 
@@ -193,7 +238,10 @@ Names can also be changed under **Settings**. These names are saved in the
 browser's `localStorage` and override the configured names in that browser.
 Use **Reset names to defaults** to restore the current file's defaults.
 Instance count and addresses are managed in the JSON file. A web interface for
-editing that central configuration is planned for a later release.
+local JSON import, editing and export is planned in
+[#19](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/19). Protected saving
+and applying on the server is a separate later step,
+[#20](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/20).
 
 When upgrading from v1.3.007 or earlier, move your HTML and nginx instance
 settings into the JSON file and replace the old API proxy blocks with the
@@ -235,11 +283,45 @@ languages:
 | Dansk | [README.DA.md](README.DA.md) | [nginx.conf.DA.example](nginx.conf.DA.example) |
 | Deutsch | [README.DE.md](README.DE.md) | [nginx.conf.DE.example](nginx.conf.DE.example) |
 
+## Current operational limits
+
+- **Actions across instances:** each Pi-hole receives its own requests. There
+  is no transaction or general rollback across all targets. Some failed writes
+  can still produce a success message, and failed reads can appear as missing
+  entries. After an error, check the actual state on each Pi-hole before
+  retrying; accurate outcomes and unknown states are tracked in
+  [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8).
+- **Requests and browser state:** general request deadlines, query-load race
+  protection and clearer session/permission states remain in
+  [#9](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/9) and
+  [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10). Theme changes
+  can discard unfinished forms; draft preservation, keyboard improvements and
+  broader browser/mobile checks are tracked in
+  [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11).
+- **Configuration changes:** startup validates the JSON, but a restart with
+  invalid input can leave the service unavailable. Keep a working copy of the
+  private configuration. Staged validation, coordinated activation and
+  automatic recovery are planned in
+  [#12](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/12).
+- **Monitoring:** `/healthz` confirms that nginx responds; it does not test
+  Pi-hole reachability or API authentication. A diagnostic command is planned
+  in [#13](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/13). Combined
+  statistics can be incomplete when an instance is unavailable; explicit data
+  age/completeness and optional automatic refresh are planned in
+  [#22](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/22).
+- **Updates and recovery:** the LXC installer creates new CTs only. Keep the
+  current installation and backups when preparing a replacement. See the
+  [current update and backup guidance](docs/LXC.md#updates-backup-and-recovery);
+  rehearsed Docker/LXC recovery is tracked in
+  [#18](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/18), with real
+  Proxmox acceptance separately in
+  [#24](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/24).
+
 ## Security
 
 - The dashboard is intended for personal use or for people you trust. Anyone
-  who can log in receives administrative access to the connected Pi-hole
-  instances.
+  who can log in can use the actions permitted by that Pi-hole session. The
+  dashboard has no separate user accounts or role management.
 - Login sessions are stored in the browser's `sessionStorage` and disappear
   when the tab is closed. Passwords are not stored.
 - Untrusted values such as client names, domains and comments are escaped
@@ -254,17 +336,88 @@ languages:
 - When hosting the dashboard on a Synology NAS, a DSM access control profile
   can restrict access to selected IP addresses or local networks.
 
+HTTPS at the front proxy protects the browser connection. An HTTP connection
+from that proxy to a remote LXC backend remains unencrypted; HTTPS verification
+for nginx's Pi-hole connections is another separate setting. Restrict direct
+backend access as described in the [LXC network guide](docs/LXC.md#access-and-firewall-placement).
+A tested protected deployment profile is tracked in
+[#15](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/15). Log retention and
+reduced access-log detail are tracked in
+[#14](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/14); current logging
+follows the Docker host's logging settings, the CT's journal/syslog settings,
+or the existing nginx logging configuration for manual installations.
+
 The dashboard should not be exposed directly to the internet without suitable
 access control in front of it.
 
-## Roadmap
+## Implemented milestones
+
+These versions describe implemented source milestones, not a catalog of
+published release artifacts.
 
 - **v1.1.005:** Complete Danish and English interfaces and documentation
 - **v1.2.006:** Support for two, three or four Pi-hole instances
-- **v1.3.007:** Key-based multilingual support with complete Danish, English and German interfaces and documentation
-- **v1.4.008:** External JSON configuration, generated API routes and a Docker image
-- **v1.5.009:** Automated native Proxmox LXC installation and stronger nginx isolation and CSP
-- **Planned:** Web interface for editing the central instance configuration
+- **v1.3.007:** Key-based Danish, English and German localization and regression checks — [PR #1](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/1)
+- **v1.4.008:** External JSON configuration, generated API routes and a locally buildable Docker image — [PR #3](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/3)
+- **v1.5.009:** Automated native Proxmox LXC installation and stronger nginx isolation and CSP — [PR #5](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/5)
+- **Subsequent fix on `main`:** API and login redirects rejected — [#7](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/7), merged in [PR #25](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/25)
+
+## Roadmap
+
+[Tracker #6](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/6) is the
+authoritative progress record. **Snapshot: 2026-10-17 — 1 of 18 work packages
+completed; 17 open. Next: #8.** The table follows its recommended working order.
+Only the prerequisites column expresses technical dependencies within this
+roadmap; an earlier row is not automatically a prerequisite. The issues define
+scope and acceptance criteria. Future version numbers and delivery dates have
+not been assigned.
+
+| Order | Issue and scope | Status | Prerequisites |
+| --- | --- | --- | --- |
+| 01 | [#7](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/7) — Reject API/login redirects to other instance routes | Completed | None |
+| 02 | [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8) — Per-instance read/write outcomes, partial failures and unknown data states | Open — next | #7 |
+| 03 | [#9](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/9) — Request limits, query-load race protection and distinct session/connection states | Open | #7, #8 |
+| 04 | [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10) — API compatibility, permissions and failed/unknown blocking states | Open | #9 |
+| 05 | [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11) — Preserve drafts; improve keyboard, browser and mobile coverage | Open | #8, #9 |
+| 06 | [#12](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/12) — Configuration preflight, coordinated activation and rollback | Open | None |
+| 07 | [#13](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/13) — Read-only configuration, service and connection diagnostics | Open | #12 |
+| 08 | [#14](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/14) — Log retention and less sensitive nginx access logs | Open | None |
+| 09 | [#15](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/15) — Protected network/TLS deployment for remote LXC backends | Open | #13 |
+| 10 | [#16](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/16) — Central dependency metadata, pinned CI references and update checks | Open | #7 |
+| 11 | [#17](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/17) — Reviewed releases, Docker images, native artifacts and version identity | Open | #12, #13, #16 |
+| 12 | [#18](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/18) — Rehearsed Docker/LXC update, rollback and portable restoration | Open | #12, #13, #17 |
+| 13 | [#19](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/19) — Multilingual local JSON configuration assistant with import/export | Open | #10, #11, #12 |
+| 14 | [#20](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/20) — Protected server-side save/apply for central configuration | Open | #12, #13, #15, #18, #19 |
+| 15 | [#21](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/21) — Temporary blocking pause with a Pi-hole-side timer | Open | #8, #9, #10 |
+| 16 | [#22](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/22) — Data age/completeness and economical optional automatic refresh | Open | #8, #9, #10, #21 |
+| 17 | [#23](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/23) — Instance comparison, reconciliation preview and selected changes | Open | #8, #9, #10, #22 |
+| 18 | [#24](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/24) — Installation and recovery acceptance on a real Proxmox test host | Open | #12, #13, #15, #17, #18 |
+
+The local assistant in #19 will export JSON; server-side administration is
+separately scoped in #20. Neither exists in the current Settings page.
+Instance reconciliation in #23 remains an explicit user action; unattended
+replication and DNS failover are outside the planned scope.
+
+## Verification
+
+The [i18n workflow](.github/workflows/i18n.yml) covers translation behavior,
+Chromium browser fixtures, generated configuration and Docker integration,
+plus Proxmox CLI fixtures and installation in a Debian 13 systemd test container.
+These checks do not establish real Proxmox installation or restore acceptance.
+Firefox, WebKit and a targeted mobile smoke matrix remain in #11.
+
+From the repository root, the dependency-free checks use Node.js 24 and Python:
+
+```bash
+node --test tests/i18n.test.cjs
+python3 -m unittest discover -s tests -p 'test_render_config.py' -v
+python3 -m unittest discover -s tests -p 'test_create_lxc.py' -v
+```
+
+See [browser test setup](docs/I18N.md#verification),
+[Docker integration checks](docs/CONFIGURATION.md#upgrading-and-checks) and
+[native guest checks](docs/LXC.md#verification-scope) for their dependencies and
+commands. Node.js, npm and Playwright are not required on a deployed dashboard.
 
 ## Contributing
 
@@ -274,6 +427,14 @@ named parameters consistent across all language catalogs, and include
 translations for static text, dynamic states and accessibility labels.
 See the [translation guide](docs/I18N.md) for the message helpers, adding
 languages and running the automated checks.
+
+Before starting a tracked work package, refresh `main`, its issue, dependencies
+and existing PRs. Follow the workflow in
+[#6](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/6): one implementation
+PR at a time, relevant tests and DA/EN/DE updates, Codex review of the final PR
+head and successful CI before merge, then main-CI evidence before closing the
+issue. Keep all three README roadmaps aligned with the tracker when work is
+completed. A documentation update alone does not complete a feature issue.
 
 ## License
 
