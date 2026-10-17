@@ -1917,17 +1917,29 @@ for (const scenario of SUBMISSION_DURING_LANGUAGE_RENDER) for (const overlap of 
     for (const [selector, value] of Object.entries(scenario.fields)) {
       assert.equal(await page.locator(selector).inputValue(), value, 'The synchronous language render must restore the draft before submission');
     }
+    const preflightRequest = page.waitForRequest(
+      /** Recognize the form submission's fresh GET, separately from the earlier language-render read. */
+      request => request.method() === 'GET' &&
+        new URL(request.url()).pathname.endsWith(scenario.endpoint)
+    );
     await page.locator(`${scenario.form} button[type="submit"]`).click();
-    await page.waitForFunction(/** Wait for every submitted input to be cleared before releasing delayed table reads. */ selectors => selectors.every(/** Check the current value of one submitted control rather than an earlier draft snapshot. */ selector => document.querySelector(selector)?.value === ''), Object.keys(scenario.fields));
-    assert.ok(gate.arrived > 0, 'The language-render GET must still be pending when submission clears the form');
-    assert.equal(fixture.requests.filter(/** Count the intended mutation before releasing reads to establish that submission wrote exactly once. */ request => request.method === scenario.method && request.path === scenario.mutation).length, 1);
+    await preflightRequest;
+    assert.ok(gate.arrived > 0, 'A pending language-render GET must not be mistaken for a verified empty collection');
+    assert.equal(fixture.requests.filter(
+      /** Confirm that no mutation bypassed the held safety preflight. */
+      request => request.method === scenario.method && request.path === scenario.mutation).length, 0,
+      'A mutation must wait until its fresh preflight can read the current state');
     if (overlap) {
-      // A second language switch must carry the cleared form, even while the
-      // first language render and the submission's table reload are pending.
+      // A second language render may replace the form while the preflight is held;
+      // both renders must preserve the pending draft without starting a write.
       await page.locator('#languageSelect').selectOption('de');
-      for (const selector of Object.keys(scenario.fields)) assert.equal(await page.locator(selector).inputValue(), '');
+      for (const [selector, value] of Object.entries(scenario.fields))
+        assert.equal(await page.locator(selector).inputValue(), value);
     }
     gate.release();
+    await page.waitForFunction(/** After the preflight resumes, require all successfully submitted fields to clear. */
+      selectors => selectors.every(/** Inspect the current form rather than a detached earlier DOM node. */
+        selector => document.querySelector(selector)?.value === ''), Object.keys(scenario.fields));
     await waitTab(page, scenario.tab);
     await page.waitForLoadState('networkidle');
     for (const selector of Object.keys(scenario.fields)) {
