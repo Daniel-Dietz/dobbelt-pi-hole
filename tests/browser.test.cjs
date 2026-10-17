@@ -2134,3 +2134,70 @@ test('Issue #8: a language rerender cannot start a second write while the first 
       request => request.method === 'POST' && request.path === '/domains/deny/exact').length, 1);
     await assertNoCorruption(fixture);
   });
+
+
+test('Issue #8 Codex: copied list preserves its original comment and group IDs',
+  /** Copy one list across instances and verify its exact source metadata is sent. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page, serverData, requests } = fixture;
+    serverData['1'].lists[0].comment = 'group-preserving source';
+    serverData['1'].lists[0].groups = [3, 7];
+    serverData['2'].lists = [];
+    await visit(page, 'lists');
+    await page.locator('[data-add-list="2"]').click();
+    await page.waitForFunction(/** Require a verified remote copy, not merely the first click. */
+      () => (document.querySelector('#toastArea')?.textContent || '').includes('change confirmed'));
+    const copied = requests.find(/** Locate only the intended copy to Pi-hole two. */
+      request => request.id === '2' && request.method === 'POST' && request.path === '/lists?type=block');
+    assert.deepEqual(copied?.body, {
+      address: [LIST_URL],
+      comment: 'group-preserving source',
+      groups: [3, 7]
+    });
+    assert.deepEqual(serverData['2'].lists[0].groups, [3, 7]);
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #8 Codex: an unavailable connected client stays unknown, not disconnected',
+  /** Reject the second server's configured-client read and inspect the exact table cell. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page } = fixture;
+    await page.route('**/*',
+      /** Simulate a live but temporarily unreadable client collection. */
+      async route => {
+        const url = new URL(route.request().url());
+        if (route.request().method() === 'GET' &&
+            url.pathname.includes('/api2/') && url.pathname.endsWith('/clients')) {
+          return route.fulfill({
+            status: 503, contentType: 'application/json',
+            body: JSON.stringify({ error: { message: 'backend unavailable' } })
+          });
+        }
+        return route.fallback();
+      });
+    await visit(page, 'clients');
+    await page.waitForFunction(/** Wait for both known and unreadable data states to appear. */
+      () => (document.querySelector('#clientArea')?.textContent || '').includes('Data unavailable'));
+    const unavailableCell = page.locator('#clientArea tbody tr').first().locator('td').nth(3);
+    assert.equal((await unavailableCell.textContent()).trim(), 'Unknown');
+    assert.equal(await unavailableCell.locator('button').count(), 0);
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #8 Codex: a source list missing its groups cannot be copied as group zero',
+  /** Avoid silent list metadata corruption when source group membership is absent. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page, serverData, requests } = fixture;
+    delete serverData['1'].lists[0].groups;
+    serverData['2'].lists = [];
+    await visit(page, 'lists');
+    await page.locator('[data-add-list="2"]').click();
+    await page.waitForFunction(/** Require the source validation error without a copy mutation. */
+      () => (document.querySelector('#toastArea')?.textContent || '').includes('Incomplete response'));
+    assert.equal(requests.filter(/** No POST is safe without source group metadata. */
+      request => request.id === '2' && request.method === 'POST' && request.path.startsWith('/lists')).length, 0);
+    await assertNoCorruption(fixture);
+  });
