@@ -3793,6 +3793,8 @@ function collectionCoverageHtml(states) {
   const names = state.servers.filter(server => states.get(server.id) !== "confirmed").map(server => server.label);
   return names.length ? `<p class="sub" role="status">${htmlMsg("multi.unavailable", { servers: names.join(", ") })}</p>` : "";
 }
+/** Track each instance's in-flight mutation across changing DOM controls. */
+const activeInstanceWrites = new Set();
 /**
  * Preflight each selected target, then send at most one mutation per target.
  * An unsuccessful preflight prevents a write; transport/5xx write failures
@@ -3801,11 +3803,6 @@ function collectionCoverageHtml(states) {
  * @param {object[]} targets Selected Pi-hole instances.
  * @param {object} op Functions path(server), extract(result), isCurrent(server, rows), write(server, rows).
  * @returns {Promise<Array|null>} Per-instance outcomes; null when already in flight.
- */
-const activeInstanceWrites = new Set();
-/**
- * Guard mutating operations across language changes and tab rerenders, not
- * merely for as long as the original clicked DOM button exists.
  */
 async function performCheckedWrites(button, targets, op) {
   if (button?.dataset.multiBusy === "1" || targets.some(server => activeInstanceWrites.has(server.id))) {
@@ -3870,9 +3867,13 @@ function matchingExistingEntry(record, comment, groups) {
   return true;
 }
 function clearConfirmedDraft(outcomes, form, fields) {
-  if (!outcomes?.length || !outcomes.every(outcome => ["confirmed", "unchanged"].includes(outcome.status)) || !form.isConnected) return;
+  if (!outcomes?.length || !outcomes.every(outcome => ["confirmed", "unchanged"].includes(outcome.status))) return;
+  // After a language switch the submitted form may be replaced. Only clear
+  // matching original values in the current form, never a newer typed draft.
+  const activeForm = form.isConnected ? form : document.getElementById(form.id);
+  if (!activeForm) return;
   for (const [selector, previous] of fields) {
-    const input = form.querySelector(selector);
+    const input = activeForm.querySelector(selector);
     if (input && input.value.trim() === previous) input.value = "";
   }
 }
