@@ -4714,6 +4714,7 @@ async function renderClients(container, generation) {
             }
           }
         } catch (error) {
+          clientReadStates.set(server.id, "unknown");
           toast(msg("clients.requestError", {
             server: server.label,
             error: error.message
@@ -4868,10 +4869,8 @@ async function renderLists(container, generation) {
             if (serverList.comment && !mergedList.comment) {
               mergedList.comment = serverList.comment;
             }
-            mergedList.byServer[server.id] = {
-              enabled: serverList.enabled,
-              comment: serverList.comment
-            };
+            // Keep original source group assignments for intentional cross-instance copies.
+            mergedList.byServer[server.id] = serverList;
           }
         } catch (error) {
           readStates.set(server.id, "unknown");
@@ -4899,7 +4898,7 @@ async function renderLists(container, generation) {
           if (readStates.get(server.id) !== "confirmed") return uncertainCell(readStates, server);
           const listRecord = list.byServer[server.id];
           return listRecord ? `<td><span class="badge ${listRecord.enabled ? "on" : "off"}">${htmlMsg(listRecord.enabled ? "lists.active" : "lists.disabled")}</span></td>` : `<td><span class="badge off">${htmlMsg("lists.missing")}</span>
-							<button class="btn xs" data-add-list="${escapeHtml(server.id)}" data-url="${escapeHtml(list.address)}" data-type="${escapeHtml(list.type)}" data-comment="${escapeHtml(list.comment || "")}">${htmlMsg("lists.add")}</button></td>`;
+							<button class="btn xs" data-add-list="${escapeHtml(server.id)}" data-url="${escapeHtml(list.address)}" data-type="${escapeHtml(list.type)}">${htmlMsg("lists.add")}</button></td>`;
         }).join("");
         return `<tr>
 						<td class="mono">${escapeHtml(list.address)}</td>
@@ -4938,17 +4937,28 @@ async function renderLists(container, generation) {
         });
       }
       for (const addButton of listArea.querySelectorAll("[data-add-list]")) {
-        addButton.addEventListener("click", /** Add the selected list address, type and comment to one connected instance with default group zero. */ async () => {
+        addButton.addEventListener("click",
+        /** Copy a list's original comment and groups, rejecting incomplete source metadata. */
+        async () => {
           const targetServer = serverById(addButton.dataset.addList);
           const listUrl = addButton.dataset.url;
           const listType = addButton.dataset.type;
+          const list = sortedLists.find(record => record.address === listUrl && record.type === listType);
+          const source = list && Object.values(list.byServer)[0];
+          if (!source || !Array.isArray(source.groups) || !Object.hasOwn(source, "comment")) {
+            toast(msg("multi.invalidRead"), "err");
+            return;
+          }
+          const comment = source.comment ?? "";
+          const groups = source.groups;
           const outcomes = await performCheckedWrites(addButton, [targetServer], {
             path: () => "/lists",
             extract: response => requireCollection(response, "lists"),
-            isCurrent: (server, records) => matchingExistingEntry(records.find(record => record.address === listUrl && record.type === listType), addButton.dataset.comment || "", [0]),
+            isCurrent: (server, records) => matchingExistingEntry(
+              records.find(record => record.address === listUrl && record.type === listType), comment, groups),
             write: server => apiCall(server, "/lists?type=" + encodeURIComponent(listType), {
               method: "POST",
-              body: { address: [listUrl], comment: addButton.dataset.comment || "", groups: [0] }
+              body: { address: [listUrl], comment, groups }
             })
           });
           if (outcomes && container.isConnected && generation === state.renderGen) loadLists();
