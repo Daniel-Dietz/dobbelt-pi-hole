@@ -6,8 +6,8 @@ Et let kontrolpanel til samlet administration af to, tre eller fire Pi-hole v6-i
 Browseren indlæser `index.html`, en ekstern JSON-konfiguration og en lokal
 Chart.js-fil. Der er ingen applikationsbackend, database eller frontend-buildproces.
 Installationerne angives i én central JSON-fil. Et lille Python-værktøj danner
-browserens offentlige konfiguration og nginx-proxyerne fra denne fil; i Docker
-sker det automatisk ved opstart.
+browserens offentlige konfiguration og nginx-proxyerne fra denne fil. I Docker
+og den native Proxmox LXC-tjeneste sker det automatisk ved opstart.
 
 Kontrolpanelet indeholder:
 
@@ -36,7 +36,7 @@ Kontrolpanelet er bevidst holdt enkelt:
 - Ingen applikationsbackend
 - Ingen database
 - Ingen frontend-buildproces
-- Python bruges kun til validering og generering af konfiguration ved installation eller containeropstart
+- Python håndterer installationen og danner konfiguration ved installation eller tjenestestart
 - Serveradresser, antal, standardnavne og standardsprog i én ekstern JSON-fil
 - Egne navne og visningsindstillinger gemmes lokalt i browseren
 - Direkte kommunikation med Pi-hole v6 API gennem nginx
@@ -47,7 +47,8 @@ Chart.js indlæses som en separat lokal fil og bruges kun til graferne.
 
 - To til fire Pi-hole **v6**-installationer med REST API. Løsningen fungerer ikke med
   det gamle PHP API i Pi-hole v5.
-- Docker med Compose eller nginx og Python 3.10 eller nyere til manuel installation.
+- Docker med Compose, **Proxmox VE 9 på amd64** til automatisk LXC-installation
+  eller nginx og Python 3.10 eller nyere til manuel installation.
 - Netværksadgang fra kontrolpanelets nginx til alle konfigurerede Pi-hole-API'er.
 - Et app password til hver Pi-hole. Det oprettes under **Settings → API** i den
   enkelte Pi-holes eget webinterface.
@@ -87,6 +88,52 @@ indlæses igen:
 docker compose restart dashboard
 ```
 
+## Automatisk opsætning i Proxmox LXC
+
+Installationsværktøjet opretter en ny **uprivilegeret Debian 13-LXC** og
+installerer nginx, Python, kontrolpanelet og verificerede Chart.js-filer direkte
+i den. Kør værktøjet som **root på Proxmox VE 9-værten** fra en komplet lokal
+kopi af projektet:
+
+```bash
+cd /root/dobbelt-pi-hole
+cp config/config.example.json config/config.json
+# Redigér config/config.json med dine egne Pi-hole-installationer.
+python3 tools/create_lxc.py \
+  --config /root/dobbelt-pi-hole/config/config.json \
+  --storage local-lvm \
+  --template-storage local \
+  --bridge vmbr0 \
+  --hostname dobbelt-pi-hole
+```
+
+Brug lagre og en netværksbro, der findes på din node. Som standard vælger
+værktøjet et ledigt CT-ID i hele klyngen, den nyeste Debian 13 standard-skabelon
+for amd64 fra Proxmox-kataloget og DHCP. Tilføj `--dry-run` for at kontrollere
+lokale filer og se de planlagte kommandoer uden downloads eller ændringer.
+En fast adresse kan for eksempel angives med
+`--ipv4 192.168.1.50/24 --gateway 192.168.1.1`.
+
+Tjenesten lytter på **CT'ens adresse, port 8080**. Brug en HTTPS reverse proxy
+foran tjenesten, og begræns adgangen med eksisterende firewall- eller proxyregler.
+Installationsværktøjet aktiverer firewallflaget på CT'ens netkort, men opretter
+ikke regler og ændrer ikke værtens netværk. Kører den foranstillede nginx-proxy
+på en anden maskine, erstattes `127.0.0.1:8080` i eksemplet med CT'ens adresse.
+
+Konfigurationen kopieres til `/etc/dobbelt-pi-hole/config.json` inde i CT'en.
+Anvend ændringer i denne kopi fra Proxmox-værten; erstat `123` med det viste
+CT-ID:
+
+```bash
+pct exec 123 -- systemctl restart dobbelt-pi-hole
+```
+
+Genindlæs derefter browserfanen. Værktøjet opretter kun nye CT'er og opdaterer
+ikke eksisterende installationer. Ved fejl bevares den nye CT til fejlsøgning,
+og automatisk opstart forbliver deaktiveret.
+[LXC-vejledningen](docs/LXC.md) (på engelsk) beskriver alle parametre, logs,
+opdatering, backup og gendannelse.
+
 ## Manuel opsætning med nginx
 
 1. Kopiér `index.html` til webmappen, eksempelvis
@@ -120,7 +167,9 @@ docker compose restart dashboard
    nginx -t && systemctl reload nginx
    ```
 
-Kør værktøjet, og genindlæs nginx igen efter ændringer i JSON-filen.
+Kør værktøjet, og genindlæs nginx igen efter ændringer i JSON-filen eller
+`index.html`; den genererede Content Security Policy bruger hashværdier for
+de indlejrede scripts.
 [Konfigurationsvejledningen](docs/CONFIGURATION.md) (på engelsk) beskriver alle
 felter, TLS, filrettigheder og opgradering fra tidligere versioner.
 
@@ -193,9 +242,13 @@ Opsætningsvejledning og nginx-eksempler findes også på alle tre sprog:
   lukkes. Adgangskoder gemmes ikke.
 - Kontrolpanelet neutraliserer værdier, der ikke er tillid til, før de vises,
   eksempelvis klientnavne, domæner og kommentarer.
-- Løsningen indeholder JavaScript direkte i HTML-filen. Det begrænser, hvor
-  restriktiv en Content Security Policy kan være. Den genererede nginx-konfiguration
-  indeholder en politik, der understøtter de indlejrede scripts og den lokale Chart.js-fil.
+- nginx tillader de indlejrede scripts med SHA-256-hashværdier i Content Security
+  Policy og indlæser Chart.js lokalt. Svar indeholder også cachebegrænsninger,
+  beskyttelse mod indlejring i rammer og `nosniff`-headere.
+- Compose og den native LXC-tjeneste kører nginx uden rootrettigheder eller
+  capabilities og forhindrer rettighedsforøgelse. API-proxyen fjerner browserens
+  `Authorization`- og `Cookie`-headere før videresendelse til Pi-hole.
+  Certifikatkontrol for HTTPS-forbindelser til Pi-hole er slået til som standard.
 - Hvis kontrolpanelet afvikles på en Synology NAS, kan en profil til
   adgangskontrol i DSM begrænse adgangen til bestemte IP-adresser eller lokale
   netværk.
@@ -209,6 +262,7 @@ adgangskontrol foran det.
 - **v1.2.006:** Understøttelse af to, tre eller fire Pi-hole-installationer
 - **v1.3.007:** Nøglebaseret flersproget understøttelse med komplet dansk, engelsk og tysk brugerflade og dokumentation
 - **v1.4.008:** Ekstern JSON-konfiguration, genererede API-proxyer og Docker-image
+- **v1.5.009:** Automatisk native installation i Proxmox LXC samt stærkere nginx-isolering og CSP
 - **Planlagt:** Webgrænseflade til redigering af den centrale installationsopsætning
 
 ## Bidrag
@@ -232,5 +286,6 @@ Projektet er udgivet under MIT-licensen og må bruges, kopieres, ændres og
 videredistribueres i overensstemmelse med licensens vilkår. Se filen `LICENSE`.
 
 Docker-imaget indeholder Chart.js 4.4.1 og dets MIT-licens i
-`/usr/share/licenses/chart.js/LICENSE`. Ved manuel installation hentes Chart.js
+`/usr/share/licenses/chart.js/LICENSE`. LXC-værktøjet henter og verificerer også
+grafbiblioteket og licensen automatisk. Ved manuel installation hentes Chart.js
 separat som beskrevet ovenfor. Chart.js er et selvstændigt tredjepartsprojekt.

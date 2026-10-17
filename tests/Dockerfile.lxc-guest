@@ -1,0 +1,27 @@
+# A disposable Debian 13 guest for the native installer integration test.
+# nginx is deliberately absent: the actual guest installer must install it.
+FROM debian:13-slim
+
+ENV container=docker
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends --yes \
+        ca-certificates curl dbus iproute2 procps python3 systemd systemd-sysv util-linux \
+    && rm -rf /var/lib/apt/lists/* \
+    && truncate --size=0 /etc/machine-id \
+    && rm -f /var/lib/dbus/machine-id \
+    && ln -s /etc/machine-id /var/lib/dbus/machine-id
+
+# Drop only Debian's Docker service-start blocker after the build-time installs.
+# The real guest installation must rely on its own nginx service mask instead.
+RUN if [ -e /usr/sbin/policy-rc.d ] || [ -L /usr/sbin/policy-rc.d ]; then \
+        { [ -f /usr/sbin/policy-rc.d ] && [ ! -L /usr/sbin/policy-rc.d ] \
+          && [ "$(sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' /usr/sbin/policy-rc.d)" = 'exit 101' ]; } \
+          || { echo 'Refusing to remove an unexpected package service policy' >&2; exit 1; }; \
+        rm -- /usr/sbin/policy-rc.d; \
+    fi
+
+# The test uses its own cgroup namespace and tmpfs; never bind the host cgroups.
+# systemd's container interface defines SIGRTMIN+3 as an orderly shutdown.
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init", "--log-target=console"]

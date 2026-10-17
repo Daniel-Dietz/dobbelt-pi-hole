@@ -5,6 +5,7 @@
 // PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH. Every page/API request is intercepted;
 // these tests never contact a Pi-hole or any other live service.
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test, before, after } = require('node:test');
@@ -88,7 +89,7 @@ async function openDashboard(t, options = {}) {
     storageUnavailable = false, hash = 'dashboard', missingCharts = false, streamingGravity = false,
     paginatedQueries = false, savedQueryFilters = null, authResponseGate = null,
     runtimeConfig = publicConfig(count), configStatus = 200, configText = null, configResponseGate = null,
-    waitForReady = true, fakeClock = false, holdInitialSessions = false,
+    waitForReady = true, fakeClock = false, holdInitialSessions = false, contentSecurityPolicy = null,
     labelOverrides, localStorageEntries = {}, sessionStorageEntries = {} } = options;
   const context = await browser.newContext({ locale: browserLanguages[0], timezoneId: 'UTC', viewport: { width: 1600, height: 1100 } });
   t.after(() => context.close());
@@ -165,7 +166,8 @@ async function openDashboard(t, options = {}) {
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin !== ORIGIN) { unexpected.push(request.url()); return route.abort(); }
-    if (url.pathname === '/' || url.pathname === '/index.html') return route.fulfill({ contentType: 'text/html', body: html });
+    if (url.pathname === '/' || url.pathname === '/index.html') return route.fulfill({ contentType: 'text/html', body: html,
+      headers: contentSecurityPolicy ? { 'Content-Security-Policy': contentSecurityPolicy } : {} });
     if (url.pathname === '/chart.umd.min.js') {
       if (missingCharts) return route.fulfill({ status: 404, body: '' });
       return route.fulfill({ contentType: 'text/javascript', body: process.env.CHART_JS_PATH ? readFileSync(process.env.CHART_JS_PATH, 'utf8') : CHART_FIXTURE });
@@ -276,6 +278,55 @@ async function assertNoCorruption(fixture) {
   assert.equal(await fixture.page.evaluate(() => window.__xss), 0, 'Text must never become executable HTML');
   assert.equal(await fixture.page.locator('#tabContent img, #serverPills img').count(), 0);
 }
+
+test('the generated CSP allows the dashboard and charts but blocks foreign inline scripts and handlers', async t => {
+  // The HTTP integration tests independently verify the renderer's hash against
+  // served bytes. This test exercises that real policy in Chromium.
+  const policy = execFileSync('python3', ['-c',
+    'import sys; from tools.render_config import content_security_policy; print(content_security_policy(sys.argv[1]))', HTML_PATH,
+  ], { cwd: join(__dirname, '..'), encoding: 'utf8' }).trim();
+  const fixture = await openDashboard(t, { language: 'de', contentSecurityPolicy: policy }), { page } = fixture;
+  assert.deepEqual(await page.locator('#tabs button').allTextContents(), EXPECTED.de.tabs);
+  await page.waitForFunction(() => Object.values(Chart.instances).length === 8);
+  assert.ok(await page.evaluate(() => Object.values(Chart.instances).every(chart => chart.options.locale === 'de-DE')));
+  assert.equal(await page.locator('#dashGrid').evaluate(element => getComputedStyle(element).display), 'grid',
+    'The existing inline stylesheet must remain usable');
+  if (process.env.CHART_JS_PATH) {
+    assert.equal(await page.evaluate(() => Chart.version), '4.4.1');
+    assert.ok(await page.evaluate(() => Object.values(Chart.instances).every(chart => {
+      const pixels = chart.ctx.getImageData(0, 0, chart.canvas.width, chart.canvas.height).data;
+      return chart.width > 0 && chart.height > 0 && pixels.some((value, index) => index % 4 === 3 && value > 0);
+    })), 'The real Chart.js bundle must paint each canvas under the deployed policy');
+  }
+
+  // DOM insertion must trigger the browser's policy. Executing the probe body
+  // through page.evaluate itself would bypass CSP and would not test this.
+  await page.evaluate(() => {
+    window.__blockedScriptRan = 0;
+    window.__blockedHandlerRan = 0;
+    window.__cspViolations = [];
+    document.addEventListener('securitypolicyviolation', event => {
+      window.__cspViolations.push({ directive: event.effectiveDirective, blocked: event.blockedURI, disposition: event.disposition });
+    });
+    const script = document.createElement('script');
+    script.textContent = 'window.__blockedScriptRan += 1;';
+    document.body.append(script);
+    const button = document.createElement('button');
+    button.id = 'cspProbeButton';
+    button.textContent = 'CSP test probe';
+    button.setAttribute('onclick', 'window.__blockedHandlerRan += 1;');
+    document.body.append(button);
+  });
+  await page.locator('#cspProbeButton').click();
+  await page.waitForFunction(() => ['script-src-elem', 'script-src-attr'].every(directive =>
+    window.__cspViolations.some(event => event.directive === directive && event.blocked === 'inline' && event.disposition === 'enforce')));
+  assert.deepEqual(await page.evaluate(() => [window.__blockedScriptRan, window.__blockedHandlerRan]), [0, 0]);
+  await visit(page, 'domains');
+  await language(page, 'en', 'domains');
+  assert.equal(await page.locator('#tabContent h2').first().textContent(), EXPECTED.en.headings.domains,
+    'Ordinary app event listeners must continue working under CSP');
+  await assertNoCorruption(fixture);
+});
 
 test('configuration loading blocks API calls while language, theme and navigation change', async t => {
   const gate = deferred(t);

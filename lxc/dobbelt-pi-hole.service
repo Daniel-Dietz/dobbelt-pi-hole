@@ -1,0 +1,46 @@
+[Unit]
+Description=Double Pi-hole dashboard
+After=network.target
+ConditionVirtualization=container
+StartLimitIntervalSec=60s
+StartLimitBurst=3
+
+[Service]
+Type=exec
+User=dobbelt-pi-hole
+Group=dobbelt-pi-hole
+UMask=0077
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=/etc/dobbelt-pi-hole/listen.env
+RuntimeDirectory=dobbelt-pi-hole
+RuntimeDirectoryMode=0750
+ExecStartPre=/usr/bin/python3 /opt/dobbelt-pi-hole/render_config.py --config /etc/dobbelt-pi-hole/config.json --output-dir /run/dobbelt-pi-hole --web-root /usr/share/dobbelt-pi-hole --listen-address ${DASHBOARD_LISTEN_ADDRESS} --listen-port ${DASHBOARD_LISTEN_PORT}
+ExecStartPre=/usr/sbin/nginx -e stderr -t -q -c /etc/dobbelt-pi-hole/nginx.conf
+ExecStart=/usr/sbin/nginx -e stderr -c /etc/dobbelt-pi-hole/nginx.conf -g "daemon off;"
+ExecReload=/usr/bin/python3 /opt/dobbelt-pi-hole/render_config.py --config /etc/dobbelt-pi-hole/config.json --output-dir /run/dobbelt-pi-hole --web-root /usr/share/dobbelt-pi-hole --listen-address ${DASHBOARD_LISTEN_ADDRESS} --listen-port ${DASHBOARD_LISTEN_PORT}
+ExecReload=/usr/sbin/nginx -e stderr -t -q -c /etc/dobbelt-pi-hole/nginx.conf
+ExecReload=/bin/kill -s HUP $MAINPID
+KillSignal=SIGQUIT
+KillMode=mixed
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+# Crashes restart; invalid configuration exits normally with an error and stays failed.
+Restart=on-abnormal
+RestartSec=3s
+
+# These controls work without nested mount namespaces in an unprivileged LXC.
+# Do not add PrivateTmp/ProtectSystem/PrivateDevices by enabling LXC nesting.
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+LimitNOFILE=4096
+TasksMax=32
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

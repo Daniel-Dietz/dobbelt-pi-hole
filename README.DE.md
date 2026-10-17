@@ -8,7 +8,8 @@ JSON-Konfiguration und eine lokale Chart.js-Datei. Ein Anwendungsbackend,
 eine Datenbank oder ein Frontend-Build-Prozess sind nicht erforderlich.
 Die Instanzen werden in einer zentralen JSON-Datei konfiguriert. Ein kleines
 Python-Werkzeug erzeugt daraus die öffentliche Browserkonfiguration und
-nginx-Proxy-Routen; unter Docker geschieht dies automatisch beim Start.
+nginx-Proxy-Routen. Unter Docker und beim nativen Proxmox-LXC-Dienst geschieht
+dies automatisch beim Start.
 
 Das Dashboard bietet:
 
@@ -38,7 +39,7 @@ Das Dashboard ist bewusst einfach aufgebaut:
 - Kein Anwendungsbackend
 - Keine Datenbank
 - Kein Frontend-Build-Prozess
-- Python nur zur Prüfung und Erzeugung der Konfiguration bei der Installation oder beim Containerstart
+- Python für die Installation und zum Erzeugen der Konfiguration bei Installation oder Dienststart
 - Serveradressen, Anzahl, Standardnamen und Standardsprache in einer externen JSON-Datei
 - Eigene Namen und Anzeigeeinstellungen lokal im Browser
 - Direkte Kommunikation mit den Pi-hole-v6-APIs über nginx
@@ -50,7 +51,8 @@ die Diagramme verwendet.
 
 - Zwei bis vier Pi-hole-Instanzen der Version **v6** mit REST-API. Das Dashboard
   funktioniert nicht mit der alten PHP-API von Pi-hole v5.
-- Docker mit Compose oder nginx und Python ab Version 3.10 für die manuelle Installation.
+- Docker mit Compose, **Proxmox VE 9 auf amd64** für den automatischen LXC-Installer
+  oder nginx und Python ab Version 3.10 für die manuelle Installation.
 - Netzwerkzugriff vom nginx des Dashboards auf alle konfigurierten Pi-hole-APIs.
 - Ein App-Passwort für jede Pi-hole-Instanz. Dieses wird in der jeweiligen
   Pi-hole-Verwaltungsoberfläche unter **Settings → API** erstellt.
@@ -92,6 +94,133 @@ Dashboard-Tab erneut:
 docker compose restart dashboard
 ```
 
+## Automatische Installation in Proxmox LXC
+
+Der Installer erstellt einen neuen **unprivilegierten Debian-13-LXC** und
+installiert nginx, Python, das Dashboard sowie Chart.js direkt darin. Er wird
+als **root auf dem Proxmox-VE-9-Host** ausgeführt. Die Anwendung läuft anschließend
+als eigener Benutzer `dobbelt-pi-hole` im CT; Docker ist dafür nicht erforderlich.
+
+### 1. Projekt und Pi-hole-Konfiguration vorbereiten
+
+Lege eine vollständige lokale Kopie des Projekts auf dem Proxmox-Host ab.
+Mit installiertem Git kannst du sie so herunterladen:
+
+```bash
+git clone https://github.com/Daniel-Dietz/dobbelt-pi-hole.git /root/dobbelt-pi-hole
+cd /root/dobbelt-pi-hole
+cp config/config.example.json config/config.json
+```
+
+Bearbeite `config/config.json` und trage die Namen und API-Adressen deiner
+zwei bis vier Pi-hole-Instanzen ein. App-Passwörter gehören nicht in diese
+Datei; du gibst sie später im Dashboard ein. Die
+[Konfigurationsanleitung](docs/CONFIGURATION.md) erläutert alle Felder.
+
+### 2. Installation zunächst prüfen
+
+Passe `local-lvm`, `local` und `vmbr0` an die vorhandenen Speicher und die
+aktive Bridge deines Proxmox-Nodes an. Prüfe den Plan mit:
+
+```bash
+python3 tools/create_lxc.py \
+  --config /root/dobbelt-pi-hole/config/config.json \
+  --storage local-lvm \
+  --template-storage local \
+  --bridge vmbr0 \
+  --hostname dobbelt-pi-hole \
+  --dry-run
+```
+
+`--dry-run` prüft die lokalen Dateien und das Proxmox-Inventar und zeigt die
+geplanten Befehle. Es erstellt keinen CT, lädt nichts herunter und ändert
+nichts am Host. Die automatische Template-Auswahl benötigt einen vorhandenen
+Proxmox-Katalog. Falls dieser leer ist, aktualisiere ihn separat mit
+`pveam update` und wiederhole die Prüfung.
+
+### 3. Neuen CT erstellen und Anwendung installieren
+
+Starte die Installation mit denselben Parametern ohne `--dry-run`:
+
+```bash
+python3 tools/create_lxc.py \
+  --config /root/dobbelt-pi-hole/config/config.json \
+  --storage local-lvm \
+  --template-storage local \
+  --bridge vmbr0 \
+  --hostname dobbelt-pi-hole
+```
+
+Standardmäßig verwendet der Installer eine clusterweit freie CT-ID, das neueste
+Debian-13-Standard-Template für amd64 aus dem Proxmox-Katalog und DHCP. Vorgesehen
+sind **1 CPU-Kern, 512 MiB RAM, 0 MiB Swap und 4 GiB Speicher**. Bei der echten
+Installation wird der Template-Katalog aktualisiert; das gewählte Template
+wird nur heruntergeladen, wenn es noch nicht im Cache liegt.
+
+Sobald Befehle im CT möglich sind, wartet der Installer bis zu **180 Sekunden**
+auf eine nutzbare bzw. die konfigurierte IPv4-Adresse an `eth0`, DNS-Auflösung
+für `deb.debian.org` und `raw.githubusercontent.com` sowie eine TCP-Verbindung
+zu `cdnjs.cloudflare.com:443`. Erst danach folgen Dateiübertragung und
+Paketinstallation. Bei einem Timeout bleiben der neue CT und sein Löschschutz
+erhalten; automatischer Start bleibt aus und der Installer versucht, den CT zu
+stoppen. Prüfe dann DHCP bzw. statische Adresse, Gateway, DNS und Firewallregeln.
+
+Weitere Angaben kannst du an den Aufruf anhängen:
+
+| Parameter | Beispiel und Bedeutung |
+| --- | --- |
+| `--ctid` | `--ctid 123` verwendet eine bestimmte freie CT-ID. |
+| `--ipv4` und `--gateway` | `--ipv4 192.168.1.50/24 --gateway 192.168.1.1` setzt eine statische Adresse. |
+| `--vlan` | `--vlan 123` setzt das VLAN-Tag. |
+| `--nameserver` | `--nameserver 192.168.1.1` legt einen DNS-Server fest; für mehrere Server wiederholen. |
+| `--cores`, `--memory`, `--swap`, `--disk` | Ändern CPU-Kerne, RAM/Swap in MiB und Speicher in GiB. |
+| `--template` | Wählt ein vorhandenes Template auf `--template-storage` über seine vollständige Proxmox-Volume-ID. |
+
+Der Installer verändert keine bestehenden CTs und baut weder das Host-Netzwerk
+noch Firewallregeln um. Automatischer CT-Start beim Booten wird erst nach
+erfolgreicher Installation aktiviert. Bei einem Fehler bleibt der neue CT zur
+Diagnose erhalten, zunächst ohne automatischen Start. Der Installer ist für
+**Neuinstallationen** vorgesehen und enthält keinen Updater für bestehende CTs.
+Auch vorhandene nginx-Pakete, Dienste, Maskierungen oder Konfigurationen im Gast
+führen vor Änderungen zum Abbruch. Verwende ein frisches Debian-13-Standard-Template;
+ein bereits vorhandener Webserver wird nicht übernommen.
+Der CT erhält außerdem einen Löschschutz (`protection=1`), der auch nach Erfolg
+oder Fehler aktiv bleibt. Für ein bewusstes späteres Entfernen musst du ihn
+zuerst mit `pct set 123 --protection 0` aufheben; ersetze `123` durch die zuvor
+geprüfte CT-ID. Der Installer löscht selbst keine CTs.
+
+### 4. Dashboard öffnen und betreiben
+
+Der native Dienst lauscht auf **`0.0.0.0:8080` innerhalb des CT**. Verwende die
+am Ende ausgegebene CT-Adresse, beispielsweise `http://192.168.1.50:8080`.
+Für den regulären Zugriff empfiehlt sich ein vorgeschalteter HTTPS-Proxy mit
+geeigneter Zugriffsbeschränkung. Die Aktivierung des Firewallflags am
+CT-Netzwerkadapter erzeugt **keine fertigen Firewallregeln**.
+
+Läuft dein HTTPS-Proxy außerhalb des CT, ersetzt du im
+[nginx-Beispiel](nginx.conf.DE.example) das Ziel `127.0.0.1:8080` durch die
+CT-Adresse, beispielsweise `192.168.1.50:8080`. Beschränke den Zugriff auf
+CT-Port 8080 mit deiner vorhandenen Proxmox-Firewall auf den Proxy bzw. die
+vorgesehenen vertrauenswürdigen Clients. Die Pi-hole-Adressen bleiben
+weiterhin ausschließlich in der zentralen JSON-Datei.
+
+Diese Datei liegt nach der Installation **im CT** unter
+`/etc/dobbelt-pi-hole/config.json`. Die ursprüngliche Kopie auf dem Host wird
+nicht laufend synchronisiert. Mit `pct enter 123` öffnest du eine Shell im CT;
+ersetze `123` durch die ausgegebene CT-ID. Nach einer Konfigurationsänderung
+kannst du den Dienst vom Proxmox-Host aus neu starten und seine Logs anzeigen:
+
+```bash
+pct exec 123 -- systemctl restart dobbelt-pi-hole
+pct exec 123 -- journalctl -u dobbelt-pi-hole -n 100 --no-pager
+```
+
+Lade anschließend den Dashboard-Tab neu. Chart.js und dessen Lizenz werden bei
+der Installation heruntergeladen und per SHA-256 geprüft; Dienststarts brauchen
+keine erneuten Downloads. Der [LXC-Leitfaden](docs/LXC.md) (auf Englisch) enthält
+die vollständige Parameterübersicht sowie Hinweise zu Backup, Wiederherstellung,
+Updates und Fehlerbehebung.
+
 ## Manuelle Einrichtung mit nginx
 
 1. Kopiere `index.html` in das Webverzeichnis, beispielsweise
@@ -126,8 +255,9 @@ docker compose restart dashboard
    nginx -t && systemctl reload nginx
    ```
 
-Führe nach Änderungen an der JSON-Datei den Generator erneut aus und lade
-nginx neu. Die [Konfigurationsanleitung](docs/CONFIGURATION.md) (auf Englisch)
+Führe nach Änderungen an der JSON-Datei oder `index.html` den Generator erneut
+aus und lade nginx neu; die erzeugte Content Security Policy verwendet Hashwerte
+der eingebetteten Skripte. Die [Konfigurationsanleitung](docs/CONFIGURATION.md) (auf Englisch)
 erläutert alle Felder, TLS, Dateiberechtigungen und die Migration älterer Installationen.
 
 ## Serveranzahl und Namen
@@ -204,9 +334,13 @@ Sprachen verfügbar:
   beim Schließen des Tabs entfernt. Passwörter werden nicht gespeichert.
 - Nicht vertrauenswürdige Werte wie Clientnamen, Domains und Kommentare
   werden vor der Anzeige maskiert.
-- JavaScript ist direkt in die HTML-Datei eingebettet. Das begrenzt, wie
-  restriktiv eine Content Security Policy sein kann. Die erzeugte nginx-Konfiguration
-  enthält eine Richtlinie für die eingebetteten Skripte und die lokale Chart.js-Datei.
+- nginx erlaubt eingebettete Anwendungsskripte über SHA-256-Hashes in der Content
+  Security Policy und lädt Chart.js lokal. Die Antworten enthalten außerdem
+  Cachebeschränkungen, Schutz vor Einbettung in Frames und `nosniff`-Header.
+- Compose und der native LXC-Dienst führen nginx ohne Rootrechte oder
+  Capabilities aus und verhindern eine Rechteerhöhung. Der API-Proxy entfernt
+  `Authorization`- und `Cookie`-Header des Browsers vor der Weiterleitung an
+  Pi-hole; die Zertifikatsprüfung für HTTPS-Ziele ist standardmäßig aktiv.
 - Beim Betrieb auf einem Synology NAS kann ein DSM-Zugriffssteuerungsprofil
   den Zugriff auf bestimmte IP-Adressen oder lokale Netzwerke beschränken.
 
@@ -219,6 +353,7 @@ direkt aus dem Internet erreichbar sein.
 - **v1.2.006:** Unterstützung für zwei, drei oder vier Pi-hole-Instanzen
 - **v1.3.007:** Schlüsselbasierte Mehrsprachigkeit mit vollständiger dänischer, englischer und deutscher Oberfläche und Dokumentation
 - **v1.4.008:** Externe JSON-Konfiguration, erzeugte API-Routen und Docker-Image
+- **v1.5.009:** Automatische native Proxmox-LXC-Installation, stärkere nginx-Isolierung und CSP
 - **Geplant:** Weboberfläche zum Bearbeiten der zentralen Instanzkonfiguration
 
 ## Mitwirken
@@ -244,6 +379,7 @@ Das Projekt steht unter der MIT-Lizenz und darf gemäß deren Bedingungen
 verwendet, kopiert, verändert und weiterverbreitet werden. Siehe `LICENSE`.
 
 Das Docker-Image enthält Chart.js 4.4.1 und dessen MIT-Lizenz unter
-`/usr/share/licenses/chart.js/LICENSE`. Bei manueller Installation wird Chart.js
-wie oben beschrieben separat heruntergeladen. Chart.js ist ein unabhängiges
-Drittanbieterprojekt.
+`/usr/share/licenses/chart.js/LICENSE`. Der LXC-Installer lädt und prüft die
+Diagrammbibliothek und ihre Lizenz ebenfalls automatisch. Bei manueller
+Installation wird Chart.js wie oben beschrieben separat heruntergeladen.
+Chart.js ist ein unabhängiges Drittanbieterprojekt.

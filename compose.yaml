@@ -1,7 +1,7 @@
 services:
   dashboard:
     build: .
-    image: dobbelt-pi-hole:1.4.008
+    image: dobbelt-pi-hole:1.5.009
     ports:
       - "127.0.0.1:8080:8080"
     volumes:

@@ -1,9 +1,10 @@
 # Deployment configuration
 
-Version 1.4.008 moves instance configuration out of `index.html`. Maintain one
-private JSON file; `tools/render_config.py` validates it and generates both the
+Maintain one private JSON file outside `index.html`; `tools/render_config.py`
+validates it and generates both the
 browser configuration and nginx API routes. The renderer uses Python's standard
-library and does not run a web backend.
+library and does not run a web backend. Version 1.5.009 supports Docker, automated
+native Proxmox LXC installation and manual nginx deployments.
 
 ## Canonical file
 
@@ -86,6 +87,43 @@ Chart.js 4.4.1 and its license are downloaded with SHA-256 verification at build
 time and served locally. Runtime startup does not download assets. The Chart.js
 license is included at `/usr/share/licenses/chart.js/LICENSE`.
 
+## Native Proxmox LXC
+
+The [LXC installer and operations guide](LXC.md) describes creating a new
+unprivileged Debian 13 CT from a Proxmox VE 9 amd64 host. The installer transfers
+the checked local project files and canonical JSON, installs nginx and Python
+natively, and downloads Chart.js and its license with SHA-256 verification.
+The application's configuration format is the same as Docker's.
+
+| Setting | Docker Compose | Native LXC |
+| --- | --- | --- |
+| Canonical JSON | Host `./config/config.json`, mounted at `/config/config.json` | `/etc/dobbelt-pi-hole/config.json` inside the CT |
+| Generated files | `/run/dobbelt-pi-hole` | `/run/dobbelt-pi-hole` |
+| Web files | `/usr/share/nginx/html` | `/usr/share/dobbelt-pi-hole` |
+| Runtime account | UID/GID 101 | User/group `dobbelt-pi-hole` |
+| Apply edited JSON | `docker compose restart dashboard` on the Docker host | `systemctl restart dobbelt-pi-hole` inside the CT |
+| Logs | `docker compose logs dashboard` | `journalctl -u dobbelt-pi-hole` |
+| Default network access | Docker host `127.0.0.1:8080` | CT `0.0.0.0:8080` |
+
+The native canonical file is owned by root, readable by the service group and
+outside the web directory. The host's installation-time JSON is copied into the
+CT, not mounted or automatically synchronized. Edit the CT copy for subsequent
+changes. Both deployment types regenerate the public JSON, nginx routes and CSP
+at service startup and reject invalid configuration before nginx starts.
+
+The native service runs without root privileges or capabilities and with
+`NoNewPrivileges`. Runtime directories are recreated after boot. Its systemd
+hardening does not require extra namespace features or nesting in the CT.
+The installation is for fresh CTs only; use the [LXC update and backup guidance](LXC.md#updates-backup-and-recovery)
+for later dashboard releases.
+
+Unlike Docker's host-loopback publication, the native CT backend is reachable
+on its own network address. Place an HTTPS proxy in front and restrict access
+with your existing Proxmox firewall or proxy policy. The CT NIC's firewall flag
+does not create firewall rules. For a front proxy outside the CT, change only
+the example's `proxy_pass` target to `http://<CT-IP>:8080`, without a URI suffix.
+Individual Pi-hole addresses remain in the canonical JSON.
+
 ## Manual nginx installation
 
 Use nginx and Python 3.10 or later. Run installation commands with the permissions
@@ -134,7 +172,9 @@ check and reload:
 nginx -t && systemctl reload nginx
 ```
 
-Repeat generation, validation and reload after changing the source. Do not edit
+Repeat generation, validation and reload after changing the source or the
+installed `index.html`. The CSP hashes must match the current embedded scripts.
+Do not edit
 the generated files or retain old hand-written `/api1`–`/api4` proxy blocks.
 
 | Renderer option | Default |
@@ -155,14 +195,20 @@ atomically. nginx validation and reload remain the manual installer's next step.
 ## DNS, TLS and API identity
 
 nginx resolves configured hostnames at request time using the nameservers from
-`/etc/resolv.conf`. This respects Docker's configured resolver and allows the
-dashboard to start while a Pi-hole hostname is temporarily unavailable. No
-Pi-hole connection is required during configuration generation.
+`/etc/resolv.conf`. This respects Docker's configured resolver or the native
+guest's DNS configuration and allows the dashboard to start while a Pi-hole
+hostname is temporarily unavailable. No Pi-hole connection is required during
+configuration generation.
 
 HTTPS upstreams use certificate verification, a CA bundle and SNI by default.
 For a private CA, provide a CA bundle containing the required trusted roots:
 use `--ca-bundle` for a manual install, or bind-mount the bundle read-only over
-`/etc/ssl/certs/ca-certificates.crt` in Docker. Alternatively, an instance can
+`/etc/ssl/certs/ca-certificates.crt` in Docker. In a native Debian CT, place each
+CA certificate in its own PEM-formatted `.crt` file under
+`/usr/local/share/ca-certificates`, run `update-ca-certificates`, then restart
+`dobbelt-pi-hole`. See Debian's
+[certificate-store documentation](https://manpages.debian.org/trixie/ca-certificates/update-ca-certificates.8.en.html).
+Alternatively, an instance can
 explicitly set `"verifyTls": false`; that disables verification for that HTTPS
 upstream. This setting is separate from HTTPS on the dashboard's own front proxy.
 
@@ -181,6 +227,23 @@ fingerprints and legacy routes receive HTTP 409 with
 or its session ID. Reload the dashboard and log in to the new destination.
 Changing a label, display order or TLS-verification flag does not change the
 route. Encoded API request suffixes and query strings are preserved by the proxy.
+
+## nginx hardening and HTML changes
+
+The generated server serves the application assets, public configuration,
+health endpoint and fingerprinted API routes explicitly. Its CSP allows the
+embedded application scripts by SHA-256 hash and Chart.js from the same origin;
+it does not allow arbitrary inline scripts. Inline styles remain supported for
+the dashboard's existing layout. Responses include `no-store`, `nosniff` and
+framing restrictions. The API proxy removes incoming `Authorization` and
+`Cookie` headers before forwarding to Pi-hole, while preserving the Pi-hole
+session header and application request data.
+
+Hash generation reads the deployed `index.html`. Whenever its scripts change,
+regenerate configuration before nginx serves the new version: rebuild/recreate
+the Docker container for a changed image, restart the native dashboard service
+for installed HTML changes, or rerun the renderer and reload nginx for a manual
+installation. An outdated CSP can block a legitimate changed script.
 
 ## Upgrading and checks
 
@@ -205,4 +268,6 @@ python3 -m unittest discover -s tests -p 'test_container.py' -v
 ```
 
 See the [translation guide](I18N.md#verification) for frontend unit and browser
-checks. The CI workflow runs frontend, renderer and container checks.
+checks and the [LXC guide](LXC.md#verification-scope) for native installation
+verification. Host command fixtures and Debian systemd checks do not replace
+an end-to-end installation on a real Proxmox node.

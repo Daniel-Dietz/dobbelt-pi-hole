@@ -8,7 +8,7 @@ interface. The browser loads `index.html`, an external JSON configuration and
 a local Chart.js file. There is no application backend, database or frontend
 build process. One central JSON file configures the instances; a small Python
 tool generates the public browser configuration and nginx proxy routes from
-it. Docker runs this tool automatically at startup.
+it. Docker and the native Proxmox LXC service run this tool automatically at startup.
 
 The dashboard includes:
 
@@ -37,7 +37,7 @@ The dashboard is deliberately simple:
 - No application backend
 - No database
 - No frontend build process
-- Python is used only to validate and generate configuration at deployment or container startup
+- Python manages installation and generates configuration at deployment or service startup
 - Server addresses, count, default names and default language configured in one external JSON file
 - Custom names and interface preferences stored locally in the browser
 - Direct communication with the Pi-hole v6 APIs through nginx
@@ -48,7 +48,8 @@ Chart.js is loaded as a separate local file and is only used for charts.
 
 - Two to four Pi-hole **v6** instances with the REST API. The dashboard does not work
   with the old Pi-hole v5 PHP API.
-- Docker with Compose, or nginx and Python 3.10 or later for a manual installation.
+- Docker with Compose, **Proxmox VE 9 on amd64** for the automated LXC installer,
+  or nginx and Python 3.10 or later for a manual installation.
 - Network access from the dashboard's nginx to each configured Pi-hole API.
 - An app password for each Pi-hole. Create it under **Settings → API** in each
   Pi-hole administration interface.
@@ -86,6 +87,50 @@ After editing the configuration, apply it and reload the dashboard tab:
 docker compose restart dashboard
 ```
 
+## Automated Proxmox LXC setup
+
+The installer creates a new **unprivileged Debian 13 LXC** and installs nginx,
+Python, the dashboard and verified Chart.js files directly inside it. Run it
+as **root on the Proxmox VE 9 host**, from a complete local checkout:
+
+```bash
+cd /root/dobbelt-pi-hole
+cp config/config.example.json config/config.json
+# Edit config/config.json with your own Pi-hole instances.
+python3 tools/create_lxc.py \
+  --config /root/dobbelt-pi-hole/config/config.json \
+  --storage local-lvm \
+  --template-storage local \
+  --bridge vmbr0 \
+  --hostname dobbelt-pi-hole
+```
+
+Use storage and bridge names that exist on your node. By default, the installer
+chooses a free cluster-wide CT ID, the newest Debian 13 standard amd64 template
+from the Proxmox catalog and DHCP. Add `--dry-run` to validate local input and
+inspect the planned commands without downloads or changes. For a fixed address,
+add, for example, `--ipv4 192.168.1.50/24 --gateway 192.168.1.1`.
+
+The native service listens on the **CT's address, port 8080**. Put an HTTPS
+reverse proxy in front of it and restrict access using your existing firewall
+or proxy controls. The installer enables the CT NIC's firewall flag; it does
+not create firewall rules or change the host's network. In the supplied nginx
+front-proxy example, replace `127.0.0.1:8080` with the CT's address when that
+proxy runs on a different machine.
+
+The configuration is copied into the CT at `/etc/dobbelt-pi-hole/config.json`.
+After editing that copy, apply it from the Proxmox host (replace `123` with
+the reported CT ID):
+
+```bash
+pct exec 123 -- systemctl restart dobbelt-pi-hole
+```
+
+Then reload the dashboard tab. The installer creates fresh CTs only; it is not
+an updater for an existing installation. On installation failure it keeps the
+new CT for diagnosis, with automatic boot disabled. The
+[LXC guide](docs/LXC.md) covers all options, logs, updates, backup and recovery.
+
 ## Manual nginx setup
 
 1. Copy `index.html` to your web directory, for example
@@ -119,7 +164,8 @@ docker compose restart dashboard
    nginx -t && systemctl reload nginx
    ```
 
-Run the generator and reload nginx again after changing the JSON file.
+Run the generator and reload nginx again after changing the JSON file or
+`index.html`; the generated Content Security Policy hashes the embedded scripts.
 The [configuration guide](docs/CONFIGURATION.md) explains all fields, TLS,
 file permissions and migration from earlier versions.
 
@@ -192,9 +238,13 @@ languages:
   when the tab is closed. Passwords are not stored.
 - Untrusted values such as client names, domains and comments are escaped
   before being displayed.
-- JavaScript is embedded directly in the HTML file. This limits how restrictive
-  a Content Security Policy can be. The generated nginx configuration includes
-  a policy compatible with the embedded scripts and local Chart.js file.
+- nginx permits embedded application scripts through SHA-256 Content Security
+  Policy hashes and loads Chart.js locally. Generated responses also include
+  cache and framing restrictions and `nosniff` headers.
+- Compose and the native LXC service run nginx without root privileges or
+  capabilities and prevent privilege escalation. The API proxy strips browser
+  `Authorization` and `Cookie` headers before forwarding requests to Pi-hole;
+  HTTPS upstream certificate verification is enabled by default.
 - When hosting the dashboard on a Synology NAS, a DSM access control profile
   can restrict access to selected IP addresses or local networks.
 
@@ -207,6 +257,7 @@ access control in front of it.
 - **v1.2.006:** Support for two, three or four Pi-hole instances
 - **v1.3.007:** Key-based multilingual support with complete Danish, English and German interfaces and documentation
 - **v1.4.008:** External JSON configuration, generated API routes and a Docker image
+- **v1.5.009:** Automated native Proxmox LXC installation and stronger nginx isolation and CSP
 - **Planned:** Web interface for editing the central instance configuration
 
 ## Contributing
@@ -230,5 +281,7 @@ The project is released under the MIT License and may be used, copied, modified
 and redistributed in accordance with the terms of the license. See `LICENSE`.
 
 The Docker image bundles Chart.js 4.4.1 and its MIT license at
-`/usr/share/licenses/chart.js/LICENSE`. Manual installations download Chart.js
-separately as described above. Chart.js is an independent third-party project.
+`/usr/share/licenses/chart.js/LICENSE`. The LXC installer also downloads and
+verifies the chart library and its license automatically. Manual installations
+download Chart.js separately as described above. Chart.js is an independent
+third-party project.
