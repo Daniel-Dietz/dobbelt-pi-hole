@@ -454,3 +454,52 @@ test('new client and type selections made while query cursor pages load override
   assert.equal(await page.locator('#qArea tbody tr').count(), 2);
   await assertNoCorruption(fixture);
 });
+
+// A completed submission clears its inputs programmatically. Those clears emit
+// no input/change events, so late language renders must respect the existing DOM
+// controls instead of replaying the pre-submit draft. Keep API reads pending to
+// exercise the deferred restoration pass after a successful POST/PUT.
+const SUBMISSION_DURING_LANGUAGE_RENDER = [
+  { tab: 'domains', form: '#domainForm', endpoint: '/domains', target: '#targetDomain',
+    fields: { '#dDomain': 'submitted-domain.example', '#dComment': RAW_TEXT },
+    method: 'POST', mutation: '/domains/deny/exact' },
+  { tab: 'hosts', form: '#hostForm', endpoint: '/config/dns/hosts', target: '#targetHost',
+    fields: { '#hIp': '192.168.1.89', '#hName': 'submitted-host.example' },
+    method: 'PUT', mutation: '/config/dns/hosts/' + encodeURIComponent('192.168.1.89 submitted-host.example') },
+  { tab: 'clients', form: '#clientForm', endpoint: '/clients', target: '#targetClient',
+    fields: { '#cClient': '192.168.1.89', '#cComment': RAW_TEXT },
+    method: 'POST', mutation: '/clients' },
+  { tab: 'lists', form: '#listForm', endpoint: '/lists', target: '#targetList',
+    fields: { '#lUrl': 'https://lists.example/submitted-list.txt', '#lComment': RAW_TEXT },
+    method: 'POST', mutation: '/lists?type=block' },
+];
+for (const scenario of SUBMISSION_DURING_LANGUAGE_RENDER) for (const overlap of [false, true]) {
+  test(`${scenario.tab}: a successful submission stays cleared after ${overlap ? 'overlapping language renders' : 'a pending language render'}`, async t => {
+    const fixture = await openDashboard(t, { hash: scenario.tab }), { page } = fixture;
+    for (const [selector, value] of Object.entries(scenario.fields)) await page.locator(selector).fill(value);
+    await page.locator(scenario.target).selectOption('1');
+    const gate = fixture.pauseReads(scenario.endpoint);
+    await page.locator('#languageSelect').selectOption('en');
+    for (const [selector, value] of Object.entries(scenario.fields)) {
+      assert.equal(await page.locator(selector).inputValue(), value, 'The synchronous language render must restore the draft before submission');
+    }
+    await page.locator(`${scenario.form} button[type="submit"]`).click();
+    await page.waitForFunction(selectors => selectors.every(selector => document.querySelector(selector)?.value === ''), Object.keys(scenario.fields));
+    assert.ok(gate.arrived > 0, 'The language-render GET must still be pending when submission clears the form');
+    assert.equal(fixture.requests.filter(request => request.method === scenario.method && request.path === scenario.mutation).length, 1);
+    if (overlap) {
+      // A second language switch must carry the cleared form, even while the
+      // first language render and the submission's table reload are pending.
+      await page.locator('#languageSelect').selectOption('de');
+      for (const selector of Object.keys(scenario.fields)) assert.equal(await page.locator(selector).inputValue(), '');
+    }
+    gate.release();
+    await waitTab(page, scenario.tab);
+    await page.waitForLoadState('networkidle');
+    for (const selector of Object.keys(scenario.fields)) {
+      assert.equal(await page.locator(selector).inputValue(), '', 'Deferred language restoration must not repopulate successfully submitted values');
+    }
+    assert.equal(fixture.requests.filter(request => request.method === scenario.method && request.path === scenario.mutation).length, 1, 'Language rendering must not repeat the write');
+    await assertNoCorruption(fixture);
+  });
+}

@@ -1022,7 +1022,7 @@ function restoreFormState(snapshot) {
   const root = document.getElementById("tabContent");
   for (const field of snapshot.fields) {
     const element = root.querySelector(field.selector);
-    // A field restored in the synchronous render may have been edited while GETs ran.
+    // Preserve user edits and programmatic submission clears on already-restored nodes.
     if (!element || field.restoredElement === element) continue;
     if (element.tagName !== "SELECT" || [...element.options].some(option => option.value === field.value)) {
       element.value = field.value;
