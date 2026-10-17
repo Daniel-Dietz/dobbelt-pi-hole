@@ -214,6 +214,68 @@ class NativeGuestTests(unittest.TestCase):
         self.guest_exec("python3", "-c", "import pathlib,sys;pathlib.Path(sys.argv[1]).write_text(sys.stdin.read(),encoding='utf-8')",
                         PRIVATE_CONFIG, input=json.dumps(config, ensure_ascii=False))
 
+    def package_state(self):
+        # Hash package state/logs and record directory metadata to detect package
+        # actions, including apt update without a subsequent installation.
+        result = self.guest_exec("python3", "-c", """
+import hashlib, json
+from pathlib import Path
+state = {}
+for root in map(Path, ['/var/lib/dpkg/status', '/var/log/dpkg.log', '/var/log/apt', '/var/lib/apt/lists']):
+    for path in [root, *sorted(root.rglob('*'))] if root.is_dir() else [root]:
+        if path.exists():
+            info = path.stat()
+            state[str(path)] = [info.st_mode, info.st_mtime_ns,
+                               hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None]
+print(json.dumps(state))
+""")
+        return json.loads(result.stdout)
+
+    def assert_existing_nginx_is_refused(self):
+        unit_path = "/etc/systemd/system/nginx.service"
+        config_path = "/etc/nginx/nginx.conf"
+        sentinel_unit = ("[Unit]\nDescription=Native installer preservation fixture\n"
+                         "[Service]\nType=exec\nExecStart=/usr/bin/sleep infinity\n"
+                         "[Install]\nWantedBy=multi-user.target\n")
+        sentinel_config = "# Existing nginx configuration owned by the integration fixture\nevents {}\nhttp {}\n"
+        self.guest_exec("python3", "-c", """
+import json, sys
+from pathlib import Path
+for name, content in json.loads(sys.stdin.read()).items():
+    path = Path(name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding='utf-8')
+    path.chmod(0o644)
+""", input=json.dumps({unit_path: sentinel_unit, config_path: sentinel_config}))
+        self.guest_exec("systemctl", "daemon-reload")
+        self.guest_exec("systemctl", "enable", "--now", "nginx.service")
+        self.assertEqual(self.guest_exec("systemctl", "is-active", "nginx.service").stdout.strip(), "active")
+        before_pid = self.guest_exec("systemctl", "show", "--property=MainPID", "--value", "nginx.service").stdout.strip()
+        self.assertGreater(int(before_pid), 1)
+        before_packages = self.package_state()
+        before_config = self.guest_exec("cat", PRIVATE_CONFIG).stdout
+        before_metadata = self.guest_exec("stat", "--format=%u:%g:%a:%y:%z", unit_path, config_path, PRIVATE_CONFIG).stdout
+
+        rejected = self.install(check=False)
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("Installation error: existing nginx ", rejected.stderr)
+        self.assertEqual(self.guest_exec("systemctl", "is-active", "nginx.service").stdout.strip(), "active")
+        self.assertEqual(self.guest_exec("systemctl", "is-enabled", "nginx.service").stdout.strip(), "enabled")
+        self.assertEqual(self.guest_exec("systemctl", "show", "--property=MainPID", "--value", "nginx.service").stdout.strip(), before_pid,
+                         "Rejecting a non-fresh guest must not stop or restart its existing service")
+        self.assertEqual(self.guest_exec("cat", unit_path).stdout, sentinel_unit)
+        self.assertEqual(self.guest_exec("cat", config_path).stdout, sentinel_config)
+        self.assertEqual(self.guest_exec("cat", PRIVATE_CONFIG).stdout, before_config)
+        self.assertEqual(self.guest_exec("stat", "--format=%u:%g:%a:%y:%z", unit_path, config_path, PRIVATE_CONFIG).stdout, before_metadata)
+        self.assertEqual(self.package_state(), before_packages, "The fresh-guest rejection must precede package actions")
+
+        # These are exclusively the controlled fixture's unit and config. Remove
+        # them before exercising a genuinely fresh nginx install in this guest.
+        self.guest_exec("systemctl", "disable", "--now", "nginx.service")
+        self.guest_exec("python3", "-c", "from pathlib import Path;import sys;[Path(p).unlink() for p in sys.argv[1:]];Path('/etc/nginx').rmdir()",
+                        unit_path, config_path)
+        self.guest_exec("systemctl", "daemon-reload")
+
     def assert_headers(self, headers, inline_hash):
         headers = {name.lower(): value for name, value in headers.items()}
         csp = headers.get("content-security-policy", "")
@@ -269,7 +331,15 @@ class NativeGuestTests(unittest.TestCase):
     def test_real_install_service_restart_and_boot_regenerate_safe_routes(self):
         config = self.config()
         self.start_guest(config)
+        # An equivalent canonical file may be staged before the fresh install.
+        # Its different formatting also proves the installer preserves its bytes.
+        canonical_text = json.dumps(config, ensure_ascii=False, indent=4) + "\n"
+        self.guest_exec("python3", "-c", "from pathlib import Path;import sys;p=Path(sys.argv[1]);p.parent.mkdir(mode=0o750);p.write_text(sys.stdin.read(),encoding='utf-8');p.chmod(0o600)",
+                        PRIVATE_CONFIG, input=canonical_text)
+        self.assert_existing_nginx_is_refused()
         self.install()
+        self.assertEqual(self.guest_exec("cat", PRIVATE_CONFIG).stdout, canonical_text,
+                         "A pre-existing equivalent canonical configuration must be retained without rewriting")
         self.wait_http(self.guest, "/healthz")
         self.assert_file_permissions(self.assert_service())
         self.assertEqual(self.get_json("/config.json"), self.public_config(config))

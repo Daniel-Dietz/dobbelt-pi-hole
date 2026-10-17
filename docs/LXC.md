@@ -27,6 +27,9 @@ The installer checks the Proxmox version and architecture, the local source
 files, canonical JSON, network bridge and storage before creating the CT. It
 does not modify host networking or firewall rules, install the application on
 the Proxmox host, or reuse an existing CT.
+The guest installer also refuses existing nginx packages, service units, masks
+or configuration before making changes. It does not take over another web server;
+use a fresh Debian 13 standard template.
 
 ## Quickstart on the Proxmox host
 
@@ -74,6 +77,14 @@ The default configuration uses DHCP, a free cluster-wide CT ID, one CPU core,
 512 MiB RAM, no swap and a 4 GiB root disk. During an actual installation the
 installer refreshes the Proxmox catalog, selects its newest Debian 13 standard
 amd64 template and downloads it only when it is not already cached.
+
+Once guest commands work, the host waits up to **180 seconds** for a usable IPv4
+address on `eth0` (the requested address for static configuration), IPv4 DNS
+resolution of `deb.debian.org` and `raw.githubusercontent.com`, and a TCP
+connection to `cdnjs.cloudflare.com:443`. File upload and package installation
+start only after these checks succeed. A network timeout keeps the newly created
+CT for diagnosis, with automatic boot disabled and a stop attempt, as described
+under [recovery](#updates-backup-and-recovery).
 
 The installer transfers the checked local project files and configuration into
 the new CT, installs native Debian packages, downloads and verifies Chart.js
@@ -247,6 +258,8 @@ pct set 123 --protection 0
 | Preflight rejects the host | Run as root on Proxmox VE 9 amd64, using a complete local project checkout. |
 | Storage or bridge rejected | Use existing, active resources on this node. Disk storage needs `rootdir`; template storage needs `vztmpl`. |
 | Dry run cannot select a template | Refresh the local catalog with `pveam update`, then repeat the dry run, or select an existing supported template explicitly. |
+| Network readiness times out after three minutes | Check DHCP or the configured static address on `eth0`, gateway and DNS. The guest must resolve `deb.debian.org` and `raw.githubusercontent.com` and connect to `cdnjs.cloudflare.com:443`; existing firewall rules can block these checks. No application files or packages are installed before this phase succeeds. |
+| Guest installer rejects existing nginx | Use a fresh Debian 13 standard template. Existing nginx packages, units, masks or configuration are intentionally preserved rather than adopted. |
 | Guest package or Chart.js download fails | Check the CT's address, gateway, DNS and outbound access; existing firewall policy can prevent downloads. |
 | Dashboard URL is unreachable | Check CT status, assigned IP, `dobbelt-pi-hole.service`, listener port 8080 and existing firewall rules. The Proxmox host's localhost is not the CT's localhost. |
 | Service fails after editing configuration | Read the journal, correct `/etc/dobbelt-pi-hole/config.json`, and restart. |

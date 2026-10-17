@@ -43,6 +43,14 @@ INTERFACE = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,14}\Z")
 DNS_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\Z")
 TEMPLATE = re.compile(r"debian-13-standard_[0-9][A-Za-z0-9.+~_-]*_amd64\.tar\.(?:zst|gz|xz)\Z")
 TOOLS = ("pveversion", "pvesh", "pveam", "pvesm", "pct")
+NETWORK_WAIT_SECONDS = 180
+# Only fixed installation endpoints occur in this guest-side Bash program.
+# It works before Python/curl are installed and never interpolates user input.
+NETWORK_PROBE = """set -e
+/usr/bin/getent ahostsv4 deb.debian.org >/dev/null
+/usr/bin/getent ahostsv4 raw.githubusercontent.com >/dev/null
+exec 3<>/dev/tcp/cdnjs.cloudflare.com/443
+"""
 
 
 class InstallError(RuntimeError):
@@ -290,6 +298,51 @@ def run_owned(runner, plan, arguments, **options):
     return runner.run(arguments, **options)
 
 
+def wait_guest_network(arguments, plan, runner):
+    """Wait for the configured IPv4 address and download networking before apt.
+
+    A working pct exec alone says nothing about DHCP or DNS readiness. Inspect
+    eth0, then resolve the package/license hosts and connect to the Chart.js
+    HTTPS endpoint. Individual guest probes and the retry window are bounded.
+    """
+    deadline = time.monotonic() + NETWORK_WAIT_SECONDS
+    expected_ip = None if arguments.ipv4 == "dhcp" else str(ipaddress.IPv4Interface(arguments.ipv4).ip)
+    print(f"Waiting up to {NETWORK_WAIT_SECONDS} seconds for guest IPv4, DNS and download connectivity.", flush=True)
+    reason = "eth0 has no usable IPv4 address"
+    while time.monotonic() < deadline:
+        addresses = run_owned(runner, plan, guest_command(
+            plan, "/usr/sbin/ip", "-j", "-4", "address", "show", "dev", "eth0",
+        ), timeout=10, check=False)
+        usable = []
+        if addresses.returncode == 0:
+            try:
+                for interface in json.loads(addresses.stdout):
+                    for entry in interface.get("addr_info", []):
+                        address = ipaddress.IPv4Address(entry.get("local", ""))
+                        if (entry.get("scope") == "global" and not address.is_unspecified
+                                and not address.is_loopback and not address.is_link_local
+                                and not address.is_multicast
+                                and (expected_ip is None or str(address) == expected_ip)):
+                            usable.append(address)
+            except (TypeError, ValueError, AttributeError):
+                usable = []
+        remaining = deadline - time.monotonic()
+        if usable and remaining >= 1:
+            # timeout runs inside the CT, so a slow DNS/TCP probe cannot linger
+            # in the guest after the host's command wrapper has returned.
+            seconds = max(1, min(8, int(remaining)))
+            probe = run_owned(runner, plan, guest_command(
+                plan, "/usr/bin/timeout", str(seconds), "/bin/bash", "-c", NETWORK_PROBE,
+            ), timeout=seconds + 5, check=False)
+            if probe.returncode == 0:
+                return
+            reason = "installation DNS or the Chart.js HTTPS endpoint is not reachable"
+        else:
+            reason = "eth0 has no usable configured IPv4 address"
+        time.sleep(min(2, max(0, deadline - time.monotonic())))
+    raise InstallError(f"Guest networking did not become ready within {NETWORK_WAIT_SECONDS} seconds: {reason}")
+
+
 def provision(arguments, plan, files, config, runner):
     """Create, populate and health-check a new CT; never delete it on failure."""
     created = False
@@ -321,6 +374,7 @@ def provision(arguments, plan, files, config, runner):
             if time.monotonic() >= deadline:
                 raise InstallError("The new CT did not become ready for guest commands within 90 seconds")
             time.sleep(2)
+        wait_guest_network(arguments, plan, runner)
         guest_root = "/root/" + plan.marker.replace(":", "-")
         directories = sorted({guest_root, *(guest_root + "/" + str(Path(name).parent) for name in files)})
         run_owned(runner, plan, guest_command(plan, "/usr/bin/install", "-d", "-m", "0700", *directories))

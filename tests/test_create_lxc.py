@@ -69,6 +69,8 @@ class FakePVE(installer.Runner):
         self.replace_after_uploads = False
         self.bad_unprivileged = False
         self.readiness_failures = 0
+        self.address_failures = 0
+        self.network_failures = 0
         self.stopped = False
 
     def run(self, arguments, *, timeout=60, capture=True, check=True):
@@ -124,12 +126,18 @@ class FakePVE(installer.Runner):
                 returncode = 1
             if args[6:] == ["/bin/true"] and self.replace_after_ready:
                 self.foreign_marker = True
-            if "/bin/bash" in args and self.guest_failure:
+            if any(value.endswith("/tools/install_lxc_guest.sh") for value in args) and self.guest_failure:
                 raise installer.InstallError("Guest package installation failed")
             if "/usr/bin/python3" in args and self.health_failure:
                 raise installer.InstallError("Guest HTTP health check failed")
             if "/usr/sbin/ip" in args:
                 value = json.dumps([{"addr_info": [{"scope": "global", "local": "192.0.2.50"}]}])
+                if self.address_failures:
+                    self.address_failures -= 1
+                    value = json.dumps([{"addr_info": []}])
+            if installer.NETWORK_PROBE in args and self.network_failures:
+                self.network_failures -= 1
+                returncode = 1
         elif args[:2] == ["pct", "set"]:
             self.created["onboot"] = int(args[args.index("--onboot") + 1])
         elif args[:2] == ["pct", "stop"]:
@@ -270,7 +278,9 @@ class ProvisioningTests(unittest.TestCase):
         result, output = self.execute()
         self.assertEqual(result, 2)
         self.assertIn("ownership changed", output)
-        self.assertFalse(any("/bin/bash" in call for call in self.fake.calls))
+        self.assertFalse(any(call[:2] == ["pct", "exec"]
+                             and any(value.endswith("/tools/install_lxc_guest.sh") for value in call)
+                             for call in self.fake.calls))
         self.assertFalse(any(call[0] == "pct" and call[1] in {"stop", "set", "destroy"} for call in self.fake.calls))
 
     def test_failed_health_check_never_enables_autostart(self):
@@ -292,6 +302,39 @@ class ProvisioningTests(unittest.TestCase):
         result, output = self.execute()
         self.assertEqual(result, 0, output)
         self.assertEqual(sum(call[-1] == "/bin/true" for call in self.fake.calls), 3)
+
+    def test_slow_dhcp_and_download_networking_are_retried_before_upload(self):
+        self.fake.address_failures = 2
+        self.fake.network_failures = 2
+        result, output = self.execute()
+        self.assertEqual(result, 0, output)
+        probes = [index for index, call in enumerate(self.fake.calls) if installer.NETWORK_PROBE in call]
+        first_push = next(index for index, call in enumerate(self.fake.calls) if call[:2] == ["pct", "push"])
+        self.assertEqual(len(probes), 3, "Both transient DNS/TCP failures must be retried")
+        self.assertLess(probes[-1], first_push, "Do not transfer files or run apt before networking is ready")
+        self.assertEqual(self.fake.created["onboot"], 1)
+
+    def test_network_deadline_retains_the_ct_without_uploads_or_package_installation(self):
+        for failure in ("address", "dns_or_connectivity", "wrong_static_address"):
+            with self.subTest(failure=failure):
+                self.fake = FakePVE()
+                options = []
+                if failure == "address":
+                    self.fake.address_failures = 1000
+                elif failure == "dns_or_connectivity":
+                    self.fake.network_failures = 1000
+                else:
+                    options = ["--ipv4", "192.0.2.60/24"]
+                with patch.object(installer.time, "monotonic", side_effect=range(0, 10000, 20)):
+                    result, output = self.execute(*options)
+                self.assertEqual(result, 2, output)
+                self.assertIn("Guest networking did not become ready", output)
+                self.assertFalse(self.fake.uploads)
+                self.assertEqual(self.fake.created["onboot"], 0)
+                self.assertTrue(self.fake.stopped)
+                self.assertFalse(any(call[:2] == ["pct", "exec"]
+                                     and any(value.endswith("/tools/install_lxc_guest.sh") for value in call)
+                                     for call in self.fake.calls))
 
     def test_template_download_must_produce_expected_volume_before_create(self):
         self.fake.cached = []

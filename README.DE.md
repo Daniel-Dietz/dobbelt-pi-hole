@@ -157,6 +157,14 @@ sind **1 CPU-Kern, 512 MiB RAM, 0 MiB Swap und 4 GiB Speicher**. Bei der echten
 Installation wird der Template-Katalog aktualisiert; das gewählte Template
 wird nur heruntergeladen, wenn es noch nicht im Cache liegt.
 
+Sobald Befehle im CT möglich sind, wartet der Installer bis zu **180 Sekunden**
+auf eine nutzbare bzw. die konfigurierte IPv4-Adresse an `eth0`, DNS-Auflösung
+für `deb.debian.org` und `raw.githubusercontent.com` sowie eine TCP-Verbindung
+zu `cdnjs.cloudflare.com:443`. Erst danach folgen Dateiübertragung und
+Paketinstallation. Bei einem Timeout bleiben der neue CT und sein Löschschutz
+erhalten; automatischer Start bleibt aus und der Installer versucht, den CT zu
+stoppen. Prüfe dann DHCP bzw. statische Adresse, Gateway, DNS und Firewallregeln.
+
 Weitere Angaben kannst du an den Aufruf anhängen:
 
 | Parameter | Beispiel und Bedeutung |
@@ -173,6 +181,9 @@ noch Firewallregeln um. Automatischer CT-Start beim Booten wird erst nach
 erfolgreicher Installation aktiviert. Bei einem Fehler bleibt der neue CT zur
 Diagnose erhalten, zunächst ohne automatischen Start. Der Installer ist für
 **Neuinstallationen** vorgesehen und enthält keinen Updater für bestehende CTs.
+Auch vorhandene nginx-Pakete, Dienste, Maskierungen oder Konfigurationen im Gast
+führen vor Änderungen zum Abbruch. Verwende ein frisches Debian-13-Standard-Template;
+ein bereits vorhandener Webserver wird nicht übernommen.
 Der CT erhält außerdem einen Löschschutz (`protection=1`), der auch nach Erfolg
 oder Fehler aktiv bleibt. Für ein bewusstes späteres Entfernen musst du ihn
 zuerst mit `pct set 123 --protection 0` aufheben; ersetze `123` durch die zuvor

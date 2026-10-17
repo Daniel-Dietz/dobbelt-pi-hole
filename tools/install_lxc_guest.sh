@@ -19,8 +19,8 @@ Run as root inside the dedicated container; never on the Proxmox host.
   --listen-port PORT      Unprivileged port 1024..65535 (default: 8080)
   --help                  Show this help
 
-Existing dashboard installations are refused. An existing canonical config is
-preserved when it is equivalent to --config; conflicting configurations fail.
+Existing nginx or dashboard installations are refused. An existing canonical
+config is preserved when it is equivalent to --config; conflicting configs fail.
 The HTTP listener is a backend for a trusted LAN or a protected HTTPS proxy.
 USAGE
 }
@@ -84,6 +84,35 @@ if getent passwd dobbelt-pi-hole >/dev/null || getent group dobbelt-pi-hole >/de
     || systemctl cat dobbelt-pi-hole.service >/dev/null 2>&1; then
     fail "the dashboard user, group or service already exists; this installer supports fresh guests only"
 fi
+
+# Masking the package's default unit later is safe only in a fresh guest.
+# Inspect packages, files and systemd without changing any existing workload.
+nginx_package_state=$(dpkg-query --show --showformat='${binary:Package}\t${db:Status-Status}\n') \
+    || fail "cannot inspect package state before installing into a fresh guest"
+while read -r package package_status; do
+    case ${package%%:*} in
+        nginx|nginx-*|libnginx-mod-*)
+            [[ $package_status == not-installed ]] \
+                || fail "existing nginx package $package ($package_status); this installer supports fresh guests only"
+            ;;
+    esac
+done <<< "$nginx_package_state"
+
+for existing_nginx in /etc/nginx /etc/default/nginx /etc/init.d/nginx \
+    /usr/local/etc/nginx /usr/local/nginx /usr/sbin/nginx /usr/local/sbin/nginx \
+    /etc/systemd/system/nginx* /run/systemd/system/nginx* \
+    /usr/lib/systemd/system/nginx* /lib/systemd/system/nginx*; do
+    [[ ! -e $existing_nginx && ! -L $existing_nginx ]] \
+        || fail "existing nginx configuration, binary or unit at $existing_nginx; this installer supports fresh guests only"
+done
+nginx_units=$(systemctl list-unit-files --no-legend --no-pager 'nginx*') \
+    || fail "cannot inspect nginx unit files before installing into a fresh guest"
+[[ -z $nginx_units ]] \
+    || fail "existing nginx systemd unit or mask; this installer supports fresh guests only"
+nginx_units=$(systemctl list-units --no-legend --no-pager 'nginx*') \
+    || fail "cannot inspect loaded nginx units before installing into a fresh guest"
+[[ -z $nginx_units ]] \
+    || fail "existing nginx systemd workload; this installer supports fresh guests only"
 
 canonical=/etc/dobbelt-pi-hole/config.json
 [[ ! -L /etc/dobbelt-pi-hole && ! -L $canonical ]] || fail "configuration directory/file must not be symbolic links"
