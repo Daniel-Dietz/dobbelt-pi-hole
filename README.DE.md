@@ -390,14 +390,16 @@ Dokumentationslinks erhalten.
 
 ## Aktuelle Grenzen im Betrieb
 
-- **Aktionen über mehrere Instanzen:** Jeder Pi-hole erhält eigene Anfragen.
-  Es gibt keine gemeinsame Transaktion oder allgemeine Rücknahme über alle
-  Ziele. Manche fehlgeschlagenen Schreibvorgänge können trotzdem eine
-  Erfolgsmeldung erzeugen; fehlgeschlagene Abrufe können als fehlende Einträge
-  erscheinen. Prüfe nach einem Fehler den tatsächlichen Zustand auf jedem
-  Pi-hole, bevor du die Aktion wiederholst. Korrekte Teilergebnisse und
-  unbekannte Datenstände sind in
-  [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8) erfasst.
+- **Aktionen über mehrere Instanzen:** Jede Pi-hole-Instanz wird unabhängig
+  angesprochen; es gibt keine gemeinsame Transaktion und keine automatische
+  Rücknahme. Domains, lokale DNS-Einträge, Clients und Listen unterscheiden
+  bestätigte Änderungen, Ablehnungen, nicht verbundene Ziele und unbekannte
+  Schreibausgänge. Vor dem Schreiben wird der aktuelle Zustand je Ziel
+  abgefragt. Fehlgeschlagene Lesezugriffe gelten nicht als fehlende Einträge,
+  und bei unvollständigem Ergebnis bleiben Eingaben erhalten. Nach einer
+  verlorenen Antwort muss der Zustand vor einer bewussten Wiederholung geprüft
+  werden; es erfolgt keine automatische Wiederholung. Siehe
+  [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8).
 - **Anfragen und Browserzustand:** Allgemeine Anfragefristen, der Schutz vor
   überlappenden Query-Ladevorgängen und klarere Sitzungs-/Berechtigungszustände
   bleiben in [#9](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/9) und
