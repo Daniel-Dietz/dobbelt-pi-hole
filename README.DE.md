@@ -269,6 +269,13 @@ seine Reihenfolge die Anzeigereihenfolge. Für HTTPS-Verbindungen zu Pi-hole
 ist `verifyTls` standardmäßig `true`. Siehe
 [Beispieldatei](config/config.example.json) und [JSON-Schema](config/config.schema.json).
 
+Trage bei `apiUrl` die direkte, endgültige Basis-URL der Pi-hole-v6-API ein,
+mit passendem Schema (`http` oder `https`), Hostnamen, Port und API-Pfad.
+Anmelde- und API-Anfragen folgen absichtlich keinen HTTP-Weiterleitungen.
+Eine Anfrage, die eine Weiterleitung benötigt, schlägt fehl. Korrigiere in
+diesem Fall die URL in der Konfiguration und übernimm die Änderung, bevor du
+es erneut versuchst.
+
 Die Serverfarben sind an die IDs gebunden: Blau, Gelb, Violett und Orange.
 Das Layout passt sich an die Serveranzahl und Bildschirmbreite an, bis zu
 maximal 1900 Pixeln Seitenbreite. Die API-Routen werden automatisch erzeugt;

@@ -178,6 +178,12 @@ order determines the display order. `verifyTls` defaults to `true` for HTTPS
 upstreams. See the [example](config/config.example.json) and
 [JSON schema](config/config.schema.json).
 
+Set `apiUrl` to the direct, final Pi-hole v6 API base URL, with the correct
+scheme (`http` or `https`), hostname, port and API path. Login and API requests
+deliberately do not follow HTTP redirects. A request that needs a redirect
+fails; correct the URL in the configuration and apply the change before trying
+again.
+
 Server colours remain tied to their IDs: blue, yellow, purple and orange.
 The layout adapts to the configured number and the screen width, up to a
 maximum page width of 1900 px. API routes are generated automatically;

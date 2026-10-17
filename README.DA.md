@@ -182,6 +182,12 @@ serverantallet, og rækkefølgen bestemmer visningsrækkefølgen. `verifyTls` er
 standard `true` for HTTPS-forbindelser til Pi-hole. Se
 [eksemplet](config/config.example.json) og [JSON-skemaet](config/config.schema.json).
 
+Angiv den direkte, endelige basisadresse til Pi-hole v6-API'et i `apiUrl` med
+korrekt protokol (`http` eller `https`), værtsnavn, port og API-sti. Login- og
+API-kald følger bevidst ikke HTTP-omdirigeringer. Et kald, der kræver en
+omdirigering, mislykkes. Ret i så fald adressen i konfigurationen, og anvend
+ændringen, før du prøver igen.
+
 Serverfarverne følger deres ID: blå, gul, lilla og orange. Visningen tilpasser
 sig antallet og skærmbredden med en maksimal sidebredde på 1900 px.
 API-stierne genereres automatisk; Pi-hole-adresser skal ikke vedligeholdes
