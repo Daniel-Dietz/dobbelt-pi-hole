@@ -1879,6 +1879,10 @@ function resolveLanguage(saved, browserLanguages = [], configuredDefault = "auto
 }
 let currentLanguage = resolveLanguage(storedValue(LANGUAGE_KEY), [...(navigator.languages || []), navigator.language]);
 let pendingLanguageFormState = null;
+// A tab navigation creates a fresh draft identity; language-only rerenders preserve it.
+let formContextRevision = 0;
+const fieldEditRevisions = new Map();
+let formEditSerial = 0;
 let languageChosenThisPage = false;
 
 /** Return the locale used to format numbers, dates and sorting in the active language. */
@@ -2017,13 +2021,19 @@ function mergeFormState(previous, current) {
  * Ignore unrelated controls and events from an obsolete render generation.
  */
 function recordPendingFormEdit(event) {
-  const pending = pendingLanguageFormState;
   const element = event.target;
-  if (!pending || pending.generation !== state.renderGen || pending.tab !== state.activeTab || !element.matches?.("input, select, textarea")) {
+  if (!element.matches?.("input, select, textarea")) {
     return;
   }
   const selector = formFieldSelector(element);
   if (!selector) {
+    return;
+  }
+  // Record actual user edits even when no language render is pending.
+  // Programmatic snapshot restoration does not emit input/change events.
+  fieldEditRevisions.set(selector, ++formEditSerial);
+  const pending = pendingLanguageFormState;
+  if (!pending || pending.generation !== state.renderGen || pending.tab !== state.activeTab) {
     return;
   }
   let field = pending.snapshot.fields.find(/** Find the pending draft for the edited field before updating or creating its snapshot. */ candidate => candidate.selector === selector);
@@ -2660,7 +2670,11 @@ async function apiCall(server, path, {
     signal: requestSignal
   });
   if (response.status === 409 && (await response.clone().json().catch(/** Treat an unreadable conflict body as an ordinary response rather than inventing a configuration-change code. */ () => null))?.error?.code === "dashboard_config_changed") {
-    throw new Error(msg("config.changed"));
+    // The fingerprinted proxy rejects this request before forwarding to Pi-hole.
+    // Preserve HTTP 409 so an unexecuted mutation is classified as failed, not uncertain.
+    const failure = new Error(msg("config.changed"));
+    failure.httpStatus = 409;
+    throw failure;
   }
   if (rawResponse) {
     return response;
@@ -2849,6 +2863,12 @@ async function switchTab(tabId, updateHash = true) {
   }
   if (state.activeTab === "dashboard" && tabId !== "dashboard") {
     destroyDashboardCharts();
+  }
+  // A user navigation, even back to the same tab, owns a new form. A
+  // translation-only rerender keeps the existing draft's provenance.
+  if (updateHash || tabId !== state.activeTab) {
+    formContextRevision++;
+    fieldEditRevisions.clear();
   }
   state.activeTab = tabId;
   if (updateHash) {
@@ -3879,10 +3899,6 @@ async function performCheckedWrites(button, targets, op) {
   return outcomes;
 }
 /**
- * Retain submitted form values unless all target outcomes are confirmed or
- * already current. Do not erase edits to an original or rerendered form.
- */
-/**
  * Verify that an existing item really matches its submitted comment and group
  * assignments. Presence with conflicting metadata must not clear a draft.
  * @param {object|undefined} record The current Pi-hole record.
@@ -3900,14 +3916,42 @@ function matchingExistingEntry(record, comment, groups) {
   }
   return true;
 }
-function clearConfirmedDraft(outcomes, form, fields) {
+/**
+ * Capture the active tab's draft identity and per-field edit revisions at submission.
+ * A language-only rerender preserves this identity; navigation or new typing does not.
+ * @param {Array<[string,string]>} fields Submitted selectors and their values.
+ * @returns {object} Submission provenance for safe, asynchronous clearing.
+ */
+function captureSubmissionContext(fields) {
+  return {
+    tab: state.activeTab,
+    revision: formContextRevision,
+    edits: new Map(fields.map(([selector]) => [selector, fieldEditRevisions.get(selector) ?? 0]))
+  };
+}
+/**
+ * Clear a verified submission only when it still owns each unchanged field.
+ * A new form after tab navigation, or freshly typed text (even identical to
+ * submitted text) after a language rerender, must never be erased.
+ * @param {object[]|null} outcomes Confirmed, failed or uncertain per-server results.
+ * @param {HTMLFormElement} form Original form that submitted the request.
+ * @param {Array<[string,string]>} fields Submitted selectors and values.
+ * @param {object} submission Captured tab and field edit identity.
+ */
+function clearConfirmedDraft(outcomes, form, fields, submission) {
   if (!outcomes?.length || !outcomes.every(outcome => ["confirmed", "unchanged"].includes(outcome.status))) return;
-  // After a language switch the submitted form may be replaced. Only clear
-  // matching original values in the current form, never a newer typed draft.
+  if (submission.revision !== formContextRevision || submission.tab !== state.activeTab) return;
   const activeForm = form.isConnected ? form : document.getElementById(form.id);
-  if (!activeForm) return;
   for (const [selector, previous] of fields) {
-    const input = activeForm.querySelector(selector);
+    if ((fieldEditRevisions.get(selector) ?? 0) !== submission.edits.get(selector)) continue;
+    // Pending language renders may still restore the captured draft later.
+    // Clear only snapshots belonging to the same tab and render generation.
+    const pending = pendingLanguageFormState;
+    if (pending && pending.tab === submission.tab && pending.generation === state.renderGen) {
+      const field = pending.snapshot.fields.find(candidate => candidate.selector === selector);
+      if (field && typeof field.value === "string" && field.value.trim() === previous) field.value = "";
+    }
+    const input = activeForm?.querySelector(selector);
     if (input && input.value.trim() === previous) input.value = "";
   }
 }
@@ -4026,10 +4070,8 @@ async function renderDomains(container, generation) {
     const readStates = new Map(state.servers.map(server => [server.id, "skipped"]));
     const rulesByKey = new Map();
     const existingKinds = new Set();
-    let hasConnectedServer = false;
     await Promise.all(state.servers.map(/** Merge one connected instance's domain rules while retaining its original record and group assignments. */ async server => {
       if (server.connected) {
-        hasConnectedServer = true;
         try {
           const response = await apiCall(server, "/domains");
           const records = requireCollection(response, "domains");
@@ -4053,7 +4095,7 @@ async function renderDomains(container, generation) {
             row.byServer[server.id] = record;
           }
         } catch (error) {
-          readStates.set(server.id, "unknown");
+          readStates.set(server.id, error instanceof AuthError ? "skipped" : "unknown");
           toast(msg("domains.requestError", {
             server: server.label,
             error: error.message
@@ -4064,7 +4106,7 @@ async function renderDomains(container, generation) {
     if (generation !== state.renderGen) {
       return;
     }
-    if (!hasConnectedServer) {
+    if (!state.servers.some(server => server.connected)) {
       domainArea.innerHTML = `<div class="empty">${htmlMsg("domains.loginRequired")}<br><br>${state.servers.map(loginBoxHtml).join("<br>")}</div>`;
       bindLoginHandlers(domainArea, loadDomains);
       return;
@@ -4223,6 +4265,8 @@ async function renderDomains(container, generation) {
       return;
     }
     const form = event.currentTarget;
+    const submittedFields = [["#dDomain", domain], ["#dComment", comment]];
+    const submission = captureSubmissionContext(submittedFields);
     const targets = targetsFor(document.getElementById("targetDomain"));
     const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targets, {
       path: () => "/domains",
@@ -4232,7 +4276,7 @@ async function renderDomains(container, generation) {
         method: "POST", body: { domain: [domain], comment, type, kind, groups: [0] }
       })
     });
-    clearConfirmedDraft(outcomes, form, [["#dDomain", domain], ["#dComment", comment]]);
+    clearConfirmedDraft(outcomes, form, submittedFields, submission);
     if (outcomes && form.isConnected && generation === state.renderGen) loadDomains();
   });
   bindLoginHandlers(container, loadDomains);
@@ -4281,12 +4325,10 @@ async function renderHosts(container, generation) {
   async function loadHosts() {
     const hostArea = document.getElementById("hostArea");
     hostArea.innerHTML = `<p class="empty">${htmlMsg("hosts.loading")}</p>`;
-    let hasConnectedServer = false;
     const readStates = new Map(state.servers.map(server => [server.id, "skipped"]));
     const hostsByName = new Map();
     await Promise.all(state.servers.map(/** Read one instance's hosts array and split each record into its address and hostname text. */ async server => {
       if (server.connected) {
-        hasConnectedServer = true;
         try {
           const hostsResponse = await apiCall(server, "/config/dns/hosts");
           const hostRecords = requireHostRecords(hostsResponse);
@@ -4307,7 +4349,7 @@ async function renderHosts(container, generation) {
             };
           }
         } catch (error) {
-          readStates.set(server.id, "unknown");
+          readStates.set(server.id, error instanceof AuthError ? "skipped" : "unknown");
           toast(msg("hosts.requestError", {
             server: server.label,
             error: error.message
@@ -4318,7 +4360,7 @@ async function renderHosts(container, generation) {
     if (generation !== state.renderGen) {
       return;
     }
-    if (!hasConnectedServer) {
+    if (!state.servers.some(server => server.connected)) {
       hostArea.innerHTML = `<div class="empty">${htmlMsg("hosts.loginRequired")}<br><br>${state.servers.map(loginBoxHtml).join("<br>")}</div>`;
       bindLoginHandlers(hostArea, loadHosts);
       return;
@@ -4519,6 +4561,8 @@ async function renderHosts(container, generation) {
       return;
     }
     const form = event.currentTarget;
+    const submittedFields = [["#hIp", ipAddress], ["#hName", hostname]];
+    const submission = captureSubmissionContext(submittedFields);
     const rawHostRecord = ipAddress + " " + hostname;
     const targetServers = targetsFor(document.getElementById("targetHost"));
     const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targetServers, {
@@ -4527,7 +4571,7 @@ async function renderHosts(container, generation) {
       isCurrent: (server, records) => records.includes(rawHostRecord),
       write: server => apiCall(server, "/config/dns/hosts/" + encodeURIComponent(rawHostRecord), { method: "PUT" })
     });
-    clearConfirmedDraft(outcomes, form, [["#hIp", ipAddress], ["#hName", hostname]]);
+    clearConfirmedDraft(outcomes, form, submittedFields, submission);
     if (outcomes && form.isConnected && generation === state.renderGen) loadHosts();
   });
   bindLoginHandlers(container, loadHosts);
@@ -4809,7 +4853,6 @@ async function renderClients(container, generation) {
     suggestionReadStates = new Map(state.servers.map(server => [server.id, "skipped"]));
     const clientsByIdentifier = new Map();
     const suggestionsByServerId = {};
-    let hasConnectedServer = false;
     await Promise.all(state.servers.map(
     /**
      * Read and merge one instance's configured clients, then fetch its device suggestions separately.
@@ -4817,7 +4860,6 @@ async function renderClients(container, generation) {
      */
     async server => {
       if (server.connected) {
-        hasConnectedServer = true;
         try {
           const clientResponse = await apiCall(server, "/clients");
           const clientRecords = requireCollection(clientResponse, "clients");
@@ -4842,18 +4884,21 @@ async function renderClients(container, generation) {
             }
           }
         } catch (error) {
-          clientReadStates.set(server.id, "unknown");
+          clientReadStates.set(server.id, error instanceof AuthError ? "skipped" : "unknown");
           toast(msg("clients.requestError", {
             server: server.label,
             error: error.message
           }), "err");
         }
+        // Do not issue another API request after the client read has expired this session.
+        if (!server.connected) return;
         try {
           const suggestionResponse = await apiCall(server, "/clients/_suggestions");
           suggestionsByServerId[server.id] = requireCollection(suggestionResponse, "clients");
           suggestionReadStates.set(server.id, "confirmed");
-        } catch {
-          suggestionReadStates.set(server.id, "unknown");
+        } catch (error) {
+          suggestionReadStates.set(server.id, error instanceof AuthError ? "skipped" : "unknown");
+          if (error instanceof AuthError) clientReadStates.set(server.id, "skipped");
           suggestionsByServerId[server.id] = [];
         }
       }
@@ -4861,7 +4906,7 @@ async function renderClients(container, generation) {
     if (generation !== state.renderGen) {
       return;
     }
-    if (!hasConnectedServer) {
+    if (!state.servers.some(server => server.connected)) {
       const loginHtml = `<div class="empty">${htmlMsg("clients.loginRequired")}<br><br>${state.servers.map(loginBoxHtml).join("<br>")}</div>`;
       clientArea.innerHTML = loginHtml;
       suggestionArea.innerHTML = "";
@@ -4943,6 +4988,8 @@ async function renderClients(container, generation) {
       return;
     }
     const form = event.currentTarget;
+    const submittedFields = [["#cClient", identifier], ["#cComment", comment]];
+    const submission = captureSubmissionContext(submittedFields);
     const targetServers = targetsFor(document.getElementById("targetClient"));
     const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targetServers, {
       path: () => "/clients",
@@ -4952,7 +4999,7 @@ async function renderClients(container, generation) {
         method: "POST", body: { client: [identifier], comment, groups: [0] }
       })
     });
-    clearConfirmedDraft(outcomes, form, [["#cClient", identifier], ["#cComment", comment]]);
+    clearConfirmedDraft(outcomes, form, submittedFields, submission);
     if (outcomes && form.isConnected && generation === state.renderGen) loadClientData();
   });
   bindLoginHandlers(container, loadClientData);
@@ -4973,12 +5020,10 @@ async function renderLists(container, generation) {
   async function loadLists() {
     const listArea = document.getElementById("listArea");
     listArea.innerHTML = `<p class="empty">${htmlMsg("lists.loading")}</p>`;
-    let hasConnectedServer = false;
     const readStates = new Map(state.servers.map(server => [server.id, "skipped"]));
     const listsByAddressAndType = new Map();
     await Promise.all(state.servers.map(/** Merge one instance's list entries while retaining its enabled state and comment. */ async server => {
       if (server.connected) {
-        hasConnectedServer = true;
         try {
           const listsResponse = await apiCall(server, "/lists");
           const listRecords = requireCollection(listsResponse, "lists");
@@ -5001,7 +5046,7 @@ async function renderLists(container, generation) {
             mergedList.byServer[server.id] = serverList;
           }
         } catch (error) {
-          readStates.set(server.id, "unknown");
+          readStates.set(server.id, error instanceof AuthError ? "skipped" : "unknown");
           toast(msg("lists.requestError", {
             server: server.label,
             error: error.message
@@ -5012,7 +5057,7 @@ async function renderLists(container, generation) {
     if (generation !== state.renderGen) {
       return;
     }
-    if (!hasConnectedServer) {
+    if (!state.servers.some(server => server.connected)) {
       listArea.innerHTML = `<div class="empty">${htmlMsg("lists.loginRequired")}<br><br>${state.servers.map(loginBoxHtml).join("<br>")}</div>`;
       bindLoginHandlers(listArea, loadLists);
       return;
@@ -5137,6 +5182,8 @@ async function renderLists(container, generation) {
       return;
     }
     const form = event.currentTarget;
+    const submittedFields = [["#lUrl", listUrl], ["#lComment", comment]];
+    const submission = captureSubmissionContext(submittedFields);
     const targetServers = targetsFor(document.getElementById("targetList"));
     const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targetServers, {
       path: () => "/lists",
@@ -5146,7 +5193,7 @@ async function renderLists(container, generation) {
         method: "POST", body: { address: [listUrl], comment, groups: [0] }
       })
     });
-    clearConfirmedDraft(outcomes, form, [["#lUrl", listUrl], ["#lComment", comment]]);
+    clearConfirmedDraft(outcomes, form, submittedFields, submission);
     if (outcomes && form.isConnected && generation === state.renderGen) loadLists();
   });
   bindLoginHandlers(container, loadLists);

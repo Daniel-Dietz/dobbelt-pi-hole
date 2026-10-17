@@ -2201,3 +2201,107 @@ test('Issue #8 Codex: a source list missing its groups cannot be copied as group
       request => request.id === '2' && request.method === 'POST' && request.path.startsWith('/lists')).length, 0);
     await assertNoCorruption(fixture);
   });
+
+
+for (const scenario of [
+  { tab: 'domains', endpoint: '/domains', area: '#domArea' },
+  { tab: 'hosts', endpoint: '/config/dns/hosts', area: '#hostArea' },
+  { tab: 'clients', endpoint: '/clients', area: '#clientArea' },
+  { tab: 'lists', endpoint: '/lists', area: '#listArea' }
+]) test('Issue #8 Codex: expired sessions show login on ' + scenario.tab,
+  /** A 401 must invalidate both sessions and render login fields rather than an unavailable-only table. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page } = fixture;
+    await page.route('**/*',
+      /** Return a genuine authentication rejection only from the requested collection. */
+      async route => {
+        const url = new URL(route.request().url());
+        if (route.request().method() === 'GET' &&
+            /\/api[12]\//u.test(url.pathname) && url.pathname.endsWith(scenario.endpoint)) {
+          return route.fulfill({ status: 401, contentType: 'application/json',
+            body: JSON.stringify({ error: { message: 'expired session' } }) });
+        }
+        return route.fallback();
+      });
+    await visit(page, scenario.tab);
+    await page.waitForFunction(/** Require two usable login forms when all sessions have expired. */
+      area => document.querySelector(area)?.querySelectorAll('[data-loginform]').length === 2, scenario.area);
+    assert.equal(await page.locator(scenario.area + ' [data-loginpw]').count(), 2);
+    assert.equal(await page.locator(scenario.area + ' [data-add-domain-server], ' + scenario.area + ' [data-add-host], ' + scenario.area + ' [data-add-list]').count(), 0);
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #8 Codex: a stale-route 409 cannot be presented as an uncertain write',
+  /** A fingerprint conflict never reaches Pi-hole and must be a definite rejection, not a lost response. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page, requests } = fixture;
+    await visit(page, 'domains');
+    await page.route('**/*', /** Reject only the mutation using the documented old-route conflict. */
+      async route => {
+        if (route.request().method() === 'POST' &&
+            new URL(route.request().url()).pathname.endsWith('/domains/deny/exact')) {
+          return route.fulfill({ status: 409, contentType: 'application/json',
+            body: JSON.stringify({ error: { code: 'dashboard_config_changed' } }) });
+        }
+        return route.fallback();
+      });
+    await page.locator('#dDomain').fill('stale-route.example');
+    await page.locator('#targetDomain').selectOption('1');
+    await page.locator('#domainForm button[type="submit"]').click();
+    await page.waitForFunction(/** A definite rejection is reported without an uncertainty retry action. */
+      () => (document.querySelector('#toastArea')?.textContent || '').includes('change or preflight failed'));
+    const message = await page.locator('#toastArea').textContent();
+    assert.ok(!message.includes('write outcome unknown'));
+    assert.equal(await page.locator('#dDomain').inputValue(), 'stale-route.example');
+    assert.equal(requests.filter(request => request.method === 'POST' && request.path.endsWith('/domains/deny/exact')).length, 0,
+      'The intercepted 409 must not modify the Pi-hole fixture');
+    await assertNoCorruption(fixture);
+  });
+
+for (const mode of ['navigation', 'language']) {
+  test('Issue #8 Codex: an older successful submission cannot erase an identical newer draft after ' + mode,
+    /** Hold a valid write while a new user edit reuses the exact submitted values. */
+    async t => {
+      const fixture = await openDashboard(t, { language: 'en' });
+      const { page } = fixture;
+      await visit(page, 'domains');
+      const pendingWrite = deferred(t);
+      const seenWrite = deferred(t);
+      let intercepted = false;
+      await page.route('**/*',
+        /** Pause the first mutation after its fresh preflight without losing it. */
+        async route => {
+          if (route.request().method() === 'POST' &&
+              new URL(route.request().url()).pathname.endsWith('/domains/deny/exact')) {
+            if (!intercepted) { intercepted = true; seenWrite.release(); }
+            await pendingWrite.promise;
+          }
+          return route.fallback();
+        });
+      await page.locator('#dDomain').fill('new-draft.example');
+      await page.locator('#dComment').fill('identical but newly typed');
+      await page.locator('#targetDomain').selectOption('1');
+      await page.locator('#domainForm button[type="submit"]').click();
+      await seenWrite.promise;
+      if (mode === 'navigation') {
+        await visit(page, 'hosts');
+        await visit(page, 'domains');
+      } else {
+        await page.locator('#languageSelect').selectOption('de');
+      }
+      // A newly typed field, even with the same bytes, is not the submitted draft.
+      await page.locator('#dDomain').fill('');
+      await page.locator('#dDomain').fill('new-draft.example');
+      await page.locator('#dComment').fill('');
+      await page.locator('#dComment').fill('identical but newly typed');
+      pendingWrite.release();
+      await page.waitForFunction(/** Await the original mutation result before checking the new draft. */
+        () => (document.querySelector('#toastArea')?.textContent || '').includes('change confirmed') ||
+          (document.querySelector('#toastArea')?.textContent || '').includes('Änderung bestätigt'));
+      assert.equal(await page.locator('#dDomain').inputValue(), 'new-draft.example');
+      assert.equal(await page.locator('#dComment').inputValue(), 'identical but newly typed');
+      await assertNoCorruption(fixture);
+    });
+}
