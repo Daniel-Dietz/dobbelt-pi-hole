@@ -3857,6 +3857,7 @@ async function renderDomains(container, generation) {
   async function loadDomains() {
     const domainArea = document.getElementById("domArea");
     domainArea.innerHTML = `<p class="empty">${htmlMsg("domains.loading")}</p>`;
+    const readStates = new Map(state.servers.map(server => [server.id, "skipped"]));
     const rulesByKey = new Map();
     const existingKinds = new Set();
     let hasConnectedServer = false;
@@ -3865,7 +3866,9 @@ async function renderDomains(container, generation) {
         hasConnectedServer = true;
         try {
           const response = await apiCall(server, "/domains");
-          for (const record of response.domains || []) {
+          const records = requireCollection(response, "domains");
+          readStates.set(server.id, "confirmed");
+          for (const record of records) {
             existingKinds.add([server.id, record.domain, record.kind].join("\0"));
             const key = [record.domain, record.type, record.kind].join("\0");
             if (!rulesByKey.has(key)) {
@@ -3884,6 +3887,7 @@ async function renderDomains(container, generation) {
             row.byServer[server.id] = record;
           }
         } catch (error) {
+          readStates.set(server.id, "unknown");
           toast(msg("domains.requestError", {
             server: server.label,
             error: error.message
@@ -3904,11 +3908,12 @@ async function renderDomains(container, generation) {
       sensitivity: "base"
     }) || left.type.localeCompare(right.type, localeCode()) || left.kind.localeCompare(right.kind, localeCode()));
     if (rows.length !== 0) {
-      domainArea.innerHTML = `<div class="table-wrap"><table class="datatable" style="min-width:950px;">
+      domainArea.innerHTML = collectionCoverageHtml(readStates) + `<div class="table-wrap"><table class="datatable" style="min-width:950px;">
 				<thead><tr><th>${htmlMsg("domains.domain")}</th>${state.servers.map(/** Render the configured instance's escaped label as a domain-table column heading. */ server => `<th>${escapeHtml(server.label)}</th>`).join("")}<th>${htmlMsg("domains.type")}</th><th>${htmlMsg("domains.kind")}</th><th>${htmlMsg("domains.comment")}</th><th></th></tr></thead>
 				<tbody>${rows.map(/** Render a merged domain rule with per-instance state and row-level deletion controls. */ (row, rowIndex) => `<tr>
 						<td class="mono">${escapeHtml(row.domain)}</td>
 						${state.servers.map(/** Render an instance's rule state, toggle action or eligible add action without offering a conflicting rule. */ server => {
+        if (readStates.get(server.id) !== "confirmed") return uncertainCell(readStates, server);
         const record = row.byServer[server.id];
         return record ? `<td><span class="badge ${record.enabled ? "on" : "off"}">${htmlMsg(record.enabled ? "domains.active" : "domains.disabled")}</span> <button class="btn xs" data-toggle-domain-server="${escapeHtml(server.id)}" data-domain-row="${rowIndex}">${htmlMsg(record.enabled ? "domains.deactivate" : "domains.activate")}</button></td>` : `<td><span class="badge off">${htmlMsg("domains.missing")}</span>${existingKinds.has([server.id, row.domain, row.kind].join("\0")) ? "" : ` <button class="btn xs" data-add-domain-server="${escapeHtml(server.id)}" data-domain-row="${rowIndex}">${htmlMsg("domains.add")}</button>`}</td>`;
       }).join("")}
@@ -4019,7 +4024,7 @@ async function renderDomains(container, generation) {
         });
       }
     } else {
-      domainArea.innerHTML = `<p class="empty">${htmlMsg("domains.empty")}</p>`;
+      domainArea.innerHTML = collectionCoverageHtml(readStates) + `<p class="empty">${htmlMsg("domains.empty")}</p>`;
     }
   }
   container.innerHTML = `
@@ -4146,13 +4151,15 @@ async function renderHosts(container, generation) {
     const hostArea = document.getElementById("hostArea");
     hostArea.innerHTML = `<p class="empty">${htmlMsg("hosts.loading")}</p>`;
     let hasConnectedServer = false;
+    const readStates = new Map(state.servers.map(server => [server.id, "skipped"]));
     const hostsByName = new Map();
     await Promise.all(state.servers.map(/** Read one instance's hosts array and split each record into its address and hostname text. */ async server => {
       if (server.connected) {
         hasConnectedServer = true;
         try {
           const hostsResponse = await apiCall(server, "/config/dns/hosts");
-          const hostRecords = hostsResponse.config && hostsResponse.config.dns && hostsResponse.config.dns.hosts || [];
+          const hostRecords = requireHostRecords(hostsResponse);
+          readStates.set(server.id, "confirmed");
           for (const rawHostRecord of hostRecords) {
             const recordParts = rawHostRecord.split(/\s+/u);
             const ipAddress = recordParts[0];
@@ -4169,6 +4176,7 @@ async function renderHosts(container, generation) {
             };
           }
         } catch (error) {
+          readStates.set(server.id, "unknown");
           toast(msg("hosts.requestError", {
             server: server.label,
             error: error.message
@@ -4222,15 +4230,16 @@ async function renderHosts(container, generation) {
         return sortDirection === "asc" ? comparison : -comparison;
       });
       if (sortedHosts.length === 0) {
-        hostArea.innerHTML = `<p class="empty">${htmlMsg("hosts.empty")}</p>`;
+        hostArea.innerHTML = collectionCoverageHtml(readStates) + `<p class="empty">${htmlMsg("hosts.empty")}</p>`;
         return;
       }
       const sortIndicator = sortDirection === "asc" ? " ▲" : " ▼";
       const hostSortHeadingHtml = /** Build a host-table sort heading from its internal key and already escaped label. */ (columnKey, headingHtml) => `<th data-host-sort="${escapeHtml(columnKey)}" style="cursor:pointer;user-select:none;">${headingHtml}${sortKey === columnKey ? sortIndicator : ""}</th>`;
-      hostArea.innerHTML = `<div class="table-wrap"><table class="datatable">
+      hostArea.innerHTML = collectionCoverageHtml(readStates) + `<div class="table-wrap"><table class="datatable">
 				<thead><tr>${hostSortHeadingHtml("name", htmlMsg("hosts.nameHeading"))}${state.servers.map(/** Build the address-sort heading for one configured instance. */ server => hostSortHeadingHtml(server.id, escapeHtml(server.label))).join("")}<th></th></tr></thead>
 				<tbody>${sortedHosts.map(/** Render a hostname row and highlight addresses that differ across its loaded instance records. */ (host, rowIndex) => {
         const serverCells = state.servers.map(/** Render this instance's address and eligible copy actions, or an add action for a missing record. */ server => {
+          if (readStates.get(server.id) !== "confirmed") return uncertainCell(readStates, server);
           const hostRecord = host.byServer[server.id];
           if (hostRecord) {
             const syncButtonsHtml = state.servers.filter(/** Offer source instances only when their loaded address differs from this target's address. */ sourceCandidate => sourceCandidate.id !== server.id && host.byServer[sourceCandidate.id] && host.byServer[sourceCandidate.id].ip !== hostRecord.ip).map(/** Build a copy-address button whose source and target IDs remain explicit in its data attributes. */ sourceServer => `<button class="btn xs" data-sync-host-row="${rowIndex}" data-sync-target="${escapeHtml(server.id)}" data-sync-source="${escapeHtml(sourceServer.id)}" title="${htmlMsg("hosts.useSource", {
@@ -4494,6 +4503,7 @@ async function renderClients(container, generation) {
 				</div>`;
   let clients = [];
   let suggestions = [];
+  let clientReadStates = new Map();
   const clientUiState = uiState.clients;
   let sortKey = clientUiState.sortKey;
 
@@ -4530,7 +4540,7 @@ async function renderClients(container, generation) {
       return sortDirection === "asc" ? comparison : -comparison;
     });
     if (sortedClients.length === 0) {
-      clientArea.innerHTML = `<p class="empty">${htmlMsg("clients.empty")}</p>`;
+      clientArea.innerHTML = collectionCoverageHtml(clientReadStates) + `<p class="empty">${htmlMsg("clients.empty")}</p>`;
       return;
     }
     const pageSize = pageSizeOf("clientPageSize");
@@ -4546,11 +4556,11 @@ async function renderClients(container, generation) {
     const visibleClients = Number.isFinite(pageSize) ? sortedClients.slice(pageStart, pageStart + pageSize) : sortedClients;
     const sortIndicator = sortDirection === "asc" ? " ▲" : " ▼";
     const clientSortHeadingHtml = /** Build a client-table sort heading from its internal key and already escaped label. */ (columnKey, headingHtml) => `<th data-client-sort="${escapeHtml(columnKey)}" style="cursor:pointer;user-select:none;">${headingHtml}${sortKey === columnKey ? sortIndicator : ""}</th>`;
-    clientArea.innerHTML = `<div class="table-wrap client-table-wrap"><table class="datatable">
+    clientArea.innerHTML = collectionCoverageHtml(clientReadStates) + `<div class="table-wrap client-table-wrap"><table class="datatable">
 					<thead><tr>${clientSortHeadingHtml("client", htmlMsg("clients.clientHeading"))}${clientSortHeadingHtml("comment", htmlMsg("clients.descriptionHeading"))}${state.servers.map(/** Build the client-presence sort heading for one configured instance. */ server => clientSortHeadingHtml(server.id, escapeHtml(server.label))).join("")}<th></th></tr></thead>
 					<tbody>${visibleClients.map(/** Render a client row using its original array index so actions still select the correct record after sorting. */ (client, visibleRowIndex) => {
       const clientIndex = clients.indexOf(client);
-      const serverCellsHtml = state.servers.map(/** Show an instance's loaded client membership or provide a button to add the missing client. */ server => client.byServer[server.id] ? `<td><span class="badge on">${htmlMsg("clients.active")}</span></td>` : `<td><span class="badge off">${htmlMsg("clients.missing")}</span> <button class="btn xs" data-add-client-server="${escapeHtml(server.id)}" data-client-row="${clientIndex}">${htmlMsg("clients.add")}</button></td>`).join("");
+      const serverCellsHtml = state.servers.map(/** Show an instance's loaded client membership or provide a button to add the missing client. */ server => clientReadStates.get(server.id) !== "confirmed" ? uncertainCell(clientReadStates, server) : client.byServer[server.id] ? `<td><span class="badge on">${htmlMsg("clients.active")}</span></td>` : `<td><span class="badge off">${htmlMsg("clients.missing")}</span> <button class="btn xs" data-add-client-server="${escapeHtml(server.id)}" data-client-row="${clientIndex}">${htmlMsg("clients.add")}</button></td>`).join("");
       return `<tr>
 							<td class="mono">${escapeHtml(client.client)}</td>
 							<td>${escapeHtml(client.comment || "")}</td>
@@ -4598,6 +4608,7 @@ async function renderClients(container, generation) {
             server: targetServer.label
           }), "ok");
         } catch (error) {
+          clientReadStates.set(server.id, "unknown");
           toast(msg("clients.requestError", {
             server: targetServer.label,
             error: error.message
@@ -4755,6 +4766,7 @@ async function renderClients(container, generation) {
     clientArea.innerHTML = `<p class="empty">${htmlMsg("clients.loading")}</p>`;
     suggestionArea.innerHTML = `<p class="empty">${htmlMsg("clients.loading")}</p>`;
     clients = [];
+    clientReadStates = new Map(state.servers.map(server => [server.id, "skipped"]));
     const clientsByIdentifier = new Map();
     const suggestionsByServerId = {};
     let hasConnectedServer = false;
@@ -4768,7 +4780,9 @@ async function renderClients(container, generation) {
         hasConnectedServer = true;
         try {
           const clientResponse = await apiCall(server, "/clients");
-          for (const serverClient of clientResponse.clients || []) {
+          const clientRecords = requireCollection(clientResponse, "clients");
+          clientReadStates.set(server.id, "confirmed");
+          for (const serverClient of clientRecords) {
             const identifier = String(serverClient.client || "").trim();
             if (!identifier) {
               continue;
@@ -4935,13 +4949,16 @@ async function renderLists(container, generation) {
     const listArea = document.getElementById("listArea");
     listArea.innerHTML = `<p class="empty">${htmlMsg("lists.loading")}</p>`;
     let hasConnectedServer = false;
+    const readStates = new Map(state.servers.map(server => [server.id, "skipped"]));
     const listsByAddressAndType = new Map();
     await Promise.all(state.servers.map(/** Merge one instance's list entries while retaining its enabled state and comment. */ async server => {
       if (server.connected) {
         hasConnectedServer = true;
         try {
           const listsResponse = await apiCall(server, "/lists");
-          for (const serverList of listsResponse.lists || []) {
+          const listRecords = requireCollection(listsResponse, "lists");
+          readStates.set(server.id, "confirmed");
+          for (const serverList of listRecords) {
             const listKey = serverList.address + "|" + serverList.type;
             if (!listsByAddressAndType.has(listKey)) {
               listsByAddressAndType.set(listKey, {
@@ -4961,6 +4978,7 @@ async function renderLists(container, generation) {
             };
           }
         } catch (error) {
+          readStates.set(server.id, "unknown");
           toast(msg("lists.requestError", {
             server: server.label,
             error: error.message
@@ -4978,10 +4996,11 @@ async function renderLists(container, generation) {
     }
     const sortedLists = [...listsByAddressAndType.values()].sort(/** Sort merged list addresses in the active locale. */ (leftList, rightList) => leftList.address.localeCompare(rightList.address, localeCode()));
     if (sortedLists.length !== 0) {
-      listArea.innerHTML = `<div class="table-wrap list-table-wrap"><table class="datatable">
+      listArea.innerHTML = collectionCoverageHtml(readStates) + `<div class="table-wrap list-table-wrap"><table class="datatable">
 				<thead><tr><th>${htmlMsg("lists.url")}</th><th>${htmlMsg("lists.type")}</th><th>${htmlMsg("lists.comment")}</th>${state.servers.map(/** Render one configured instance's escaped label as a list-table heading. */ server => `<th>${escapeHtml(server.label)}</th>`).join("")}<th></th></tr></thead>
 				<tbody>${sortedLists.map(/** Render a merged list with its type, comment, instance states and deletion action. */ (list, rowIndex) => {
         const serverCellsHtml = state.servers.map(/** Show a list's loaded enabled state on this instance or a button to add it there. */ server => {
+          if (readStates.get(server.id) !== "confirmed") return uncertainCell(readStates, server);
           const listRecord = list.byServer[server.id];
           return listRecord ? `<td><span class="badge ${listRecord.enabled ? "on" : "off"}">${htmlMsg(listRecord.enabled ? "lists.active" : "lists.disabled")}</span></td>` : `<td><span class="badge off">${htmlMsg("lists.missing")}</span>
 							<button class="btn xs" data-add-list="${escapeHtml(server.id)}" data-url="${escapeHtml(list.address)}" data-type="${escapeHtml(list.type)}" data-comment="${escapeHtml(list.comment || "")}">${htmlMsg("lists.add")}</button></td>`;
@@ -5062,7 +5081,7 @@ async function renderLists(container, generation) {
         });
       }
     } else {
-      listArea.innerHTML = `<p class="empty">${htmlMsg("lists.empty")}</p>`;
+      listArea.innerHTML = collectionCoverageHtml(readStates) + `<p class="empty">${htmlMsg("lists.empty")}</p>`;
     }
   }
   container.innerHTML = `
