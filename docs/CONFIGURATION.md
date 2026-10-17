@@ -36,6 +36,10 @@ The renderer also rejects unknown fields, duplicate JSON keys, repeated IDs and
 duplicate normalized API URLs. Source files are limited to 128 KiB. No passwords
 or session IDs belong in this file; enter app passwords in the dashboard.
 
+The current schema has no Nebula Sync settings. Optional read-only monitoring
+is planned in [#27](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/27),
+with explicit configuration and opt-in required before any status requests.
+
 API URLs must have a host and a nonempty absolute path of safe ASCII segments
 using letters, digits, `.`, `_`, `~` and `-`. Credentials, query strings,
 fragments, whitespace, control characters, percent escapes and `.`/`..` path

@@ -413,6 +413,9 @@ Sprachen verfügbar:
   unvollständig sein. Sichtbares Datenalter, Vollständigkeit und optionale
   automatische Aktualisierung folgen in
   [#22](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/22).
+  Der Status eines externen Nebula Sync wird bisher nicht angezeigt; die
+  Überwachung ist in [#27](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/27)
+  geplant.
 - **Updates und Wiederherstellung:** Der LXC-Installer erstellt ausschließlich
   neue CTs. Behalte die aktuelle Installation und ihre Backups, während du
   einen Ersatz vorbereitest. Die
@@ -473,12 +476,16 @@ Verzeichnis veröffentlichter Release-Artefakte.
 ## Roadmap
 
 [Roadmap-Issue #6](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/6) ist
-die maßgebliche Fortschrittsübersicht. **Stand: 17.10.2026 — 1 von 18
-Arbeitspaketen abgeschlossen; 17 offen. Als Nächstes: #8.** Die Tabelle folgt
+die maßgebliche Fortschrittsübersicht. **Stand: 17.10.2026 — 1 von 19
+Arbeitspaketen abgeschlossen; 18 offen. Als Nächstes: #8.** Die Tabelle folgt
 der empfohlenen Bearbeitungsreihenfolge. Nur die Spalte „Voraussetzungen“ nennt
 technische Abhängigkeiten innerhalb dieser Roadmap; eine vorherige Zeile ist
 nicht automatisch eine Voraussetzung. Umfang und Abnahmekriterien stehen in
 den Issues. Künftige Versionsnummern und Liefertermine sind nicht festgelegt.
+
+Die Nebula-Sync-Überwachung (#27) wurde als Arbeitspunkt **16a** nach #22 und
+vor #23 ergänzt. Die bisherigen Arbeitspunktnummern bleiben bestehen; #27 ist
+keine zusätzliche Voraussetzung für #23 oder #24.
 
 | Reihenfolge | Issue und Umfang | Status | Voraussetzungen |
 | --- | --- | --- | --- |
@@ -498,6 +505,7 @@ den Issues. Künftige Versionsnummern und Liefertermine sind nicht festgelegt.
 | 14 | [#20](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/20) — Zentrale Konfiguration geschützt auf dem Server speichern/anwenden | Offen | #12, #13, #15, #18, #19 |
 | 15 | [#21](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/21) — Zeitlich begrenzte Blocking-Pause mit Pi-hole-seitigem Timer | Offen | #8, #9, #10 |
 | 16 | [#22](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/22) — Datenalter/-vollständigkeit und sparsame optionale automatische Aktualisierung | Offen | #8, #9, #10, #21 |
+| 16a | [#27](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/27) — Optionale lesende Nebula-Sync-Überwachung mit belegten Lauf- und Replikaergebnissen | Offen | #12, #13, #22 |
 | 17 | [#23](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/23) — Instanzvergleich, Abgleichvorschau und ausgewählte Änderungen | Offen | #8, #9, #10, #22 |
 | 18 | [#24](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/24) — Installation und Wiederherstellung auf einem echten Proxmox-Testhost abnehmen | Offen | #12, #13, #15, #17, #18 |
 
@@ -505,6 +513,16 @@ Der lokale Assistent in #19 soll JSON exportieren; die Serveradministration ist
 separat in #20 eingeplant. Beides ist in der aktuellen Einstellungsseite noch
 nicht vorhanden. Der Instanzabgleich in #23 bleibt eine bewusste Benutzeraktion;
 unbeaufsichtigte Replikation und DNS-Failover gehören nicht zum geplanten Umfang.
+
+Die Nebula-Sync-Überwachung in #27 ist als lesende Anbindung eines separat
+installierten, konfigurierten und aktivierten Dienstes geplant. Sie erfordert
+zusätzlich eine vollständige Dashboard-Konfiguration und ausdrückliche
+Aktivierung. Standardmäßig bleibt sie deaktiviert und stellt keine
+Statusabfragen. Letzter bestätigter abgeschlossener Erfolg, Datenalter und
+Ergebnisse je Replika werden nur bei Nachweis aus der Statusquelle angezeigt;
+fehlende Angaben bleiben unbekannt. Fehler nach der Aktivierung bleiben
+sichtbar. Die Anbindung startet keine Syncs, verändert keine Konfiguration und
+stellt kein Failover bereit.
 
 ## Prüfungen
 

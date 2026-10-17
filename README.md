@@ -309,6 +309,8 @@ languages:
   statistics can be incomplete when an instance is unavailable; explicit data
   age/completeness and optional automatic refresh are planned in
   [#22](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/22).
+  External Nebula Sync status is not yet displayed; monitoring is planned in
+  [#27](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/27).
 - **Updates and recovery:** the LXC installer creates new CTs only. Keep the
   current installation and backups when preparing a replacement. See the
   [current update and backup guidance](docs/LXC.md#updates-backup-and-recovery);
@@ -365,12 +367,16 @@ published release artifacts.
 ## Roadmap
 
 [Tracker #6](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/6) is the
-authoritative progress record. **Snapshot: 2026-10-17 — 1 of 18 work packages
-completed; 17 open. Next: #8.** The table follows its recommended working order.
+authoritative progress record. **Snapshot: 2026-10-17 — 1 of 19 work packages
+completed; 18 open. Next: #8.** The table follows its recommended working order.
 Only the prerequisites column expresses technical dependencies within this
 roadmap; an earlier row is not automatically a prerequisite. The issues define
 scope and acceptance criteria. Future version numbers and delivery dates have
 not been assigned.
+
+Nebula Sync monitoring (#27) was added as step **16a**, after #22 and before
+#23. The original step numbers remain stable; #27 does not add a prerequisite
+for #23 or #24.
 
 | Order | Issue and scope | Status | Prerequisites |
 | --- | --- | --- | --- |
@@ -390,6 +396,7 @@ not been assigned.
 | 14 | [#20](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/20) — Protected server-side save/apply for central configuration | Open | #12, #13, #15, #18, #19 |
 | 15 | [#21](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/21) — Temporary blocking pause with a Pi-hole-side timer | Open | #8, #9, #10 |
 | 16 | [#22](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/22) — Data age/completeness and economical optional automatic refresh | Open | #8, #9, #10, #21 |
+| 16a | [#27](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/27) — Optional read-only Nebula Sync monitoring with confirmed run and replica outcomes | Open | #12, #13, #22 |
 | 17 | [#23](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/23) — Instance comparison, reconciliation preview and selected changes | Open | #8, #9, #10, #22 |
 | 18 | [#24](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/24) — Installation and recovery acceptance on a real Proxmox test host | Open | #12, #13, #15, #17, #18 |
 
@@ -397,6 +404,15 @@ The local assistant in #19 will export JSON; server-side administration is
 separately scoped in #20. Neither exists in the current Settings page.
 Instance reconciliation in #23 remains an explicit user action; unattended
 replication and DNS failover are outside the planned scope.
+
+Nebula Sync monitoring in #27 is planned as a read-only integration for a
+separately installed, configured and enabled service. It will also require
+complete dashboard configuration and explicit opt-in. Disabled by default,
+it will make no status requests until enabled. The last confirmed completed
+success, data age and per-replica results will be shown only where the status
+source provides evidence; missing information stays unknown. Failures after
+activation will remain visible. It will not start syncs, change configuration
+or provide failover.
 
 ## Verification
 

@@ -319,6 +319,8 @@ Opsætningsvejledning og nginx-eksempler findes også på alle tre sprog:
   tydelig visning af dataenes alder og fuldstændighed samt valgfri automatisk
   opdatering er planlagt i
   [#22](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/22).
+  Status for ekstern Nebula Sync vises endnu ikke; overvågning er planlagt i
+  [#27](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/27).
 - **Opdatering og gendannelse:** LXC-værktøjet opretter kun nye CT'er. Behold den
   nuværende installation og dens backups, mens du forbereder en erstatning.
   Se den [aktuelle vejledning til opdatering og backup](docs/LXC.md#updates-backup-and-recovery);
@@ -377,12 +379,16 @@ katalog over offentliggjorte udgivelsesfiler.
 ## Roadmap
 
 [Oversigten i #6](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/6) er den
-gældende kilde til fremdrift. **Status 2026-10-17: 1 af 18 arbejdspakker
-afsluttet; 17 åbne. Næste: #8.** Tabellen følger den anbefalede
+gældende kilde til fremdrift. **Status 2026-10-17: 1 af 19 arbejdspakker
+afsluttet; 18 åbne. Næste: #8.** Tabellen følger den anbefalede
 arbejdsrækkefølge. Kun kolonnen med forudsætninger angiver tekniske afhængigheder
 inden for dette roadmap; en tidligere række er ikke automatisk en
 forudsætning. De enkelte issues fastlægger omfang og acceptkriterier. Der er
 endnu ikke tildelt fremtidige versionsnumre eller leveringsdatoer.
+
+Overvågning af Nebula Sync (#27) er tilføjet som trin **16a**, efter #22 og
+før #23. De oprindelige trinnumre bevares; #27 tilføjer ingen forudsætning
+for #23 eller #24.
 
 | Rækkefølge | Issue og omfang | Status | Forudsætninger |
 | --- | --- | --- | --- |
@@ -402,6 +408,7 @@ endnu ikke tildelt fremtidige versionsnumre eller leveringsdatoer.
 | 14 | [#20](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/20) — Beskyttet lagring og aktivering af central konfiguration på serveren | Åben | #12, #13, #15, #18, #19 |
 | 15 | [#21](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/21) — Midlertidig pause af blokering med timer på Pi-hole-serveren | Åben | #8, #9, #10 |
 | 16 | [#22](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/22) — Dataenes alder og fuldstændighed samt ressourcebesparende valgfri automatisk opdatering | Åben | #8, #9, #10, #21 |
+| 16a | [#27](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/27) — Valgfri læsende overvågning af Nebula Sync med dokumenterede resultater for kørsler og replikaer | Åben | #12, #13, #22 |
 | 17 | [#23](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/23) — Sammenligning af installationer, forhåndsvisning af synkronisering og udvalgte ændringer | Åben | #8, #9, #10, #22 |
 | 18 | [#24](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/24) — Afprøvning og godkendelse af installation og gendannelse på en rigtig Proxmox-testvært | Åben | #12, #13, #15, #17, #18 |
 
@@ -410,6 +417,15 @@ er særskilt afgrænset i #20. Ingen af delene findes på den nuværende side
 **Indstillinger**. Synkronisering mellem installationer i #23 forbliver en
 udtrykkelig brugerhandling; uovervåget replikering og DNS-failover er uden for
 det planlagte omfang.
+
+Overvågning af Nebula Sync i #27 er planlagt som en læsende integration med en
+tjeneste, der er installeret, konfigureret og aktiveret separat. Den kræver også
+en fuldstændig konfiguration i kontrolpanelet og udtrykkelig aktivering. Den er
+som standard deaktiveret og foretager ingen statusforespørgsler, før den
+aktiveres. Seneste bekræftede afsluttede succes, dataenes alder og resultater
+pr. replika vises kun, når statuskilden dokumenterer dem; manglende oplysninger
+forbliver ukendte. Fejl efter aktivering forbliver synlige. Integrationen
+starter ikke synkronisering, ændrer ikke konfiguration og leverer ikke failover.
 
 ## Kontrol og test
 
