@@ -3838,6 +3838,24 @@ async function performCheckedWrites(button, targets, op) {
  * Retain submitted form values unless all target outcomes are confirmed or
  * already current. Do not erase edits to an original or rerendered form.
  */
+/**
+ * Verify that an existing item really matches its submitted comment and group
+ * assignments. Presence with conflicting metadata must not clear a draft.
+ * @param {object|undefined} record The current Pi-hole record.
+ * @param {string} comment Submitted description.
+ * @param {number[]} groups Submitted group identifiers.
+ * @returns {boolean} Whether no write is necessary.
+ */
+function matchingExistingEntry(record, comment, groups) {
+  if (!record) return false;
+  const currentGroups = record.groups;
+  if ((record.comment ?? "") !== (comment ?? "") || !Array.isArray(currentGroups) ||
+      currentGroups.length !== groups.length ||
+      [...currentGroups].sort().join(",") !== [...groups].sort().join(",")) {
+    throw new Error(msg("multi.conflict"));
+  }
+  return true;
+}
 function clearConfirmedDraft(outcomes, form, fields) {
   if (!outcomes?.length || !outcomes.every(outcome => ["confirmed", "unchanged"].includes(outcome.status)) || !form.isConnected) return;
   for (const [selector, previous] of fields) {
@@ -3945,7 +3963,7 @@ async function renderDomains(container, generation) {
               if (records.some(record => record.domain === row.domain && record.kind === row.kind && record.type !== row.type)) {
                 throw new Error(msg("multi.conflict"));
               }
-              return records.some(record => record.domain === row.domain && record.kind === row.kind && record.type === row.type);
+              return matchingExistingEntry(records.find(record => record.domain === row.domain && record.kind === row.kind && record.type === row.type), sourceRecord.comment, sourceRecord.groups);
             },
             write: target => apiCall(target, "/domains/" + row.type + "/" + row.kind, {
               method: "POST",
@@ -4067,7 +4085,7 @@ async function renderDomains(container, generation) {
     const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targets, {
       path: () => "/domains",
       extract: response => requireCollection(response, "domains"),
-      isCurrent: (server, records) => records.some(record => record.domain === domain && record.type === type && record.kind === kind),
+      isCurrent: (server, records) => matchingExistingEntry(records.find(record => record.domain === domain && record.type === type && record.kind === kind), comment, [0]),
       write: server => apiCall(server, "/domains/" + type + "/" + kind, {
         method: "POST", body: { domain: [domain], comment, type, kind, groups: [0] }
       })
@@ -4515,7 +4533,7 @@ async function renderClients(container, generation) {
         const outcomes = await performCheckedWrites(addButton, [targetServer], {
           path: () => "/clients",
           extract: response => requireCollection(response, "clients"),
-          isCurrent: (server, records) => records.some(record => String(record.client).toUpperCase() === client.client.toUpperCase()),
+          isCurrent: (server, records) => matchingExistingEntry(records.find(record => String(record.client).toUpperCase() === client.client.toUpperCase()), sourceRecord.comment, sourceRecord.groups),
           write: server => apiCall(server, "/clients", {
             method: "POST", body: { client: [client.client], comment: sourceRecord.comment, groups: sourceRecord.groups }
           })
@@ -4608,7 +4626,7 @@ async function renderClients(container, generation) {
         const outcomes = await performCheckedWrites(addButton, targetServers, {
           path: () => "/clients",
           extract: response => requireCollection(response, "clients"),
-          isCurrent: (server, records) => records.some(record => String(record.client).toUpperCase() === addButton.dataset.key.toUpperCase()),
+          isCurrent: (server, records) => matchingExistingEntry(records.find(record => String(record.client).toUpperCase() === addButton.dataset.key.toUpperCase()), comment, [0]),
           write: server => apiCall(server, "/clients", {
             method: "POST",
             body: { client: [addButton.dataset.key], comment, groups: [0] }
@@ -4786,7 +4804,7 @@ async function renderClients(container, generation) {
     const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targetServers, {
       path: () => "/clients",
       extract: response => requireCollection(response, "clients"),
-      isCurrent: (server, records) => records.some(record => String(record.client).toUpperCase() === identifier.toUpperCase()),
+      isCurrent: (server, records) => matchingExistingEntry(records.find(record => String(record.client).toUpperCase() === identifier.toUpperCase()), comment, [0]),
       write: server => apiCall(server, "/clients", {
         method: "POST", body: { client: [identifier], comment, groups: [0] }
       })
@@ -4913,7 +4931,7 @@ async function renderLists(container, generation) {
           const outcomes = await performCheckedWrites(addButton, [targetServer], {
             path: () => "/lists",
             extract: response => requireCollection(response, "lists"),
-            isCurrent: (server, records) => records.some(record => record.address === listUrl && record.type === listType),
+            isCurrent: (server, records) => matchingExistingEntry(records.find(record => record.address === listUrl && record.type === listType), addButton.dataset.comment || "", [0]),
             write: server => apiCall(server, "/lists?type=" + encodeURIComponent(listType), {
               method: "POST",
               body: { address: [listUrl], comment: addButton.dataset.comment || "", groups: [0] }
@@ -4971,7 +4989,7 @@ async function renderLists(container, generation) {
     const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targetServers, {
       path: () => "/lists",
       extract: response => requireCollection(response, "lists"),
-      isCurrent: (server, records) => records.some(record => record.address === listUrl && record.type === listType),
+      isCurrent: (server, records) => matchingExistingEntry(records.find(record => record.address === listUrl && record.type === listType), comment, [0]),
       write: server => apiCall(server, "/lists?type=" + encodeURIComponent(listType), {
         method: "POST", body: { address: [listUrl], comment, groups: [0] }
       })
