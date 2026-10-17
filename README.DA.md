@@ -1,6 +1,6 @@
 # Dobbelt Pi-hole-kontrolpanel
 
-[English](README.md) | **Dansk**
+[English](README.md) | **Dansk** | [Deutsch](README.DE.md)
 
 Et let kontrolpanel til samlet administration af to, tre eller fire Pi-hole v6-installationer.
 Løsningen består af én selvstændig `index.html` uden backend, database eller
@@ -17,7 +17,7 @@ Kontrolpanelet indeholder:
 - Administration af adlists
 - Gravity-opdatering på hver installation med tidspunktet for seneste opdatering
 - Handlinger, der kan udføres på én eller alle aktive installationer
-- Dansk og engelsk brugerflade
+- Dansk, engelsk og tysk brugerflade
 
 Pi-hole-installationerne forbliver selvstændige DNS-servere. Projektet
 opretter ikke failover, virtuel IP, primær eller sekundær server eller automatisk
@@ -110,9 +110,32 @@ netop den browser. Antallet og API-stierne kan ikke ændres under Indstillinger.
 
 ## Sprog
 
-Brugerfladen findes på dansk og engelsk. Første gang vælges sproget automatisk
-ud fra browserens sprog. Det kan efterfølgende ændres øverst i kontrolpanelet,
-og valget gemmes lokalt i browseren.
+Brugerfladen findes på **English**, **Dansk** og **Deutsch**.
+Sprogvælgeren øverst i kontrolpanelet ændrer straks brugerfladen, herunder
+dialogtekster, dynamiske meddelelser, tabeller og grafer. Tal, procenttal,
+datoer og klokkeslæt følger det valgte sprog.
+
+Det indledende sprog vælges i denne rækkefølge:
+
+1. Et understøttet sprog, der tidligere er valgt og gemt i browserens
+   `localStorage`.
+2. Det første understøttede sprog i browserens prioriterede sprogliste.
+   Regionale varianter som `de-DE`, `de-AT`, `en-GB` og `da-DK` understøttes.
+3. Engelsk, hvis der ikke findes et understøttet sprog.
+
+Oversættelserne bruger faste meddelelsesnøgler og navngivne parametre i
+komplette `en`-, `da`- og `de`-kataloger indlejret i `index.html`. Et nyt
+sprog kræver hverken backend, buildproces eller yderligere afhængigheder
+ved afvikling. Servernavne, domæner, klientnavne, kommentarer og andre værdier
+fra brugere eller Pi-hole-API'erne ændres ikke, når brugerfladens sprog skiftes.
+
+Opsætningsvejledning og nginx-eksempler findes også på alle tre sprog:
+
+| Sprog | Dokumentation | nginx-eksempel |
+| --- | --- | --- |
+| English | [README.md](README.md) | [nginx.conf.example](nginx.conf.example) |
+| Dansk | [README.DA.md](README.DA.md) | [nginx.conf.DA.example](nginx.conf.DA.example) |
+| Deutsch | [README.DE.md](README.DE.md) | [nginx.conf.DE.example](nginx.conf.DE.example) |
 
 ## Sikkerhed
 
@@ -137,7 +160,7 @@ adgangskontrol foran det.
 
 - **v1.1.005:** Komplet dansk og engelsk brugerflade og dokumentation
 - **v1.2.006:** Understøttelse af to, tre eller fire Pi-hole-installationer
-- **v1.3.xxx:** Flere sprog
+- **v1.3.007:** Nøglebaseret flersproget understøttelse med komplet dansk, engelsk og tysk brugerflade og dokumentation
 - **v1.4.xxx:** Docker-image og forenklet installation
 
 Kontrolpanelet understøtter to til fire aktive installationer. Ekstra
@@ -146,7 +169,11 @@ installationer kræver både det tilsvarende antal i `index.html` og en proxy i 
 ## Bidrag
 
 Issues og pull requests er velkomne. Bidrag kan blandt andet være fejlrettelser,
-forslag og senere oversættelser til flere sprog.
+forslag og oversættelser til flere sprog. Brug de samme meddelelsesnøgler og
+navngivne parametre i alle sprogkataloger, og medtag oversættelser af statisk
+tekst, dynamiske tilstande og tilgængelighedstekster.
+Se [oversættelsesvejledningen](docs/I18N.md) (på engelsk) for hjælpefunktioner,
+tilføjelse af sprog og kørsel af de automatiske kontroller.
 
 ## Licens
 
