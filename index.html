@@ -3890,7 +3890,7 @@ async function renderDomains(container, generation) {
    * Read connected instances' rules and merge rows by domain, allow/deny type and exact/regex kind.
    * Keep the original per-instance records for updates and suppress contradictory add
    * buttons when that instance already has the same domain/kind under another rule type.
-   * Failed reads show a toast but currently contribute no records to the merged table.
+   * Failed reads remain unknown and never imply that the records are missing.
    */
   async function loadDomains() {
     const domainArea = document.getElementById("domArea");
@@ -4022,7 +4022,7 @@ async function renderDomains(container, generation) {
         button.addEventListener("click",
         /**
          * Confirm and attempt deletion on every instance represented by this domain row, then reload it.
-         * The current final toast names attempted targets even when an individual request failed.
+         * Each target reports its confirmed, failed or uncertain result independently.
          */
         async () => {
           const row = rows[Number(button.dataset.delDomainRow)];
@@ -4083,7 +4083,7 @@ async function renderDomains(container, generation) {
   document.getElementById("domainForm").addEventListener("submit",
   /**
    * Submit a new rule separately to each selected connected instance and report individual request results.
-   * The current form clears its domain and comment after all attempts, including partial failures.
+   * Submitted values are cleared only after every selected target is verified.
    */
   async event => {
     event.preventDefault();
@@ -4147,8 +4147,8 @@ async function renderHosts(container, generation) {
   let sortDirection = hostUiState.sortDir;
   /**
    * Load connected instances' local DNS records and group them by their hostname text.
-   * Retain each original record string for exact delete/restore requests. Failed reads
-   * show a toast but currently leave that instance without records in the merged view.
+   * Retain original host records for exact writes; unavailable instances are
+   * explicitly unknown and cannot be written from an assumed empty state.
    */
   async function loadHosts() {
     const hostArea = document.getElementById("hostArea");
@@ -4283,8 +4283,8 @@ async function renderHosts(container, generation) {
         syncButton.addEventListener("click",
         /**
          * Replace one target's host address with the selected source address after confirmation.
-         * Delete the exact old record, add the replacement, and attempt to restore the old
-         * record if the add fails after deletion succeeded. Report a failed restore separately.
+         * Add the replacement before deleting the old record; never blindly restore
+         * or replay a mutation after a lost response.
          */
         async () => {
           const host = sortedHosts[Number(syncButton.dataset.syncHostRow)];
@@ -4334,7 +4334,7 @@ async function renderHosts(container, generation) {
         deleteButton.addEventListener("click",
         /**
          * Confirm and delete each loaded instance's exact original host record, then reload.
-         * The current final toast names attempted targets even when an individual deletion failed.
+         * Confirm results per instance and do not claim that unsuccessful deletions succeeded.
          */
         async () => {
           const host = sortedHosts[Number(deleteButton.dataset.delRow)];
@@ -4381,7 +4381,7 @@ async function renderHosts(container, generation) {
   document.getElementById("hostForm").addEventListener("submit",
   /**
    * Submit a new host record independently to selected connected instances and report request results.
-   * The current form clears its address and hostname after all attempts, including partial failures.
+   * Preserve the submitted address and hostname unless every target is confirmed.
    */
   async event => {
     event.preventDefault();
@@ -4668,8 +4668,8 @@ async function renderClients(container, generation) {
   /**
    * Reload clients and suggestions from connected instances and merge identifiers without case sensitivity.
    * Update the friendly-name lookup, omit already configured device identifiers from
-   * suggestions, and ignore results from a superseded tab render. Failed reads can
-   * currently leave an instance absent from the merged data.
+   * suggestions, and ignore results from a superseded tab render. Failed reads
+   * remain explicitly unknown instead of implying that records are absent.
    */
   async function loadClientData() {
     const clientArea = document.getElementById("clientArea");
@@ -4804,7 +4804,7 @@ async function renderClients(container, generation) {
   document.getElementById("clientForm").addEventListener("submit",
   /**
    * Create the entered client independently on each selected connected instance with default group zero.
-   * Report individual results; the current form clears its identifier and comment after all attempts.
+   * Report individual results and preserve the draft after any unconfirmed request.
    */
   async event => {
     event.preventDefault();
@@ -4839,7 +4839,7 @@ async function renderLists(container, generation) {
   /**
    * Load connected instances' lists and merge them by address and list type.
    * Keep per-instance enabled/comment values and discard obsolete tab results.
-   * Failed reads show a toast but currently contribute no records to the merged table.
+   * Failed reads remain unknown and never imply that the records are missing.
    */
   async function loadLists() {
     const listArea = document.getElementById("listArea");
@@ -4914,7 +4914,7 @@ async function renderLists(container, generation) {
         deleteButton.addEventListener("click",
         /**
          * Confirm and attempt deletion of the selected address/type on every instance containing it.
-         * Reload afterward; the current final toast names attempted targets even if an individual request failed.
+         * Reload afterward and report confirmed, failed and unknown target outcomes.
          */
         async () => {
           const list = sortedLists[Number(deleteButton.dataset.delRow)];
@@ -4988,7 +4988,7 @@ async function renderLists(container, generation) {
   document.getElementById("listForm").addEventListener("submit",
   /**
    * Create a list separately on each selected connected instance and report individual results.
-   * The current form clears its address and comment after all attempts, including partial failures.
+   * Clear input only after all selected targets are confirmed or already current.
    */
   async event => {
     event.preventDefault();
