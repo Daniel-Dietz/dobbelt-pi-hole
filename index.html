@@ -4422,6 +4422,7 @@ async function renderClients(container, generation) {
   let clients = [];
   let suggestions = [];
   let clientReadStates = new Map();
+  let suggestionReadStates = new Map();
   const clientUiState = uiState.clients;
   let sortKey = clientUiState.sortKey;
 
@@ -4572,7 +4573,7 @@ async function renderClients(container, generation) {
   function renderSuggestionTable() {
     const suggestionArea = document.getElementById("suggArea");
     if (suggestions.length === 0) {
-      suggestionArea.innerHTML = `<p class="empty">${htmlMsg("clients.unknownEmpty")}</p>`;
+      suggestionArea.innerHTML = collectionCoverageHtml(suggestionReadStates) + `<p class="empty">${htmlMsg("clients.unknownEmpty")}</p>`;
       return;
     }
     const pageSize = pageSizeOf("suggPageSize");
@@ -4586,7 +4587,7 @@ async function renderClients(container, generation) {
     saveClientViewState();
     const pageStart = suggestionPage * pageSize;
     const visibleSuggestions = Number.isFinite(pageSize) ? suggestions.slice(pageStart, pageStart + pageSize) : suggestions;
-    suggestionArea.innerHTML = `<div class="table-wrap"><table class="datatable">
+    suggestionArea.innerHTML = collectionCoverageHtml(suggestionReadStates) + `<div class="table-wrap"><table class="datatable">
 				<thead><tr><th>${htmlMsg("clients.identifier")}</th><th>${htmlMsg("clients.knownNames")}</th><th>${htmlMsg("clients.vendor")}</th><th>${htmlMsg("clients.seenBy")}</th><th>${htmlMsg("clients.name")}</th><th>${htmlMsg("clients.addTo")}</th><th></th></tr></thead>
 				<tbody>${visibleSuggestions.map(/** Render one discovered device with a draft name field and instance selector for adding it as a client. */ (suggestion, rowIndex) => `<tr data-sugg-row="${pageStart + rowIndex}">
 						<td class="mono">${escapeHtml(suggestion.key)}</td>
@@ -4645,6 +4646,7 @@ async function renderClients(container, generation) {
     suggestionArea.innerHTML = `<p class="empty">${htmlMsg("clients.loading")}</p>`;
     clients = [];
     clientReadStates = new Map(state.servers.map(server => [server.id, "skipped"]));
+    suggestionReadStates = new Map(state.servers.map(server => [server.id, "skipped"]));
     const clientsByIdentifier = new Map();
     const suggestionsByServerId = {};
     let hasConnectedServer = false;
@@ -4687,8 +4689,10 @@ async function renderClients(container, generation) {
         }
         try {
           const suggestionResponse = await apiCall(server, "/clients/_suggestions");
-          suggestionsByServerId[server.id] = suggestionResponse.clients || [];
+          suggestionsByServerId[server.id] = requireCollection(suggestionResponse, "clients");
+          suggestionReadStates.set(server.id, "confirmed");
         } catch {
+          suggestionReadStates.set(server.id, "unknown");
           suggestionsByServerId[server.id] = [];
         }
       }
