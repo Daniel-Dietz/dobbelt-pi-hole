@@ -2307,3 +2307,125 @@ for (const mode of ['navigation', 'language']) {
       await assertNoCorruption(fixture);
     });
 }
+
+
+const SELECTOR_EDIT_DURING_WRITE = [
+  { tab: 'domains', method: 'POST', path: '/domains/deny/exact',
+    fields: [['#dDomain', 'draft-target.example'], ['#dComment', 'fresh destination']],
+    target: '#targetDomain', control: '#targetDomain', value: '2', submit: '#domainForm button[type="submit"]' },
+  { tab: 'domains', method: 'POST', path: '/domains/deny/exact',
+    fields: [['#dDomain', 'draft-type.example'], ['#dComment', 'fresh kind']],
+    target: '#targetDomain', control: '#dType', value: 'allow', submit: '#domainForm button[type="submit"]' },
+  { tab: 'domains', method: 'POST', path: '/domains/deny/exact',
+    fields: [['#dDomain', 'draft-kind.example'], ['#dComment', 'fresh regex']],
+    target: '#targetDomain', control: '#dKind', value: 'regex', submit: '#domainForm button[type="submit"]' },
+  { tab: 'hosts', method: 'PUT', path: '/config/dns/hosts/',
+    fields: [['#hIp', '192.168.1.97'], ['#hName', 'draft-host.example']],
+    target: '#targetHost', control: '#targetHost', value: '2', submit: '#hostForm button[type="submit"]' },
+  { tab: 'clients', method: 'POST', path: '/clients',
+    fields: [['#cClient', '192.168.1.97'], ['#cComment', 'draft client']],
+    target: '#targetClient', control: '#targetClient', value: '2', submit: '#clientForm button[type="submit"]' },
+  { tab: 'lists', method: 'POST', path: '/lists',
+    fields: [['#lUrl', 'https://draft.example/blocklist.txt'], ['#lComment', 'draft list']],
+    target: '#targetList', control: '#targetList', value: '2', submit: '#listForm button[type="submit"]' },
+  { tab: 'lists', method: 'POST', path: '/lists',
+    fields: [['#lUrl', 'https://draft.example/allowlist.txt'], ['#lComment', 'draft allowlist']],
+    target: '#targetList', control: '#lType', value: 'allow', submit: '#listForm button[type="submit"]' }
+];
+for (const scenario of SELECTOR_EDIT_DURING_WRITE) {
+  test('Issue #8 Codex: changing ' + scenario.control + ' retains the entire newer draft',
+    /** A pending successful write cannot discard a draft newly targeted or retyped by a selector change. */
+    async t => {
+      const fixture = await openDashboard(t, { language: 'en' });
+      const { page } = fixture;
+      await visit(page, scenario.tab);
+      const held = deferred(t);
+      const seen = deferred(t);
+      let observed = false;
+      await page.route('**/*',
+        /** Hold the original server-one mutation after its safety preflight and before applying it. */
+        async route => {
+          const url = new URL(route.request().url());
+          if (route.request().method() === scenario.method && url.pathname.includes(scenario.path)) {
+            if (!observed) { observed = true; seen.release(); }
+            await held.promise;
+          }
+          return route.fallback();
+        });
+      for (const [selector, value] of scenario.fields) await page.locator(selector).fill(value);
+      await page.locator(scenario.target).selectOption('1');
+      await page.locator(scenario.submit).click();
+      await seen.promise;
+      await page.locator(scenario.control).selectOption(scenario.value);
+      held.release();
+      await page.waitForFunction(/** Require acknowledgement of the original write before inspecting the new draft. */
+        () => (document.querySelector('#toastArea')?.textContent || '').includes('change confirmed'));
+      for (const [selector, value] of scenario.fields) {
+        assert.equal(await page.locator(selector).inputValue(), value,
+          'Newly selected target/type must preserve all draft inputs');
+      }
+      assert.equal(await page.locator(scenario.control).inputValue(), scenario.value);
+      await assertNoCorruption(fixture);
+    });
+}
+
+for (const scenario of [
+  { tab: 'domains', method: 'POST', path: '/domains/deny/exact',
+    fields: [['#dDomain', 'refresh-late.example'], ['#dComment', 'late result']],
+    target: '#targetDomain', submit: '#domainForm button[type="submit"]',
+    area: '#domArea', marker: 'refresh-late.example', mode: 'language' },
+  { tab: 'hosts', method: 'PUT', path: '/config/dns/hosts/',
+    fields: [['#hIp', '192.168.1.98'], ['#hName', 'refresh-host.example']],
+    target: '#targetHost', submit: '#hostForm button[type="submit"]',
+    area: '#hostArea', marker: 'refresh-host.example', mode: 'language' },
+  { tab: 'clients', method: 'POST', path: '/clients',
+    fields: [['#cClient', '192.168.1.98'], ['#cComment', 'refresh client']],
+    target: '#targetClient', submit: '#clientForm button[type="submit"]',
+    area: '#clientArea', marker: '192.168.1.98', mode: 'language' },
+  { tab: 'lists', method: 'POST', path: '/lists',
+    fields: [['#lUrl', 'https://refresh.example/new.txt'], ['#lComment', 'refresh list']],
+    target: '#targetList', submit: '#listForm button[type="submit"]',
+    area: '#listArea', marker: 'https://refresh.example/new.txt', mode: 'language' },
+  { tab: 'domains', method: 'POST', path: '/domains/deny/exact',
+    fields: [['#dDomain', 'refresh-after-return.example'], ['#dComment', 'after navigation']],
+    target: '#targetDomain', submit: '#domainForm button[type="submit"]',
+    area: '#domArea', marker: 'refresh-after-return.example', mode: 'navigation' }
+]) {
+  test('Issue #8 Codex: late ' + scenario.tab + ' write refreshes the current table after ' + scenario.mode,
+    /** The active tab's newest loader must refresh after an older detached submission commits. */
+    async t => {
+      const fixture = await openDashboard(t, { language: 'en' });
+      const { page } = fixture;
+      await visit(page, scenario.tab);
+      const held = deferred(t);
+      const seen = deferred(t);
+      let observed = false;
+      await page.route('**/*',
+        /** Delay applying the mutation until the newer tab rendering has finished its initial GET. */
+        async route => {
+          const url = new URL(route.request().url());
+          if (route.request().method() === scenario.method && url.pathname.includes(scenario.path)) {
+            if (!observed) { observed = true; seen.release(); }
+            await held.promise;
+          }
+          return route.fallback();
+        });
+      for (const [selector, value] of scenario.fields) await page.locator(selector).fill(value);
+      await page.locator(scenario.target).selectOption('1');
+      await page.locator(scenario.submit).click();
+      await seen.promise;
+      if (scenario.mode === 'language') {
+        await language(page, 'de', scenario.tab);
+      } else {
+        await visit(page, 'hosts');
+        await visit(page, scenario.tab);
+      }
+      assert.ok(!(await page.locator(scenario.area).textContent()).includes(scenario.marker),
+        'The replacement render must have loaded before the original write completes');
+      held.release();
+      await page.waitForFunction(/** The write-completion refresh must update the currently displayed table. */
+        scenario => (document.querySelector(scenario.area)?.textContent || '').includes(scenario.marker),
+        { area: scenario.area, marker: scenario.marker });
+      await assertNoCorruption(fixture);
+    });
+}

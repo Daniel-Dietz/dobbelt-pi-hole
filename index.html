@@ -3919,14 +3919,16 @@ function matchingExistingEntry(record, comment, groups) {
 /**
  * Capture the active tab's draft identity and per-field edit revisions at submission.
  * A language-only rerender preserves this identity; navigation or new typing does not.
- * @param {Array<[string,string]>} fields Submitted selectors and their values.
+ * @param {Array<[string,string]>} fields Submitted text-field selectors and values.
+ * @param {string[]} controls Selectors for the target and type options that define the same draft.
  * @returns {object} Submission provenance for safe, asynchronous clearing.
  */
-function captureSubmissionContext(fields) {
+function captureSubmissionContext(fields, controls = []) {
   return {
     tab: state.activeTab,
     revision: formContextRevision,
-    edits: new Map(fields.map(([selector]) => [selector, fieldEditRevisions.get(selector) ?? 0]))
+    edits: new Map([...fields.map(([selector]) => selector), ...controls]
+      .map(selector => [selector, fieldEditRevisions.get(selector) ?? 0]))
   };
 }
 /**
@@ -3941,9 +3943,13 @@ function captureSubmissionContext(fields) {
 function clearConfirmedDraft(outcomes, form, fields, submission) {
   if (!outcomes?.length || !outcomes.every(outcome => ["confirmed", "unchanged"].includes(outcome.status))) return;
   if (submission.revision !== formContextRevision || submission.tab !== state.activeTab) return;
+  // Changing the target, rule type, kind or any field prepares a *new* draft.
+  // Preserve the entire draft even when the original text happens to be identical.
+  for (const [selector, revision] of submission.edits) {
+    if ((fieldEditRevisions.get(selector) ?? 0) !== revision) return;
+  }
   const activeForm = form.isConnected ? form : document.getElementById(form.id);
   for (const [selector, previous] of fields) {
-    if ((fieldEditRevisions.get(selector) ?? 0) !== submission.edits.get(selector)) continue;
     // Pending language renders may still restore the captured draft later.
     // Clear only snapshots belonging to the same tab and render generation.
     const pending = pendingLanguageFormState;
@@ -4058,6 +4064,8 @@ function clearSubmittedFields(fields) {
  * @param {number} generation Render generation assigned by switchTab.
  */
 async function renderDomains(container, generation) {
+  // Only the newest collection read may publish rows after an overlapping reload.
+  let loadRevision = 0;
   /**
    * Read connected instances' rules and merge rows by domain, allow/deny type and exact/regex kind.
    * Keep the original per-instance records for updates and suppress contradictory add
@@ -4065,6 +4073,7 @@ async function renderDomains(container, generation) {
    * Failed reads remain unknown and never imply that the records are missing.
    */
   async function loadDomains() {
+    const loadId = ++loadRevision;
     const domainArea = document.getElementById("domArea");
     domainArea.innerHTML = `<p class="empty">${htmlMsg("domains.loading")}</p>`;
     const readStates = new Map(state.servers.map(server => [server.id, "skipped"]));
@@ -4103,7 +4112,7 @@ async function renderDomains(container, generation) {
         }
       }
     }));
-    if (generation !== state.renderGen) {
+    if (generation !== state.renderGen || loadId !== loadRevision) {
       return;
     }
     if (!state.servers.some(server => server.connected)) {
@@ -4155,7 +4164,7 @@ async function renderDomains(container, generation) {
                 kind: row.kind, groups: sourceRecord.groups }
             })
           });
-          if (outcomes && container.isConnected && generation === state.renderGen) loadDomains();
+          if (outcomes && state.activeTab === "domains") document.getElementById("domReload")?.click();
         });
       }
       for (const button of domainArea.querySelectorAll("[data-toggle-domain-server]")) {
@@ -4184,7 +4193,7 @@ async function renderDomains(container, generation) {
                 });
               }
             });
-            if (outcomes && container.isConnected && generation === state.renderGen) loadDomains();
+            if (outcomes && state.activeTab === "domains") document.getElementById("domReload")?.click();
           }
         });
       }
@@ -4212,7 +4221,7 @@ async function renderDomains(container, generation) {
                 record.domain === row.domain && record.kind === row.kind && record.type === row.type),
               write: server => apiCall(server, "/domains/" + row.type + "/" + row.kind + "/" + encodeURIComponent(row.domain), { method: "DELETE" })
             });
-            if (outcomes && container.isConnected && generation === state.renderGen) loadDomains();
+            if (outcomes && state.activeTab === "domains") document.getElementById("domReload")?.click();
           }
         });
       }
@@ -4266,7 +4275,7 @@ async function renderDomains(container, generation) {
     }
     const form = event.currentTarget;
     const submittedFields = [["#dDomain", domain], ["#dComment", comment]];
-    const submission = captureSubmissionContext(submittedFields);
+    const submission = captureSubmissionContext(submittedFields, ["#dType", "#dKind", "#targetDomain"]);
     const targets = targetsFor(document.getElementById("targetDomain"));
     const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targets, {
       path: () => "/domains",
@@ -4277,7 +4286,7 @@ async function renderDomains(container, generation) {
       })
     });
     clearConfirmedDraft(outcomes, form, submittedFields, submission);
-    if (outcomes && form.isConnected && generation === state.renderGen) loadDomains();
+    if (outcomes && state.activeTab === "domains") document.getElementById("domReload")?.click();
   });
   bindLoginHandlers(container, loadDomains);
   await loadDomains();
@@ -4289,6 +4298,8 @@ async function renderDomains(container, generation) {
  * @param {number} generation Render generation assigned by switchTab.
  */
 async function renderHosts(container, generation) {
+  // Only the newest collection read may publish rows after an overlapping reload.
+  let loadRevision = 0;
   container.innerHTML = `
 				<div class="card" style="margin-bottom:14px;">
 				<h2>${htmlMsg("hosts.addTitle")}</h2>
@@ -4323,6 +4334,7 @@ async function renderHosts(container, generation) {
    * explicitly unknown and cannot be written from an assumed empty state.
    */
   async function loadHosts() {
+    const loadId = ++loadRevision;
     const hostArea = document.getElementById("hostArea");
     hostArea.innerHTML = `<p class="empty">${htmlMsg("hosts.loading")}</p>`;
     const readStates = new Map(state.servers.map(server => [server.id, "skipped"]));
@@ -4357,7 +4369,7 @@ async function renderHosts(container, generation) {
         }
       }
     }));
-    if (generation !== state.renderGen) {
+    if (generation !== state.renderGen || loadId !== loadRevision) {
       return;
     }
     if (!state.servers.some(server => server.connected)) {
@@ -4497,7 +4509,7 @@ async function renderHosts(container, generation) {
               }
             }
           });
-          if (outcomes && container.isConnected && generation === state.renderGen) loadHosts();
+          if (outcomes && state.activeTab === "hosts") document.getElementById("hostReload")?.click();
         });
       }
       for (const deleteButton of hostArea.querySelectorAll("[data-del-row]")) {
@@ -4523,7 +4535,7 @@ async function renderHosts(container, generation) {
               isCurrent: (server, records) => !records.includes(host.byServer[server.id].raw),
               write: server => apiCall(server, "/config/dns/hosts/" + encodeURIComponent(host.byServer[server.id].raw), { method: "DELETE" })
             });
-            if (outcomes && container.isConnected && generation === state.renderGen) loadHosts();
+            if (outcomes && state.activeTab === "hosts") document.getElementById("hostReload")?.click();
           }
         });
       }
@@ -4541,7 +4553,7 @@ async function renderHosts(container, generation) {
             isCurrent: (server, records) => records.includes(rawHostRecord),
             write: server => apiCall(server, "/config/dns/hosts/" + encodeURIComponent(rawHostRecord), { method: "PUT" })
           });
-          if (outcomes && container.isConnected && generation === state.renderGen) loadHosts();
+          if (outcomes && state.activeTab === "hosts") document.getElementById("hostReload")?.click();
         });
       }
     }
@@ -4562,7 +4574,7 @@ async function renderHosts(container, generation) {
     }
     const form = event.currentTarget;
     const submittedFields = [["#hIp", ipAddress], ["#hName", hostname]];
-    const submission = captureSubmissionContext(submittedFields);
+    const submission = captureSubmissionContext(submittedFields, ["#targetHost"]);
     const rawHostRecord = ipAddress + " " + hostname;
     const targetServers = targetsFor(document.getElementById("targetHost"));
     const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targetServers, {
@@ -4572,7 +4584,7 @@ async function renderHosts(container, generation) {
       write: server => apiCall(server, "/config/dns/hosts/" + encodeURIComponent(rawHostRecord), { method: "PUT" })
     });
     clearConfirmedDraft(outcomes, form, submittedFields, submission);
-    if (outcomes && form.isConnected && generation === state.renderGen) loadHosts();
+    if (outcomes && state.activeTab === "hosts") document.getElementById("hostReload")?.click();
   });
   bindLoginHandlers(container, loadHosts);
   await loadHosts();
@@ -4584,6 +4596,8 @@ async function renderHosts(container, generation) {
  * @param {number} generation Render generation assigned by switchTab.
  */
 async function renderClients(container, generation) {
+  // Only the newest collection read may publish rows after an overlapping reload.
+  let loadRevision = 0;
   container.innerHTML = `
 				<div class="card" style="margin-bottom:14px;">
 				<h2>${htmlMsg("clients.addTitle")}</h2>
@@ -4724,7 +4738,7 @@ async function renderClients(container, generation) {
             method: "POST", body: { client: [client.client], comment: sourceRecord.comment, groups: sourceRecord.groups }
           })
         });
-        if (outcomes && container.isConnected && generation === state.renderGen) loadClientData();
+        if (outcomes && state.activeTab === "clients") document.getElementById("clientReload")?.click();
       });
     }
     for (const deleteButton of clientArea.querySelectorAll("[data-del-client-row]")) {
@@ -4752,7 +4766,7 @@ async function renderClients(container, generation) {
           isCurrent: (server, records) => !records.some(record => String(record.client).toUpperCase() === client.client.toUpperCase()),
           write: server => apiCall(server, "/clients/" + encodeURIComponent(client.client), { method: "DELETE" })
         });
-        if (outcomes && container.isConnected && generation === state.renderGen) loadClientData();
+        if (outcomes && state.activeTab === "clients") document.getElementById("clientReload")?.click();
       });
     }
     const previousPageButton = document.getElementById("clientPagePrev");
@@ -4844,6 +4858,7 @@ async function renderClients(container, generation) {
    * remain explicitly unknown instead of implying that records are absent.
    */
   async function loadClientData() {
+    const loadId = ++loadRevision;
     const clientArea = document.getElementById("clientArea");
     const suggestionArea = document.getElementById("suggArea");
     clientArea.innerHTML = `<p class="empty">${htmlMsg("clients.loading")}</p>`;
@@ -4903,7 +4918,7 @@ async function renderClients(container, generation) {
         }
       }
     }));
-    if (generation !== state.renderGen) {
+    if (generation !== state.renderGen || loadId !== loadRevision) {
       return;
     }
     if (!state.servers.some(server => server.connected)) {
@@ -4989,7 +5004,7 @@ async function renderClients(container, generation) {
     }
     const form = event.currentTarget;
     const submittedFields = [["#cClient", identifier], ["#cComment", comment]];
-    const submission = captureSubmissionContext(submittedFields);
+    const submission = captureSubmissionContext(submittedFields, ["#targetClient"]);
     const targetServers = targetsFor(document.getElementById("targetClient"));
     const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targetServers, {
       path: () => "/clients",
@@ -5000,7 +5015,7 @@ async function renderClients(container, generation) {
       })
     });
     clearConfirmedDraft(outcomes, form, submittedFields, submission);
-    if (outcomes && form.isConnected && generation === state.renderGen) loadClientData();
+    if (outcomes && state.activeTab === "clients") document.getElementById("clientReload")?.click();
   });
   bindLoginHandlers(container, loadClientData);
   await loadClientData();
@@ -5012,12 +5027,15 @@ async function renderClients(container, generation) {
  * @param {number} generation Render generation assigned by switchTab.
  */
 async function renderLists(container, generation) {
+  // Only the newest collection read may publish rows after an overlapping reload.
+  let loadRevision = 0;
   /**
    * Load connected instances' lists and merge them by address and list type.
    * Keep per-instance enabled/comment values and discard obsolete tab results.
    * Failed reads remain unknown and never imply that the records are missing.
    */
   async function loadLists() {
+    const loadId = ++loadRevision;
     const listArea = document.getElementById("listArea");
     listArea.innerHTML = `<p class="empty">${htmlMsg("lists.loading")}</p>`;
     const readStates = new Map(state.servers.map(server => [server.id, "skipped"]));
@@ -5054,7 +5072,7 @@ async function renderLists(container, generation) {
         }
       }
     }));
-    if (generation !== state.renderGen) {
+    if (generation !== state.renderGen || loadId !== loadRevision) {
       return;
     }
     if (!state.servers.some(server => server.connected)) {
@@ -5105,7 +5123,7 @@ async function renderLists(container, generation) {
               isCurrent: (server, records) => !records.some(record => record.address === list.address && record.type === list.type),
               write: server => apiCall(server, "/lists/" + encodeURIComponent(list.address) + "?type=" + encodeURIComponent(list.type), { method: "DELETE" })
             });
-            if (outcomes && container.isConnected && generation === state.renderGen) loadLists();
+            if (outcomes && state.activeTab === "lists") document.getElementById("listReload")?.click();
           }
         });
       }
@@ -5134,7 +5152,7 @@ async function renderLists(container, generation) {
               body: { address: [listUrl], comment, groups }
             })
           });
-          if (outcomes && container.isConnected && generation === state.renderGen) loadLists();
+          if (outcomes && state.activeTab === "lists") document.getElementById("listReload")?.click();
         });
       }
     } else {
@@ -5183,7 +5201,7 @@ async function renderLists(container, generation) {
     }
     const form = event.currentTarget;
     const submittedFields = [["#lUrl", listUrl], ["#lComment", comment]];
-    const submission = captureSubmissionContext(submittedFields);
+    const submission = captureSubmissionContext(submittedFields, ["#lType", "#targetList"]);
     const targetServers = targetsFor(document.getElementById("targetList"));
     const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targetServers, {
       path: () => "/lists",
@@ -5194,7 +5212,7 @@ async function renderLists(container, generation) {
       })
     });
     clearConfirmedDraft(outcomes, form, submittedFields, submission);
-    if (outcomes && form.isConnected && generation === state.renderGen) loadLists();
+    if (outcomes && state.activeTab === "lists") document.getElementById("listReload")?.click();
   });
   bindLoginHandlers(container, loadLists);
   await loadLists();
