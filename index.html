@@ -3821,7 +3821,7 @@ async function performCheckedWrites(button, targets, op) {
           : { server, status: "confirmed" });
       } catch (error) {
         outcomes.push({ server,
-          status: error instanceof AuthError || (error.httpStatus >= 400 && error.httpStatus < 500) ? "failed" : "uncertain",
+          status: !error.partialWrite && (error instanceof AuthError || (error.httpStatus >= 400 && error.httpStatus < 500)) ? "failed" : "uncertain",
           error: error.message });
       }
     }
@@ -4272,43 +4272,30 @@ async function renderHosts(container, generation) {
           }))) {
             return;
           }
-          syncButton.disabled = true;
           const replacementRawRecord = sourceRecord.ip + " " + host.name;
-          let originalRecordDeleted = false;
-          try {
-            await apiCall(targetServer, "/config/dns/hosts/" + encodeURIComponent(targetRecord.raw), {
-              method: "DELETE"
-            });
-            originalRecordDeleted = true;
-            await apiCall(targetServer, "/config/dns/hosts/" + encodeURIComponent(replacementRawRecord), {
-              method: "PUT"
-            });
-            toast(msg("hosts.updated", {
-              server: targetServer.label,
-              ip: sourceRecord.ip
-            }), "ok");
-          } catch (error) {
-            if (originalRecordDeleted) {
-              try {
-                await apiCall(targetServer, "/config/dns/hosts/" + encodeURIComponent(targetRecord.raw), {
-                  method: "PUT"
-                });
-                toast(msg("hosts.restoredAfterFailure", {
-                  server: targetServer.label
-                }), "err");
-              } catch {
-                toast(msg("hosts.restoreFailed", {
-                  server: targetServer.label
-                }), "err");
+          const outcomes = await performCheckedWrites(syncButton, [targetServer], {
+            path: () => "/config/dns/hosts",
+            extract: requireHostRecords,
+            isCurrent: (server, records) => {
+              if (records.includes(replacementRawRecord) && !records.includes(targetRecord.raw)) return true;
+              // A partially completed previous replacement must be resolved
+              // deliberately rather than replaying its PUT/DELETE sequence.
+              if (!records.includes(targetRecord.raw) || records.includes(replacementRawRecord)) {
+                throw new Error(msg("multi.conflict"));
               }
-            } else {
-              toast(msg("hosts.requestError", {
-                server: targetServer.label,
-                error: error.message
-              }), "err");
+              return false;
+            },
+            write: async server => {
+              await apiCall(server, "/config/dns/hosts/" + encodeURIComponent(replacementRawRecord), { method: "PUT" });
+              try {
+                await apiCall(server, "/config/dns/hosts/" + encodeURIComponent(targetRecord.raw), { method: "DELETE" });
+              } catch (error) {
+                error.partialWrite = true;
+                throw error;
+              }
             }
-          }
-          loadHosts();
+          });
+          if (outcomes && container.isConnected && generation === state.renderGen) loadHosts();
         });
       }
       for (const deleteButton of hostArea.querySelectorAll("[data-del-row]")) {
