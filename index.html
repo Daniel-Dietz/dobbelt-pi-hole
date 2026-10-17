@@ -2639,7 +2639,9 @@ async function apiCall(server, path, {
   const payload = (response.headers.get("content-type") || "").includes("application/json") ? await response.json().catch(/** Represent an unreadable JSON response as null while retaining its HTTP status for error handling. */ () => null) : await response.text();
   if (!response.ok) {
     const message = payload && payload.error && payload.error.message || (typeof payload == "string" ? payload : "HTTP " + response.status);
-    throw new Error(message);
+    const failure = new Error(message);
+    failure.httpStatus = response.status;
+    throw failure;
   }
   return payload;
 }
