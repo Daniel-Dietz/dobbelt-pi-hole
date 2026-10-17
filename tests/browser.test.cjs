@@ -2,11 +2,13 @@
 
 // Run with `node --test tests/browser.test.cjs` after installing Playwright and
 // Chromium. An existing compatible browser can be selected with
-// PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH. Every page/API request is intercepted;
-// these tests never contact a Pi-hole or any other live service.
+// PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH. Requests use intercepted fixtures or a
+// loopback-only HTTP fixture; no real Pi-hole or external service is contacted.
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
+const { createHash } = require('node:crypto');
 const { readFileSync } = require('node:fs');
+const { createServer } = require('node:http');
 const { join } = require('node:path');
 const { test, before, after } = require('node:test');
 const { chromium } = require('playwright');
@@ -90,6 +92,7 @@ async function openDashboard(t, options = {}) {
     paginatedQueries = false, savedQueryFilters = null, authResponseGate = null,
     runtimeConfig = publicConfig(count), configStatus = 200, configText = null, configResponseGate = null,
     waitForReady = true, fakeClock = false, holdInitialSessions = false, contentSecurityPolicy = null,
+    origin = ORIGIN, html = readFileSync(HTML_PATH, 'utf8'),
     labelOverrides, localStorageEntries = {}, sessionStorageEntries = {} } = options;
   const context = await browser.newContext({ locale: browserLanguages[0], timezoneId: 'UTC', viewport: { width: 1600, height: 1100 } });
   t.after(() => context.close());
@@ -162,10 +165,9 @@ async function openDashboard(t, options = {}) {
     }
   }, { language, browserLanguages, connected, storageUnavailable, streamingGravity, savedQueryFilters,
     initialServers, initialLabels, localStorageEntries, sessionStorageEntries });
-  const html = readFileSync(HTML_PATH, 'utf8');
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
-    if (url.origin !== ORIGIN) { unexpected.push(request.url()); return route.abort(); }
+    if (url.origin !== origin) { unexpected.push(request.url()); return route.abort(); }
     if (url.pathname === '/' || url.pathname === '/index.html') return route.fulfill({ contentType: 'text/html', body: html,
       headers: contentSecurityPolicy ? { 'Content-Security-Policy': contentSecurityPolicy } : {} });
     if (url.pathname === '/chart.umd.min.js') {
@@ -245,7 +247,7 @@ async function openDashboard(t, options = {}) {
     ...(typeof holdInitialSessions === 'string' ? initialServers.filter(server => server.id !== holdInitialSessions)
       .map(server => page.waitForResponse(response => new URL(response.url()).pathname === server.base + '/dns/blocking')
         .then(response => response.finished())) : []),
-    page.goto(ORIGIN + '/#' + hash),
+    page.goto(origin + '/#' + hash),
   ]);
   await configObserved;
   await page.locator('#languageSelect option[value="de"]').waitFor({ state: 'attached' });
@@ -278,6 +280,144 @@ async function assertNoCorruption(fixture) {
   assert.equal(await fixture.page.evaluate(() => window.__xss), 0, 'Text must never become executable HTML');
   assert.equal(await fixture.page.locator('#tabContent img, #serverPills img').count(), 0);
 }
+
+const REDIRECT_API_BODY = { client: ['192.0.2.88'], comment: 'redirect regression fixture', groups: [0] };
+const REDIRECT_PASSWORD = 'fixture-password-for-instance-1';
+
+/** A real HTTP redirect is essential: an intercepted rejection alone can hide a second request. */
+async function openRedirectDashboard(t, { status, loginRequest = false, withoutGuards = false }) {
+  const config = publicConfig(), endpoint = loginRequest ? '/auth' : '/clients';
+  const sourcePath = config.servers[0].base + endpoint;
+  const targetPath = config.servers[1].base + endpoint + '?redirect-regression=' + status;
+  const sourceRequests = [], targetRequests = [], networkUnexpected = [];
+  const server = createServer(async (request, response) => {
+    let rawBody = '';
+    for await (const chunk of request) rawBody += chunk;
+    const record = { method: request.method, sid: request.headers['x-ftl-sid'] ?? null,
+      body: rawBody ? JSON.parse(rawBody) : null };
+    if (request.url === sourcePath && request.method === 'POST') {
+      sourceRequests.push(record);
+      response.writeHead(status, { Location: targetPath });
+      return response.end();
+    }
+    // Record every method: 301/302/303 may rewrite a POST into a GET.
+    if (request.url === targetPath) {
+      targetRequests.push(record);
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      return response.end(JSON.stringify(loginRequest ? { session: { sid: 'fixture-redirected-sid-2' } } : {}));
+    }
+    networkUnexpected.push(request.method + ' ' + request.url);
+    response.writeHead(404);
+    response.end();
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
+  const origin = 'http://127.0.0.1:' + server.address().port;
+  const original = readFileSync(HTML_PATH, 'utf8');
+  let html = original;
+  let policy = execFileSync('python3', ['-c',
+    'import sys; from tools.render_config import content_security_policy; print(content_security_policy(sys.argv[1]))', HTML_PATH,
+  ], { cwd: join(__dirname, '..'), encoding: 'utf8' }).trim();
+  if (withoutGuards) {
+    // Negative controls serve the old behavior only in memory. Keep the config
+    // fetch guard and the rest of the deployed CSP, updating just the app hash.
+    const start = html.indexOf('async function apiCall('), end = html.indexOf('async function logout(');
+    assert.ok(start >= 0 && end > start);
+    const guarded = html.slice(start, end), guard = /^[ \t]*redirect: "error",\r?\n/gm;
+    assert.equal([...guarded.matchAll(guard)].length, 2, 'Remove exactly the API and login guards');
+    html = html.slice(0, start) + guarded.replace(guard, '') + html.slice(end);
+    const hash = source => {
+      const scripts = [...source.matchAll(/<script>([\s\S]*?)<\/script>/gu)];
+      assert.equal(scripts.length, 1, 'The control must identify the actual inline app script');
+      return 'sha256-' + createHash('sha256').update(scripts[0][1].replace(/\r\n?/gu, '\n')).digest('base64');
+    };
+    const oldHash = hash(original);
+    assert.ok(policy.includes("'" + oldHash + "'"));
+    policy = policy.replace(oldHash, hash(html));
+  }
+  const fixture = await openDashboard(t, { origin, html, language: 'en', connected: !loginRequest,
+    runtimeConfig: config, labelOverrides: null, contentSecurityPolicy: policy });
+  await fixture.page.route('**/*', route => {
+    const request = route.request(), url = new URL(request.url()), path = url.pathname + url.search;
+    if (url.origin === origin && ((path === sourcePath && request.method() === 'POST') || path === targetPath)) {
+      return route.continue();
+    }
+    return route.fallback();
+  });
+  return { ...fixture, sourceRequests, targetRequests, networkUnexpected };
+}
+
+async function redirectSessions(page) {
+  return page.evaluate(prefix => state.servers.map(server => ({ id: server.id, connected: server.connected,
+    sid: server.sid, stored: sessionStorage.getItem(prefix + server.base) })), SESSION_PREFIX);
+}
+async function submitRedirectApi(page) {
+  return page.evaluate(async body => {
+    try { await apiCall(serverById('1'), '/clients', { method: 'POST', body }); return 'fulfilled'; }
+    catch { return 'rejected'; }
+  }, REDIRECT_API_BODY);
+}
+async function submitRedirectLogin(page) {
+  await page.locator('[data-loginpw="1"]').fill(REDIRECT_PASSWORD);
+  await page.locator('[data-loginform="1"] button').click();
+  // Wait for either outcome so an unguarded login fails an assertion promptly.
+  await page.locator('.toast').first().waitFor();
+}
+async function assertRedirectFixture(fixture, loginRequest) {
+  assert.deepEqual(fixture.sourceRequests, [{ method: 'POST', sid: loginRequest ? null : 'fixture-sid-1',
+    body: loginRequest ? { password: REDIRECT_PASSWORD } : REDIRECT_API_BODY }],
+  'The intended instance must receive exactly one original request with its fixture credentials/body');
+  assert.deepEqual(fixture.networkUnexpected, [], 'The loopback server must receive only explicit fixture requests');
+  await assertNoCorruption(fixture);
+}
+
+for (const status of [301, 302, 303, 307, 308]) {
+  test(`API redirect ${status} is rejected before another instance receives a request`, async t => {
+    const fixture = await openRedirectDashboard(t, { status }), { page } = fixture;
+    const before = await redirectSessions(page);
+    assert.deepEqual(before, [1, 2].map(id => ({ id: String(id), connected: true,
+      sid: 'fixture-sid-' + id, stored: 'fixture-sid-' + id })));
+    assert.equal(await submitRedirectApi(page), 'rejected');
+    assert.deepEqual(fixture.targetRequests, [], 'No redirected request, SID or body may reach instance 2');
+    assert.deepEqual(await redirectSessions(page), before, 'Rejection must not mix up existing sessions');
+    await assertRedirectFixture(fixture, false);
+  });
+
+  test(`login redirect ${status} is rejected without authenticating the wrong instance`, async t => {
+    const fixture = await openRedirectDashboard(t, { status, loginRequest: true }), { page } = fixture;
+    const before = await redirectSessions(page);
+    assert.deepEqual(before, [1, 2].map(id => ({ id: String(id), connected: false, sid: null, stored: null })));
+    await submitRedirectLogin(page);
+    assert.equal(await page.locator('.toast.err').count(), 1, 'The normal login failure handler must report the rejection');
+    assert.deepEqual(fixture.targetRequests, [], 'No redirected request or password may reach instance 2');
+    assert.deepEqual(await redirectSessions(page), before, 'Neither instance may acquire a redirected session');
+    assert.equal(await page.locator('[data-loginform="1"]').count(), 1);
+    await assertRedirectFixture(fixture, true);
+  });
+}
+
+test('the real redirect fixture exposes API SID/body forwarding without the guard (307, memory-only)', async t => {
+  const fixture = await openRedirectDashboard(t, { status: 307, withoutGuards: true });
+  assert.equal(await submitRedirectApi(fixture.page), 'fulfilled');
+  assert.deepEqual(fixture.targetRequests, [{ method: 'POST', sid: 'fixture-sid-1', body: REDIRECT_API_BODY }],
+    'The same test must observe the second request when the production guard is removed');
+  await assertRedirectFixture(fixture, false);
+});
+
+test('the real redirect fixture exposes login forwarding and session mixup without the guard (308, memory-only)', async t => {
+  const fixture = await openRedirectDashboard(t, { status: 308, loginRequest: true, withoutGuards: true });
+  await submitRedirectLogin(fixture.page);
+  assert.equal(await fixture.page.locator('.toast.ok').count(), 1);
+  assert.deepEqual(fixture.targetRequests, [{ method: 'POST', sid: null, body: { password: REDIRECT_PASSWORD } }]);
+  assert.deepEqual(await redirectSessions(fixture.page), [
+    { id: '1', connected: true, sid: 'fixture-redirected-sid-2', stored: 'fixture-redirected-sid-2' },
+    { id: '2', connected: false, sid: null, stored: null },
+  ], 'Without the guard, the login response from instance 2 is incorrectly stored for instance 1');
+  await assertRedirectFixture(fixture, true);
+});
 
 test('the generated CSP allows the dashboard and charts but blocks foreign inline scripts and handlers', async t => {
   // The HTTP integration tests independently verify the renderer's hash against

@@ -1409,6 +1409,7 @@ async function apiCall(t, e, {
   t.sid && (l["X-FTL-SID"] = t.sid);
   const r = await fetch(t.base.replace(/\/$/, "") + e, {
     method: n,
+    redirect: "error",
     headers: l,
     body: void 0 !== a ? JSON.stringify(a) : void 0,
     signal: requestSignal
@@ -1429,6 +1430,7 @@ async function apiCall(t, e, {
 async function login(t, e) {
   const n = await fetch(t.base.replace(/\/$/, "") + "/auth", {
       method: "POST",
+      redirect: "error",
       headers: {
         "Content-Type": "application/json"
       },

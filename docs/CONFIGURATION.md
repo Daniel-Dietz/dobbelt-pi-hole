@@ -28,7 +28,7 @@ Start with [config/config.example.json](../config/config.example.json):
 | `servers` | Two to four instances, in display order. Its length determines the server count. |
 | `servers[].id` | Unique string `"1"`, `"2"`, `"3"` or `"4"`. Keep this ID stable when renaming or reordering an instance. Colours are tied to IDs. |
 | `servers[].label` | Nonblank display name, at most 120 Unicode code points after trimming. Control characters and unpaired Unicode surrogates are rejected. |
-| `servers[].apiUrl` | Full HTTP(S) API base URL, such as `http://192.168.1.10:8080/api` or `https://dns.example.com/proxy/api`. |
+| `servers[].apiUrl` | Direct, final HTTP(S) Pi-hole v6 API base URL, such as `http://192.168.1.10:8080/api` or `https://dns.example.com/proxy/api`. |
 | `servers[].verifyTls` | Optional boolean, default `true`. Controls certificate verification for HTTPS upstreams. |
 
 The [JSON schema](../config/config.schema.json) describes the document structure.
@@ -43,6 +43,13 @@ segments are rejected. Scheme and host case, internationalized host names,
 IP addresses, default ports and a trailing slash are normalized before use.
 For example, `HTTPS://DNS.EXAMPLE.COM:443/api/` becomes
 `https://dns.example.com/api`. IPv6 literals use brackets in the source URL.
+
+Login and API requests deliberately do not follow HTTP redirects. Set `apiUrl`
+to the final scheme (`http` or `https`), hostname, port and API path directly;
+this includes using HTTPS when the HTTP address would redirect to HTTPS.
+A redirected login or API request fails without retrying at the redirect
+target. Correct `apiUrl`, apply the configuration using the instructions for
+your deployment below, and reload the dashboard before trying again.
 
 ## Docker
 
