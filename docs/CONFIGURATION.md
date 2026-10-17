@@ -36,6 +36,10 @@ The renderer also rejects unknown fields, duplicate JSON keys, repeated IDs and
 duplicate normalized API URLs. Source files are limited to 128 KiB. No passwords
 or session IDs belong in this file; enter app passwords in the dashboard.
 
+The current schema has no Nebula Sync settings. Optional read-only monitoring
+is planned in [#27](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/27),
+with explicit configuration and opt-in required before any status requests.
+
 API URLs must have a host and a nonempty absolute path of safe ASCII segments
 using letters, digits, `.`, `_`, `~` and `-`. Credentials, query strings,
 fragments, whitespace, control characters, percent escapes and `.`/`..` path
@@ -50,6 +54,19 @@ this includes using HTTPS when the HTTP address would redirect to HTTPS.
 A redirected login or API request fails without retrying at the redirect
 target. Correct `apiUrl`, apply the configuration using the instructions for
 your deployment below, and reload the dashboard before trying again.
+
+## Pi-hole API permissions
+
+Local DNS writes use `/config/dns/hosts`. Pi-hole's
+[`webserver.api.app_sudo`](https://docs.pi-hole.net/ftldns/configfile/#app_sudo)
+defaults to `false`, so app-password sessions cannot change configuration by
+default. Enabling it permits broader configuration changes, not only Local DNS.
+Review that scope before enabling it **on each Pi-hole**; it is not a dashboard
+JSON field. Otherwise, make those changes in Pi-hole's administration interface.
+
+Authentication does not establish permission for every operation. Better
+permission/compatibility feedback remains in
+[#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10).
 
 ## Docker
 
@@ -85,9 +102,20 @@ After editing the source, apply the change and reload open dashboard tabs:
 docker compose restart dashboard
 ```
 
+This command applies configuration changes to the existing container.
+For application changes, preserve the canonical JSON, obtain the desired
+reviewed source revision and rebuild/recreate with
+`docker compose up --build -d`; `restart` alone does not replace the image.
+Published release artifacts and rehearsed rollback/restoration are tracked in
+[#17](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/17) and
+[#18](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/18).
+
 There is no file watcher or configuration-write API. The source stays read-only
-inside the running container. A future configuration editor can use this
-versioned format and validator; that web interface is not part of this release.
+inside the running container. A local JSON import/export assistant is planned
+in [#19](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/19); protected
+server-side saving and applying is separately planned in
+[#20](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/20). Neither is
+implemented in the current Settings page.
 
 The image uses the pinned official nginx base in [Dockerfile](../Dockerfile).
 Chart.js 4.4.1 and its license are downloaded with SHA-256 verification at build
@@ -199,6 +227,13 @@ input. It checks the complete source before writing either output and refuses
 to overwrite the source with generated files. Each generated file is replaced
 atomically. nginx validation and reload remain the manual installer's next step.
 
+The two output files are not activated as one transaction. A failed write,
+nginx check or reload can leave generated files and running routes out of step;
+a failed restart can leave the service stopped. Keep a working copy of the
+canonical JSON and inspect the service after applying a change. Non-mutating
+preflight, coordinated activation and rollback are planned in
+[#12](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/12).
+
 ## DNS, TLS and API identity
 
 nginx resolves configured hostnames at request time using the nameservers from
@@ -278,3 +313,8 @@ See the [translation guide](I18N.md#verification) for frontend unit and browser
 checks and the [LXC guide](LXC.md#verification-scope) for native installation
 verification. Host command fixtures and Debian systemd checks do not replace
 an end-to-end installation on a real Proxmox node.
+That acceptance remains in
+[#24](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/24).
+See the [README roadmap](../README.md#roadmap) and
+[tracker #6](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/6) for the
+ordered development work and its dependencies.

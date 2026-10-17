@@ -155,6 +155,12 @@ policies. Restrict inbound CT port 8080 to the front proxy or intended trusted
 clients in your existing firewall. Proxy-only access controls do not restrict
 clients that can still connect directly to the CT backend port.
 
+The HTTP hop from an external front proxy to the CT remains unencrypted even
+when the browser uses HTTPS. Pi-hole upstream TLS is configured independently
+in the canonical JSON. A protected remote-backend profile and checks for each
+network boundary are planned in
+[#15](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/15).
+
 The CT is unprivileged and does not need nesting, FUSE, `keyctl` or additional
 container privileges. nginx runs under the dedicated `dobbelt-pi-hole` account,
 without Linux capabilities and with privilege escalation disabled. Its service
@@ -207,19 +213,38 @@ requires login for that destination; renaming or reordering instances keeps
 their generated identity. Invalid configuration prevents service startup.
 Fix the source and restart again; do not edit the generated files under `/run`.
 
+Keep a working configuration copy before making changes. Coordinated
+configuration activation and automatic rollback are not yet implemented;
+they are tracked in
+[#12](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/12).
+
 `/healthz` checks whether nginx is serving the dashboard. It does not prove that
 Pi-hole APIs are available or that the browser has authenticated sessions.
 Chart.js is installed locally once, with SHA-256 verification; ordinary service
 starts do not download assets.
 
+A read-only diagnostic command is planned in
+[#13](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/13).
+Logs currently follow the CT's journal policy. Explicit retention guidance and
+reduced nginx access-log detail are tracked in
+[#14](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/14).
+
 ## Updates, backup and recovery
 
-This release's installer is **for new CTs only**. It does not update or overwrite
+This version's installer is **for new CTs only**. It does not update or overwrite
 an existing dashboard installation. Debian package maintenance remains normal
 guest administration. For a new dashboard release, keep the current CT and its
 backup, create a new CT from the desired project version using a copy of the
 canonical JSON, verify it, then change the front proxy to the new CT address.
 The same Pi-hole targets and IDs preserve their generated API identities.
+
+This is the current operating procedure. Versioned native release artifacts
+are planned in [#17](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/17),
+rehearsed portable update/rollback/restoration in
+[#18](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/18), and real Proxmox
+installation and restore acceptance in
+[#24](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/24). Those acceptance
+steps remain open; the installer and automated fixtures alone do not prove them.
 
 Back up the CT with your existing Proxmox backup procedure. The installed
 canonical JSON is on the CT root filesystem; it is not a separate host bind
