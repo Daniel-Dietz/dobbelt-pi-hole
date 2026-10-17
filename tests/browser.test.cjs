@@ -2045,3 +2045,78 @@ for (const scenario of [
   for (const [selector, value] of scenario.fields) assert.equal(await page.locator(selector).inputValue(), value);
   await assertNoCorruption(fixture);
 });
+
+
+for (const scenario of [
+  { tab: 'hosts', endpoint: '/config/dns/hosts', area: '#hostArea', add: '[data-add-host="2"]' },
+  { tab: 'clients', endpoint: '/clients', area: '#clientArea', add: '[data-add-client-server="2"]' },
+  { tab: 'lists', endpoint: '/lists', area: '#listArea', add: '[data-add-list="2"]' },
+  { tab: 'clients', endpoint: '/clients/_suggestions', area: '#suggArea', add: '[data-add-sugg]' }
+]) test(\`Issue #8: failed \${scenario.endpoint} read stays unknown instead of missing\`,
+  /** Check one failed instance read without suppressing confirmed records from a healthy peer. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page } = fixture;
+    await page.route('**/*',
+      /** Return a server error from only the selected instance and read path. */
+      async route => {
+        const url = new URL(route.request().url());
+        if (route.request().method() === 'GET' && url.pathname.includes('/api2/') &&
+            url.pathname.endsWith(scenario.endpoint)) {
+          return route.fulfill({
+            status: 503, contentType: 'application/json',
+            body: JSON.stringify({ error: { message: 'read failed' } })
+          });
+        }
+        return route.fallback();
+      });
+    await visit(page, scenario.tab);
+    await page.waitForFunction(/** Wait for the incomplete-data banner in the affected management view. */
+      area => (document.querySelector(area)?.textContent || '').includes('Data unavailable'), scenario.area);
+    const view = await page.locator(scenario.area).textContent();
+    assert.ok(view.includes('Unknown') || view.includes('unknown') ||
+      view.includes('Data unavailable'), 'An unavailable instance must not be reported as missing');
+    if (scenario.endpoint !== '/clients/_suggestions') {
+      assert.equal(await page.locator(scenario.add).count(), 0,
+        'A failed instance read must not enable an inferred add action');
+    }
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #8: a language rerender cannot start a second write while the first is pending',
+  /** Hold a successful POST, replace the form through translation, and attempt a duplicate submission. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page, requests } = fixture;
+    await visit(page, 'domains');
+    const writeBlocked = deferred(t);
+    const writeSeen = deferred(t);
+    let seen = false;
+    await page.route('**/*',
+      /** Pause the first domain mutation after its preflight, leaving the page interactive. */
+      async route => {
+        const url = new URL(route.request().url());
+        if (route.request().method() === 'POST' && url.pathname.endsWith('/domains/deny/exact')) {
+          if (!seen) { seen = true; writeSeen.release(); }
+          await writeBlocked.promise;
+        }
+        return route.fallback();
+      });
+    await page.locator('#dDomain').fill('locked.example');
+    await page.locator('#targetDomain').selectOption('1');
+    await page.locator('#domainForm button[type="submit"]').click();
+    await writeSeen.promise;
+    await page.locator('#languageSelect').selectOption('de');
+    assert.equal(await page.locator('#dDomain').inputValue(), 'locked.example');
+    await page.locator('#domainForm button[type="submit"]').click();
+    await page.waitForFunction(/** Confirm that the second click was blocked while the original request is pending. */
+      () => (document.querySelector('#toastArea')?.textContent || '').includes('läuft noch'));
+    writeBlocked.release();
+    await page.waitForFunction(/** Await the result from the original request, now translated into German. */
+      () => (document.querySelector('#toastArea')?.textContent || '').includes('Änderung bestätigt'));
+    assert.equal(await page.locator('#dDomain').inputValue(), '',
+      'The successfully submitted unchanged draft must clear even after a language rerender');
+    assert.equal(requests.filter(/** Count actual writes instead of button clicks. */
+      request => request.method === 'POST' && request.path === '/domains/deny/exact').length, 1);
+    await assertNoCorruption(fixture);
+  });
