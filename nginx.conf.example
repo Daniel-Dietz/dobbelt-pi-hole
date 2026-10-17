@@ -16,7 +16,11 @@
 # configuration after changing embedded scripts. It strips browser Authorization
 # and Cookie headers before forwarding to Pi-hole. Upstream certificate checks
 # are configured separately with verifyTls in the canonical JSON.
+# HTTPS here protects the browser hop. HTTP from this proxy to a remote CT is
+# still unencrypted; protect that network path and apply your chosen access
+# policy. This example does not provision credentials, certificates or rules.
 
+# Browser-facing TLS endpoint; use the certificate for the configured hostname.
 server {
     listen 443 ssl;
     server_name dns.example.com;
@@ -24,6 +28,7 @@ server {
     ssl_certificate     /etc/nginx/ssl/dns.example.com/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/dns.example.com/privkey.pem;
 
+    # Forward every dashboard route unchanged, including fingerprinted API paths.
     location / {
         proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
@@ -38,6 +43,8 @@ server {
     }
 }
 
+# Redirect browser HTTP visits to this dashboard's HTTPS origin. This does not
+# permit redirects from Pi-hole APIs, which the browser application rejects.
 server {
     listen 80;
     server_name dns.example.com;

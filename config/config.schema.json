@@ -6,18 +6,32 @@
   "additionalProperties": false,
   "required": ["version", "servers"],
   "properties": {
-    "version": {"const": 1, "type": "integer"},
-    "defaultLanguage": {"type": "string", "enum": ["auto", "da", "en", "de"], "default": "auto"},
+    "version": {
+      "const": 1,
+      "type": "integer",
+      "description": "Configuration format version, independent of the application release version. The renderer and browser currently accept only format 1."
+    },
+    "defaultLanguage": {
+      "type": "string",
+      "enum": ["auto", "da", "en", "de"],
+      "default": "auto",
+      "description": "Initial interface language when the browser has no saved selection. auto uses supported browser preferences, then English."
+    },
     "servers": {
       "type": "array",
       "minItems": 2,
       "maxItems": 4,
+      "description": "Configured Pi-hole instances in display order. The renderer also requires unique IDs and unique normalized API destinations across this array.",
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["id", "label", "apiUrl"],
         "properties": {
-          "id": {"type": "string", "enum": ["1", "2", "3", "4"]},
+          "id": {
+            "type": "string",
+            "enum": ["1", "2", "3", "4"],
+            "description": "Stable instance identifier used for its colour and destination-bound route/session identity. Keep it unchanged when renaming or reordering the same instance."
+          },
           "label": {
             "type": "string",
             "minLength": 1,
@@ -28,9 +42,13 @@
             "type": "string",
             "maxLength": 2048,
             "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://[^/\\s?#]+/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*/?$",
-            "description": "HTTP(S) API URL without credentials, query, fragment, escapes or dot segments. The renderer checks host/port validity and duplicate normalized URLs."
+            "description": "Direct final HTTP(S) Pi-hole API base URL without credentials, query, fragment, escapes or dot segments. Requests do not follow redirects. The renderer checks host/port validity and duplicate normalized URLs."
           },
-          "verifyTls": {"type": "boolean", "default": true}
+          "verifyTls": {
+            "type": "boolean",
+            "default": true,
+            "description": "Verify the upstream Pi-hole certificate when apiUrl uses HTTPS. This has no effect on HTTP targets or TLS between the browser and the dashboard front proxy."
+          }
         }
       }
     }

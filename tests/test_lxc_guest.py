@@ -43,8 +43,21 @@ CHART_LICENSE_SHA256 = "5a0877ad6d818529be4f33009d0942cdf7e2ed7656156f4aba730845
 
 
 class NativeGuestTests(unittest.TestCase):
+    """Check the native installer's real Debian and systemd behavior inside Docker.
+
+    A disposable privileged guest supplies the cgroup environment systemd
+    needs; unprivileged echo backends supply the API responses. This suite
+    deliberately does not claim to verify the Proxmox host layer.
+    """
+
     @classmethod
     def setUpClass(cls):
+        """Require Docker/cgroup v2 and prepare the isolated fixture environment.
+
+        Allocate a temporary directory, suite network and three unprivileged
+        HTTP backends. Cleanup is registered in reverse resource order so
+        partial setup failures still remove the containers before their network.
+        """
         if not shutil.which("docker"):
             raise RuntimeError("Docker is required for the native Debian/systemd integration test")
         if docker("info", "--format", "{{.CgroupVersion}}").stdout.strip() != "2":
@@ -57,6 +70,7 @@ class NativeGuestTests(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory(prefix=cls.prefix + "-")
         cls.addClassCleanup(cls.temp.cleanup)
         docker("network", "create", cls.network)
+        # Remove this suite's network only after its registered containers are gone.
         cls.addClassCleanup(lambda: docker("network", "rm", cls.network, check=False))
         cls.addClassCleanup(cls.remove_all_containers)
         cls.backends = {}
@@ -79,12 +93,18 @@ class NativeGuestTests(unittest.TestCase):
 
     @classmethod
     def remove_all_containers(cls):
+        """Force-remove the suite's recorded containers and clear their registrations."""
         for name in tuple(cls.containers):
             docker("rm", "--force", name, check=False)
             cls.containers.discard(name)
 
     @staticmethod
     def origin(name, port):
+        """Return the loopback HTTP origin for a published container TCP port.
+
+        Inspect Docker's actual ephemeral binding and fail clearly if the
+        expected port was not exposed, including after a guest restart.
+        """
         state = json.loads(docker("inspect", name).stdout)[0]
         bindings = (state["NetworkSettings"]["Ports"] or {}).get(f"{port}/tcp")
         if not bindings:
@@ -93,6 +113,11 @@ class NativeGuestTests(unittest.TestCase):
 
     @staticmethod
     def wait_http(container, path, expected=None, timeout=30):
+        """Poll for HTTP 200 and, when supplied, a predicate over the JSON response.
+
+        Retry transient connection and decoding errors until the deadline;
+        report the last observation if the guest never serves the expected data.
+        """
         deadline, last = time.monotonic() + timeout, "no response"
         while time.monotonic() < deadline:
             try:
@@ -106,6 +131,13 @@ class NativeGuestTests(unittest.TestCase):
         raise AssertionError(f"{container['name']} did not serve {path}: {last}")
 
     def guest_exec(self, *args, check=True, timeout=30, input=None):
+        """Run a literal command array in the disposable guest and capture its result.
+
+        Optional text input is passed to stdin for configuration or fixture
+        scripts. Return CompletedProcess for assertions; by default, a nonzero
+        exit raises an assertion with both output streams. Every execution is
+        bounded by the caller's timeout in seconds.
+        """
         result = subprocess.run(
             ["docker", "exec", "--interactive", self.guest["name"], *map(str, args)],
             cwd=ROOT, input=input, text=True, capture_output=True, timeout=timeout,
@@ -117,6 +149,12 @@ class NativeGuestTests(unittest.TestCase):
         return result
 
     def wait_systemd(self):
+        """Wait until guest PID 1 reports completed boot rather than a starting state.
+
+        Accept running or degraded so unrelated container unit failures do not
+        substitute for application readiness checks. The dashboard service is
+        tested separately; the boot wait fails after a bounded deadline.
+        """
         deadline, last = time.monotonic() + 45, "systemd has not responded"
         while time.monotonic() < deadline:
             result = self.guest_exec("systemctl", "show", "--property=SystemState", "--value", check=False, timeout=5)
@@ -127,6 +165,11 @@ class NativeGuestTests(unittest.TestCase):
         self.fail(f"The guest did not finish systemd boot: {last}")
 
     def tearDown(self):
+        """Collect guest boot, service, journal and cgroup diagnostics after a failure.
+
+        Leave actual resource removal to class cleanup, preserving the guest
+        long enough to inspect failures in installation or subsequent restarts.
+        """
         failed = any(test is self or getattr(test, "test_case", None) is self
                      for test, _traceback in self._outcome.result.errors + self._outcome.result.failures)
         if failed and hasattr(self, "guest"):
@@ -142,6 +185,7 @@ class NativeGuestTests(unittest.TestCase):
                 print(f"\nGuest {args!r}:\n{result.stdout}{result.stderr}", flush=True)
 
     def config(self):
+        """Return fresh canonical JSON for two fixtures with Unicode-rich display names."""
         return {
             "version": 1, "defaultLanguage": "de",
             "servers": [
@@ -152,6 +196,13 @@ class NativeGuestTests(unittest.TestCase):
         }
 
     def start_guest(self, config):
+        """Boot a fresh Debian 13 systemd guest with the supplied source JSON mounted.
+
+        Start a disposable privileged Docker container with private writable
+        cgroups, loopback HTTP publication and read-only source mounts. Assert
+        the expected isolation, distro and absent nginx package before the
+        real installation begins; store the guest metadata on this test case.
+        """
         source_config = Path(self.temp.name) / "source-config.json"
         source_config.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
         name = self.prefix + "-guest"
@@ -187,6 +238,13 @@ class NativeGuestTests(unittest.TestCase):
         self.assertNotIn("install ok installed", absent.stdout, "The guest installer must actually install nginx")
 
     def install(self, check=True):
+        """Run the real native installer in the disposable guest and return its result.
+
+        The source tree and initial JSON come from read-only mounts; the guest
+        listener uses port 8080 on all IPv4 interfaces for fixture access. The
+        ten-minute command timeout permits package/dependency downloads. Set
+        check false when testing an intentional refusal to install.
+        """
         return self.guest_exec(
             "bash", "/source/tools/install_lxc_guest.sh", "--source-dir", "/source",
             "--config", "/fixture/source-config.json", "--listen-address", "0.0.0.0",
@@ -194,27 +252,45 @@ class NativeGuestTests(unittest.TestCase):
         )
 
     def get_json(self, path, status=200, **kwargs):
+        """Request a guest dashboard endpoint, assert its HTTP status and decode JSON."""
         actual, _headers, body = request(self.guest["origin"], path, **kwargs)
         self.assertEqual(actual, status, body.decode("utf-8", errors="replace"))
         return json.loads(body)
 
     def public_config(self, config):
+        """Build the expected browser projection without using the installed renderer.
+
+        Preserve language, order and labels while deriving each identity-bound
+        route through the shared independent hash helper; omit private targets.
+        """
         return {"version": 1, "defaultLanguage": config["defaultLanguage"], "servers": [
             {"id": server["id"], "label": server["label"], "base": expected_base(server)}
             for server in config["servers"]
         ]}
 
     def backend_requests(self, number):
+        """Read one backend's structured API log without adding a logged API request."""
         status, _headers, body = request(self.backends[str(number)]["origin"], "/__fixture__/requests")
         self.assertEqual(status, 200)
         return json.loads(body)
 
     def write_config(self, config):
+        """Replace canonical JSON content inside the guest without replacing its inode.
+
+        Write through the existing administrator-owned file so permission and
+        ownership checks remain meaningful during restart and failure scenarios.
+        """
         # Write through the guest's existing file so ownership and permissions stay unchanged.
         self.guest_exec("python3", "-c", "import pathlib,sys;pathlib.Path(sys.argv[1]).write_text(sys.stdin.read(),encoding='utf-8')",
                         PRIVATE_CONFIG, input=json.dumps(config, ensure_ascii=False))
 
     def package_state(self):
+        """Return hashes and metadata for guest package databases, logs and apt lists.
+
+        Capture content, modes and modification times so a refused installation
+        cannot silently run apt update or other package work before its guard.
+        This helper only reads package state.
+        """
         # Hash package state/logs and record directory metadata to detect package
         # actions, including apt update without a subsequent installation.
         result = self.guest_exec("python3", "-c", """
@@ -232,6 +308,13 @@ print(json.dumps(state))
         return json.loads(result.stdout)
 
     def assert_existing_nginx_is_refused(self):
+        """Verify a non-fresh guest is rejected before touching an existing service.
+
+        Install a harmless sleep-based nginx unit and sentinel configuration,
+        then compare its PID, enablement, file bytes/metadata, canonical JSON
+        and package state across the rejected installer run. Remove only these
+        controlled fixture files afterward so the genuine fresh install can run.
+        """
         unit_path = "/etc/systemd/system/nginx.service"
         config_path = "/etc/nginx/nginx.conf"
         sentinel_unit = ("[Unit]\nDescription=Native installer preservation fixture\n"
@@ -277,6 +360,11 @@ for name, content in json.loads(sys.stdin.read()).items():
         self.guest_exec("systemctl", "daemon-reload")
 
     def assert_headers(self, headers, inline_hash):
+        """Check response isolation and CSP against the delivered application's hash.
+
+        Compare header names case-insensitively and require explicit script
+        hashes, blocked framing and no-store without unsafe script allowances.
+        """
         headers = {name.lower(): value for name, value in headers.items()}
         csp = headers.get("content-security-policy", "")
         directives = {fields[0]: fields[1:] for part in csp.split(";") if (fields := part.split())}
@@ -291,6 +379,11 @@ for name, content in json.loads(sys.stdin.read()).items():
         self.assertIn("no-store", headers.get("cache-control", ""))
 
     def assert_service(self):
+        """Require the dedicated service to own all nginx processes and return its UID.
+
+        Check that it is active/enabled under a non-root account, while the
+        generic nginx unit is neither active nor enabled as a competing service.
+        """
         self.assertEqual(self.guest_exec("systemctl", "is-active", SERVICE).stdout.strip(), "active")
         self.assertEqual(self.guest_exec("systemctl", "is-enabled", SERVICE).stdout.strip(), "enabled")
         self.assertEqual(self.guest_exec("systemctl", "show", "--property=User", "--value", SERVICE).stdout.strip(), ACCOUNT)
@@ -308,6 +401,13 @@ for name, content in json.loads(sys.stdin.read()).items():
         return uid
 
     def assert_file_permissions(self, uid):
+        """Check the boundary between root-owned configuration and service-owned runtime.
+
+        The supplied service UID must own regenerated artifacts. Application
+        files and canonical settings must not be writable by the service or
+        other users, while the service must still be able to read its private
+        JSON and regenerate runtime files.
+        """
         root_owned_paths = [PRIVATE_CONFIG, "/etc/dobbelt-pi-hole/nginx.conf", "/etc/dobbelt-pi-hole/listen.env",
                             WEB_ROOT + "/index.html", "/opt/dobbelt-pi-hole/render_config.py"]
         runtime_paths = [RUNTIME + "/config.json", RUNTIME + "/nginx.conf"]
@@ -329,6 +429,15 @@ for name, content in json.loads(sys.stdin.read()).items():
         self.assertNotEqual(writable.returncode, 0, "The service must not modify the administrator's canonical file")
 
     def test_real_install_service_restart_and_boot_regenerate_safe_routes(self):
+        """Exercise installation, configuration changes and boot in the native guest.
+
+        Preserve equivalent pre-staged JSON, verify assets, permissions and
+        real API proxy traffic, then change targets and reject stale writes.
+        A container reboot must regenerate discarded runtime files; invalid
+        canonical input must prevent service startup until corrected. All
+        package installation, file corruption and restarts stay in the
+        disposable test guest rather than a Proxmox host.
+        """
         config = self.config()
         self.start_guest(config)
         # An equivalent canonical file may be staged before the fresh install.
@@ -390,6 +499,7 @@ for name, content in json.loads(sys.stdin.read()).items():
         before_old, before_new = self.backend_requests(1), self.backend_requests(3)
         self.write_config(replacement)
         self.guest_exec("systemctl", "restart", SERVICE)
+        # Wait for the exact replacement projection before testing stale-route rejection.
         self.wait_http(self.guest, "/config.json", lambda value: value == self.public_config(replacement))
         self.assert_service()
         for stale in (base + "/lists", "/api1/lists", "/api4/lists"):
@@ -414,6 +524,7 @@ for name, content in json.loads(sys.stdin.read()).items():
         docker("restart", "--time", "15", self.guest["name"], timeout=45)
         self.guest["origin"] = self.origin(self.guest["name"], 8080)
         self.wait_systemd()
+        # The predicate proves boot regenerated the expected configuration generation.
         self.wait_http(self.guest, "/config.json", lambda value: value == self.public_config(replacement))
         self.assertNotEqual(self.guest_exec("test", "-e", RUNTIME + "/boot-marker", check=False).returncode, 0)
         self.assert_file_permissions(self.assert_service())
@@ -430,6 +541,7 @@ for name, content in json.loads(sys.stdin.read()).items():
             request(self.guest["origin"], "/config.json", timeout=1)
         self.write_config(replacement)
         self.guest_exec("systemctl", "restart", SERVICE)
+        # Recovery is complete only when the corrected public projection is served again.
         self.wait_http(self.guest, "/config.json", lambda value: value == self.public_config(replacement))
         self.assert_service()
 

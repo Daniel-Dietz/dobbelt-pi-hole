@@ -1,22 +1,26 @@
-# Doppel-Pi-hole-Dashboard: optionaler HTTPS-Proxy (im nginx-http-Kontext).
-# Das folgende Ziel passt zu Docker Compose oder einem lokalen Backend auf
-# 127.0.0.1:8080. Passe dns.example.com sowie Zertifikat- und Schlüsselpfade an.
-# Läuft ein nativer LXC auf einer anderen Maschine, ändere nur den proxy_pass-
-# Host auf dessen IP, z.B. http://192.168.1.50:8080. Beschränke den Zugriff auf
-# den CT-Backendport mit der vorhandenen Firewall. Siehe docs/LXC.md.
+# Double Pi-hole dashboard: optional HTTPS front proxy (nginx http context).
+# The target below suits Docker Compose or a generated local backend listening
+# on 127.0.0.1:8080. Adjust dns.example.com and the certificate/key paths.
+# For a native LXC on another machine, change only the proxy_pass host to the
+# CT's IP address, e.g. http://192.168.1.50:8080, and restrict access to the CT
+# backend port using your existing firewall. See docs/LXC.md.
 #
-# Trage jede Pi-hole-Instanz einmal in die private config.json ein. Der Generator
-# erzeugt API-Routen mit Fingerabdruck und die öffentliche Browserkonfiguration.
-# Ergänze hier keine separaten /api1.../api4-Ziele. Siehe docs/CONFIGURATION.md.
+# Configure each Pi-hole once in the private config.json. The renderer generates
+# fingerprinted API routes and public browser configuration. Do not add separate
+# /api1.../api4 upstream definitions here. See docs/CONFIGURATION.md.
 #
-# Belasse proxy_pass ohne URI-Suffix oder Umschreibung, damit kodierte Pfade und
-# Abfrageparameter erhalten bleiben. Ohne Pufferung erscheint Gravity-Ausgabe
-# fortlaufend. Richte Zugriffskontrollen an diesem Proxy ein und beschränke
-# unbeabsichtigten direkten Backendzugriff. Der erzeugte Server liefert CSP-Hashes
-# und Sicherheitsheader; erzeuge seine Konfiguration nach Skriptänderungen neu.
-# Authorization- und Cookie-Header des Browsers werden vor der Weiterleitung an
-# Pi-hole entfernt. Die Zertifikatsprüfung wird separat über verifyTls festgelegt.
+# Keep proxy_pass without a URI suffix or rewrite to preserve encoded paths and
+# queries. Disabled buffering supports streamed Gravity output. Apply access
+# controls to this front proxy and prevent unintended direct backend access.
+# The generated server supplies CSP hashes and security headers; regenerate its
+# configuration after changing embedded scripts. It strips browser Authorization
+# and Cookie headers before forwarding to Pi-hole. Upstream certificate checks
+# are configured separately with verifyTls in the canonical JSON.
+# HTTPS here protects the browser hop. HTTP from this proxy to a remote CT is
+# still unencrypted; protect that network path and apply your chosen access
+# policy. This example does not provision credentials, certificates or rules.
 
+# Browser-facing TLS endpoint; use the certificate for the configured hostname.
 server {
     listen 443 ssl;
     server_name dns.example.com;
@@ -24,6 +28,7 @@ server {
     ssl_certificate     /etc/nginx/ssl/dns.example.com/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/dns.example.com/privkey.pem;
 
+    # Forward every dashboard route unchanged, including fingerprinted API paths.
     location / {
         proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
@@ -38,6 +43,8 @@ server {
     }
 }
 
+# Redirect browser HTTP visits to this dashboard's HTTPS origin. This does not
+# permit redirects from Pi-hole APIs, which the browser application rejects.
 server {
     listen 80;
     server_name dns.example.com;

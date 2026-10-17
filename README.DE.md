@@ -53,6 +53,7 @@ Die reale Installations- und Wiederherstellungsabnahme auf Proxmox bleibt in
 | [Konfiguration](docs/CONFIGURATION.md) | JSON-Felder, API-Berechtigungen, erzeugte Routen, TLS, Konfigurationsänderungen und Migration |
 | [LXC-Installation und Betrieb](docs/LXC.md) | Host-Voraussetzungen, CLI-Optionen, Dienstbefehle, Fehleranalyse, Backup und Wiederherstellung |
 | [Übersetzungen und Frontend-Prüfungen](docs/I18N.md) | Sprachkataloge, zusätzliche Sprachen, Unit- und Browsertests |
+| [Entwicklung](docs/DEVELOPMENT.md) | Quellcode-Aufbau, lesbarer Code, englische Funktionsdokumentation und Testgruppen |
 
 Die ausführlichen Anleitungen unter `docs/` sind auf Englisch. Alle drei READMEs
 beschreiben Installation, aktuellen Stand und Issue-Roadmap in ihrer jeweiligen
@@ -375,8 +376,11 @@ oder weitere Laufzeitabhängigkeiten. Servernamen, Domains, Clientnamen,
 Kommentare und andere von Benutzern oder den Pi-hole-APIs gelieferte Werte
 bleiben beim Sprachwechsel unverändert.
 
-Einrichtungsanleitung und nginx-Beispiele sind ebenfalls in allen drei
-Sprachen verfügbar:
+Die READMEs enthalten Einrichtungsanleitungen in allen drei Sprachen. Kommentare
+und Funktionsdokumentation in Quellcode, Codebeispielen und nginx-Beispielen
+sind immer auf Englisch. Die unten verlinkten nginx-Beispieldateien haben
+identischen Inhalt; ihre bisherigen Dateinamen bleiben für bestehende
+Dokumentationslinks erhalten.
 
 | Sprache | Dokumentation | nginx-Beispiel |
 | --- | --- | --- |
@@ -559,6 +563,12 @@ Beschriftungen für die Barrierefreiheit.
 Der [Übersetzungsleitfaden](docs/I18N.md) (auf Englisch) beschreibt die
 Hilfsfunktionen, das Hinzufügen weiterer Sprachen und die automatisierten
 Prüfungen.
+
+Halte den gepflegten Quellcode mit aussagekräftigen Namen und klaren Abläufen
+lesbar. Dokumentiere jede Funktion, auch verschachtelte Callbacks und
+Test-Fixtures, direkt an ihrer Definition mit einer hilfreichen englischen
+Beschreibung. Der [Entwicklungsleitfaden](docs/DEVELOPMENT.md) (auf Englisch)
+erklärt die Dokumentationsregeln, den Quellcode-Aufbau und die Prüfungen.
 
 Prüfe vor jedem Arbeitspaket `main`, das Issue, seine Abhängigkeiten und
 vorhandene PRs neu. Folge dem Ablauf in

@@ -36,12 +36,22 @@ class ConfigError(ValueError):
 
 
 def _has_controls(value: str) -> bool:
-    """Recognize control characters before URL parsers can discard them."""
+    """Return whether decoded text contains C0, DEL or C1 control characters.
+
+    Check the original string before URL parsing can discard characters. The
+    caller remains responsible for other restrictions such as whitespace or
+    unpaired Unicode surrogates; this helper neither normalizes nor changes it.
+    """
     return any(ord(character) < 32 or 127 <= ord(character) <= 159 for character in value)
 
 
 def _known_fields(value: dict, allowed: set[str], location: str) -> None:
-    """Reject misspelled/unknown configuration fields instead of ignoring them."""
+    """Require the keys in value to belong to the allowed configuration fields.
+
+    location identifies the object in a ConfigError when unknown keys are
+    present. Values are not inspected or modified here; the caller validates
+    their types and contents after this spelling/schema check succeeds.
+    """
     unknown = set(value) - allowed
     if unknown:
         raise ConfigError(f"{location}: unknown field(s): {', '.join(sorted(map(str, unknown)))}")
@@ -53,6 +63,12 @@ def normalize_api_url(value: str) -> str:
     Scheme, DNS names and IP addresses are normalized; default ports and the final
     slash are removed. Credentials, URL queries/fragments and unsafe path syntax
     are rejected. No name resolution or connection attempt is made.
+
+    value is the untrusted apiUrl field, including a non-string value when the
+    input document is malformed. Return a string with an explicit HTTP(S)
+    scheme, normalized authority and nonempty API path, or raise ConfigError.
+    The same result is used for duplicate detection, proxying and session
+    identity, so equivalent spellings must not create separate destinations.
     """
     if not isinstance(value, str) or not value or len(value) > 2048:
         raise ConfigError("apiUrl must be a nonempty URL of at most 2048 characters")
@@ -105,6 +121,12 @@ def validate_config(data: object) -> dict:
 
     The result contains only known fields, explicit defaults and two to four
     distinct instances. Input data is not modified.
+
+    data is the JSON-decoded source object. Check the format version, language,
+    stable instance IDs, display labels, API destinations and TLS flags. Raise
+    ConfigError for invalid fields or duplicate IDs/normalized destinations.
+    This checks local configuration syntax and consistency, not API availability
+    or whether the supplied Pi-hole credentials will authorize an operation.
     """
     if not isinstance(data, dict):
         raise ConfigError("configuration must be a JSON object")
@@ -155,7 +177,12 @@ def validate_config(data: object) -> dict:
 
 
 def _unique_json_object(pairs: list[tuple[str, object]]) -> dict:
-    """Reject duplicate JSON keys, including duplicates nested in server entries."""
+    """Build one JSON object while rejecting repeated field names.
+
+    json.loads calls this object_pairs_hook for every object, including nested
+    server entries. pairs retains duplicate names that a normal dict decoder
+    would discard. Return a new dict or raise ConfigError at the first duplicate.
+    """
     result = {}
     for key, value in pairs:
         if key in result:
@@ -165,7 +192,13 @@ def _unique_json_object(pairs: list[tuple[str, object]]) -> dict:
 
 
 def load_config(path: str | Path) -> dict:
-    """Read a bounded UTF-8 JSON file and return its validated canonical model."""
+    """Read the private JSON source at path and return a normalized configuration.
+
+    Accept UTF-8 with or without a byte-order mark, enforce MAX_CONFIG_BYTES,
+    and reject duplicate JSON fields before validating the decoded document.
+    File access, encoding, JSON and configuration failures become ConfigError
+    messages suitable for the CLI. The source file is opened only for reading.
+    """
     try:
         with Path(path).open("rb") as source:
             content = source.read(MAX_CONFIG_BYTES + 1)
@@ -181,7 +214,14 @@ def load_config(path: str | Path) -> dict:
 
 
 def make_public_config(config: dict) -> dict:
-    """Derive browser-visible labels and fingerprinted proxy routes, without upstreams."""
+    """Return the browser-safe projection of an already validated configuration.
+
+    Include version, default language, IDs, labels and generated route bases;
+    omit upstream URLs and TLS settings. Each base hashes the stable ID plus
+    normalized API URL, so renaming/reordering preserves identity while a new
+    destination invalidates old routes and browser sessions. No files are written
+    and config is unchanged; callers must normalize it with validate_config first.
+    """
     servers = []
     for server in config["servers"]:
         identity = f"{server['id']}\0{server['apiUrl']}".encode("utf-8")
@@ -191,7 +231,14 @@ def make_public_config(config: dict) -> dict:
 
 
 def read_resolvers(path: str | Path) -> list[str]:
-    """Read IP nameservers from resolv.conf without replacing container DNS settings."""
+    """Return unique IP nameservers, in order, from the UTF-8 resolv.conf at path.
+
+    Ignore comments and unrelated directives, normalize literal IPv4/IPv6
+    addresses, and reject malformed nameserver entries with ConfigError.
+    An unreadable file also raises ConfigError. An empty list is permitted here;
+    render_nginx decides whether configured API hostnames require a resolver.
+    This reads existing DNS settings without changing them or querying a server.
+    """
     try:
         lines = Path(path).read_text(encoding="utf-8").splitlines()
     except OSError as error:
@@ -213,7 +260,13 @@ def read_resolvers(path: str | Path) -> list[str]:
 
 
 def _nginx_path(value: str | Path, label: str) -> str:
-    """Quote an absolute filesystem path while excluding nginx variable/directive syntax."""
+    """Resolve value to an absolute path and quote it for an nginx directive.
+
+    Reject control characters and nginx variable/directive syntax rather than
+    interpolating it into generated configuration. label names the setting in
+    the resulting ConfigError. The referenced file need not exist, and this
+    helper does not create it or inspect its contents.
+    """
     path = str(Path(value).resolve())
     if _has_controls(path) or any(character in path for character in ['"', "'", "$", "\\", "{", "}", ";"]):
         raise ConfigError(f"{label} contains unsupported path characters")
@@ -221,24 +274,49 @@ def _nginx_path(value: str | Path, label: str) -> str:
 
 
 class _InlineScripts(HTMLParser):
-    """Collect script text as parsed by HTML, without evaluating any JavaScript."""
+    """Collect inline script bodies for CSP hashes without executing JavaScript.
+
+    scripts contains completed inline bodies in document order. current holds
+    chunks for the active inline script, while open_script also tracks external
+    scripts so the caller can reject a document ending inside any script tag.
+    """
 
     def __init__(self) -> None:
+        """Initialize empty collection state and preserve character references.
+
+        HTMLParser supplies tags and raw script data to the handlers below.
+        Nothing is read until the caller feeds the installed document text.
+        """
         super().__init__(convert_charrefs=False)
         self.open_script = False
         self.current: list[str] | None = None
         self.scripts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Begin collecting a script tag unless its attributes include src.
+
+        tag and attrs come from HTMLParser. External scripts are tracked as open
+        but are not collected or fetched; all other element names are ignored.
+        """
         if tag == "script":
             self.open_script = True
             self.current = None if any(name == "src" for name, _ in attrs) else []
 
     def handle_data(self, data: str) -> None:
+        """Append a parser-delivered chunk only while inside an inline script.
+
+        Preserve data exactly for hashing; text outside an inline script has no
+        effect. The collected JavaScript is never interpreted by this parser.
+        """
         if self.current is not None:
             self.current.append(data)
 
     def handle_endtag(self, tag: str) -> None:
+        """Finish a script body and reset collection state at its closing tag.
+
+        For an inline script, join its chunks into scripts. External scripts
+        only clear the open flag. Closing tags for other elements are ignored.
+        """
         if tag == "script":
             if self.current is not None:
                 self.scripts.append("".join(self.current))
@@ -247,11 +325,17 @@ class _InlineScripts(HTMLParser):
 
 
 def content_security_policy(index_path: str | Path) -> str:
-    """Allow only the installed inline scripts and local assets.
+    """Build a CSP string from the installed HTML document at index_path.
 
     HTML normalizes CRLF and CR before hashing inline scripts. Regenerate the
     nginx configuration whenever index.html changes so that the hashes match.
     Inline styles remain necessary for the dashboard's dynamic layouts/charts.
+
+    Read at most MAX_APP_BYTES and allow UTF-8 with an optional byte-order mark.
+    Raise ConfigError for unreadable, oversized or non-UTF-8 input, NULs,
+    an unfinished script or a document with no completed inline script. Return
+    the policy without writing files or executing scripts. Comments inside an
+    inline script contribute to its hash just like executable script text.
     """
     try:
         with Path(index_path).open("rb") as source:
@@ -296,6 +380,19 @@ def render_nginx(
     Variable proxy_pass targets defer DNS to request time. Maps use request_uri,
     not the normalized uri, so percent-encoded API suffixes and queries survive.
     Only the current target fingerprints are routed; stale routes return 409.
+
+    config must already be normalized by validate_config. public_config_path is
+    the public JSON alias destination; web_root supplies assets and the deployed
+    index.html used for CSP hashes. resolvers contains literal nameserver IPs.
+    listen_address restricts the bind to one literal IP, or None enables both
+    wildcard IPv4/IPv6 listeners. listen_port is the numeric backend port and
+    ca_bundle names the trust file for verified HTTPS upstreams.
+
+    Return configuration text only: this reads index.html but does not write
+    files, contact Pi-hole, test certificate trust or start/reload nginx. Raise
+    ConfigError for invalid listener/resolver/path inputs, unusable script input
+    or a hostname upstream without a resolver. The caller must still run nginx
+    validation before activation. /healthz tests the HTTP service, not Pi-hole.
     """
     if type(listen_port) is not int or not 1 <= listen_port <= 65535:
         raise ConfigError("listen port must be between 1 and 65535")
@@ -428,7 +525,14 @@ def render_nginx(
 
 
 def _atomic_write(path: Path, content: str) -> None:
-    """Replace one generated file atomically, with predictable readable permissions."""
+    """Replace one generated file with UTF-8 content and mode 0644.
+
+    path.parent must already exist. Write and fsync a temporary file in the same
+    directory, then replace path with os.replace; remove leftover temporary
+    state even if writing fails. Filesystem errors propagate as OSError. This
+    protects one replacement, not the coordinated activation of both outputs
+    or the running nginx configuration.
+    """
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as target:
@@ -443,7 +547,17 @@ def _atomic_write(path: Path, content: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Render a validated source file; return 2 for a clear operator-facing error."""
+    """Render deployment files from CLI arguments and report an exit status.
+
+    argv is an argument list, or None to read the process command line. Validate
+    the private source and render both outputs before creating the destination
+    directory; refuse an output path that would overwrite the source. Write the
+    public JSON and nginx include separately, then print a success summary.
+
+    Return 0 on success or 2 after reporting configuration/filesystem errors to
+    stderr. argparse handles help and malformed CLI arguments itself. This entry
+    point never starts nginx or rolls back a previously replaced output file.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=Path("/config/config.json"))
     parser.add_argument("--output-dir", type=Path, default=Path("/run/dobbelt-pi-hole"))

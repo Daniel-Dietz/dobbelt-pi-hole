@@ -1,9 +1,14 @@
 # A disposable Debian 13 guest for the native installer integration test.
 # nginx is deliberately absent: the actual guest installer must install it.
+# This supplies systemd and test prerequisites; it is not the production image
+# and does not reproduce Proxmox storage, AppArmor or unprivileged LXC ID mapping.
 FROM debian:13-slim
 
+# Let systemd select its container behavior when /sbin/init runs as PID 1.
 ENV container=docker
 
+# Include inspection tools needed by the fixture harness. Reset machine identity
+# so each disposable guest can initialize its own systemd/dbus identity at boot.
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends --yes \
         ca-certificates curl dbus iproute2 procps python3 systemd systemd-sysv util-linux \

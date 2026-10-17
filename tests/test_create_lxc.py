@@ -38,9 +38,20 @@ CONFIG = {
 
 
 class FakePVE(installer.Runner):
-    """Simulate CLI responses and record every effect on a disposable guest model."""
+    """Simulate the Proxmox CLI while recording effects on an in-memory guest.
+
+    Tests adjust inventory and fault flags to exercise provisioning decisions
+    without running pvesh, pveam or pct. Uploads read the staged local files so
+    their content and permissions can be checked, but nothing reaches a host.
+    """
 
     def __init__(self):
+        """Prepare a supported PVE 9 inventory with one cached Debian 13 template.
+
+        Initialize empty command/upload histories and opt-in failure switches.
+        The template catalog includes misleading versions and architectures to
+        make the installer's selection logic observable.
+        """
         self.calls = []
         self.uploads = {}
         self.version = "pve-manager/9.2.0/test"
@@ -74,6 +85,15 @@ class FakePVE(installer.Runner):
         self.stopped = False
 
     def run(self, arguments, *, timeout=60, capture=True, check=True):
+        """Record an argument array and return the modeled command's process result.
+
+        Inventory reads serialize fixture state; simulated mutations update the
+        cached templates, owned CT, uploaded bytes or stop/autostart flags.
+        Fault switches introduce races and transient failures. Timeout and
+        capture preserve Runner's interface but do not launch a subprocess;
+        check controls nonzero simulated results. Unexpected commands fail the
+        test so new production effects require an explicit fixture decision.
+        """
         args = [str(argument) for argument in arguments]
         self.calls.append(args)
         value = ""
@@ -150,6 +170,11 @@ class FakePVE(installer.Runner):
 
     @staticmethod
     def assert_secure_upload(args):
+        """Require a pct push source with mode 0600 and root-only guest ownership.
+
+        Inspect the local staged file and the requested destination metadata
+        to catch accidental exposure of configuration during transfer.
+        """
         assert Path(args[3]).stat().st_mode & 0o777 == 0o600
         assert args[args.index("--perms") + 1] == "0600"
         assert args[args.index("--user") + 1] == "0"
@@ -157,7 +182,18 @@ class FakePVE(installer.Runner):
 
 
 class ProvisioningTests(unittest.TestCase):
+    """Exercise host orchestration and ownership guards against the CLI model.
+
+    These assertions establish the command sequence and validation decisions,
+    not real Proxmox storage, networking, privilege mapping or recovery behavior.
+    """
+
     def setUp(self):
+        """Create a disposable source bundle, canonical JSON and fresh Proxmox model.
+
+        Placeholder bundle files satisfy source checks without needing to run
+        the guest installer. Register directory cleanup before writing them.
+        """
         self.directory = tempfile.TemporaryDirectory(prefix="dobbelt-host-test-")
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
@@ -170,7 +206,14 @@ class ProvisioningTests(unittest.TestCase):
         self.fake = FakePVE()
 
     def execute(self, *options):
+        """Run installer.main with extra CLI options and return its status and output.
+
+        Model a root amd64 host with the required binaries, suppress retry
+        sleeps and inject FakePVE for every host command. Only the temporary
+        source bundle and captured output are touched by this helper.
+        """
         output = io.StringIO()
+        # The which callback supplies plausible paths without probing host packages.
         with patch.object(installer.os, "geteuid", return_value=0), \
                 patch.object(installer.platform, "machine", return_value="x86_64"), \
                 patch.object(installer.shutil, "which", side_effect=lambda name: "/usr/sbin/" + name), \
@@ -181,9 +224,15 @@ class ProvisioningTests(unittest.TestCase):
         return result, output.getvalue()
 
     def assert_no_guest_mutations(self):
+        """Assert the preflight failure occurred before any pct command was issued."""
         self.assertFalse(any(call[0] == "pct" for call in self.fake.calls), self.fake.calls)
 
     def test_dry_run_selects_numerically_newest_supported_template_without_mutations(self):
+        """Check that dry-run selects Debian 13 amd64 by numeric version ordering.
+
+        An uncached template may be reported as needing download, but planning
+        must perform only inventory reads and must not upload guest files.
+        """
         self.fake.cached = []
         result, output = self.execute("--dry-run")
         self.assertEqual(result, 0, output)
@@ -193,6 +242,13 @@ class ProvisioningTests(unittest.TestCase):
         self.assertFalse(self.fake.uploads)
 
     def test_complete_install_uses_fresh_unprivileged_ct_and_enables_autostart_only_after_health(self):
+        """Check the full modeled install sequence and its default isolation settings.
+
+        Creation must leave the unprivileged, protected CT stopped with
+        autostart disabled. Uploads follow readiness, health precedes enabling
+        autostart, and transferred JSON is normalized. No force, destroy,
+        skiplock or extra privilege-granting features are permitted.
+        """
         result, output = self.execute()
         self.assertEqual(result, 0, output)
         create = next(call for call in self.fake.calls if call[:2] == ["pct", "create"])
@@ -225,6 +281,11 @@ class ProvisioningTests(unittest.TestCase):
         self.assertFalse(any("destroy" in call or "--force" in call or "--skiplock" in call for call in self.fake.calls))
 
     def test_static_network_vlan_dns_and_explicit_id_are_passed_as_single_arguments(self):
+        """Check that validated network choices retain their intended CLI grouping.
+
+        The explicit CT ID, IPv4/gateway/VLAN fields and multiple DNS servers
+        must reach pct create without splitting values into extra arguments.
+        """
         result, output = self.execute("--ctid", "250", "--ipv4", "192.0.2.50/24", "--gateway", "192.0.2.1",
                                       "--vlan", "123", "--nameserver", "192.0.2.53", "--nameserver", "192.0.2.54")
         self.assertEqual(result, 0, output)
@@ -235,6 +296,10 @@ class ProvisioningTests(unittest.TestCase):
         self.assertEqual(create[create.index("--nameserver") + 1], "192.0.2.53 192.0.2.54")
 
     def test_existing_cluster_vm_or_ct_is_never_touched(self):
+        """Reject an ID occupied on another node before template or guest mutations.
+
+        A QEMU guest reserves the same cluster-wide ID space as an LXC guest.
+        """
         self.fake.guests = [{"vmid": 150, "type": "qemu", "node": "another-node"}]
         result, output = self.execute("--ctid", "150")
         self.assertEqual(result, 2)
@@ -243,6 +308,11 @@ class ProvisioningTests(unittest.TestCase):
         self.assertFalse(any(call[0] == "pveam" for call in self.fake.calls))
 
     def test_racing_failed_create_never_pushes_executes_stops_or_changes_autostart(self):
+        """Prevent follow-up actions when another operator wins the CT allocation race.
+
+        A failed create establishes no ownership, so even cleanup must not act
+        on whatever now occupies the requested ID.
+        """
         self.fake.create_failure = True
         result, output = self.execute()
         self.assertEqual(result, 2)
@@ -250,6 +320,10 @@ class ProvisioningTests(unittest.TestCase):
         self.assertEqual([call[1] for call in self.fake.calls if call[0] == "pct"], ["create"])
 
     def test_foreign_ownership_marker_stops_further_actions(self):
+        """Reject a newly observed CT whose ownership marker is not this install's.
+
+        Only the attempted create may have occurred before detection.
+        """
         self.fake.foreign_marker = True
         result, output = self.execute()
         self.assertEqual(result, 2)
@@ -257,6 +331,11 @@ class ProvisioningTests(unittest.TestCase):
         self.assertEqual([call[1] for call in self.fake.calls if call[0] == "pct"], ["create"])
 
     def test_guest_install_failure_preserves_only_our_ct_without_deleting_it(self):
+        """Check failure cleanup stops the owned CT but preserves it for diagnosis.
+
+        Guest package failure must leave autostart disabled and never escalate
+        cleanup into pct destroy.
+        """
         self.fake.guest_failure = True
         result, output = self.execute()
         self.assertEqual(result, 2)
@@ -266,6 +345,11 @@ class ProvisioningTests(unittest.TestCase):
         self.assertFalse(any(call[:2] == ["pct", "destroy"] for call in self.fake.calls))
 
     def test_replacement_after_start_is_detected_before_any_upload_or_cleanup(self):
+        """Catch an ownership change during readiness before sending files to the CT.
+
+        The replacement must receive no upload or cleanup command after the
+        create, start and readiness probe that exposed the race.
+        """
         self.fake.replace_after_ready = True
         result, output = self.execute()
         self.assertEqual(result, 2)
@@ -274,6 +358,11 @@ class ProvisioningTests(unittest.TestCase):
         self.assertEqual([call[1] for call in self.fake.calls if call[0] == "pct"], ["create", "start", "exec"])
 
     def test_replacement_after_uploads_is_not_used_for_installation_or_cleanup(self):
+        """Recheck ownership after staging and refuse to execute in a replaced CT.
+
+        Neither the guest installer nor stop, autostart or deletion actions may
+        run once the fixture reports another operator's ownership marker.
+        """
         self.fake.replace_after_uploads = True
         result, output = self.execute()
         self.assertEqual(result, 2)
@@ -284,6 +373,7 @@ class ProvisioningTests(unittest.TestCase):
         self.assertFalse(any(call[0] == "pct" and call[1] in {"stop", "set", "destroy"} for call in self.fake.calls))
 
     def test_failed_health_check_never_enables_autostart(self):
+        """Require successful guest HTTP verification before enabling CT autostart."""
         self.fake.health_failure = True
         result, output = self.execute()
         self.assertEqual(result, 2)
@@ -291,6 +381,10 @@ class ProvisioningTests(unittest.TestCase):
         self.assertFalse(any(call[:2] == ["pct", "set"] and call[-1] == "1" for call in self.fake.calls))
 
     def test_unexpected_privileged_container_is_not_started_or_populated(self):
+        """Reject a CT reported as privileged despite an unprivileged create request.
+
+        Detect the mismatch before startup, file transfer or command execution.
+        """
         self.fake.bad_unprivileged = True
         result, output = self.execute()
         self.assertEqual(result, 2)
@@ -298,12 +392,22 @@ class ProvisioningTests(unittest.TestCase):
         self.assertFalse(any(call[0] == "pct" and call[1] in {"start", "push", "exec"} for call in self.fake.calls))
 
     def test_guest_readiness_is_retried_before_upload(self):
+        """Allow transient guest-exec failures while retaining the readiness gate.
+
+        Two failed probes must be followed by a third successful probe before
+        the modeled install can complete.
+        """
         self.fake.readiness_failures = 2
         result, output = self.execute()
         self.assertEqual(result, 0, output)
         self.assertEqual(sum(call[-1] == "/bin/true" for call in self.fake.calls), 3)
 
     def test_slow_dhcp_and_download_networking_are_retried_before_upload(self):
+        """Wait through delayed IPv4 assignment and transient DNS/connectivity failures.
+
+        File transfer must follow a successful network probe so package and
+        dependency installation do not begin against an unready guest network.
+        """
         self.fake.address_failures = 2
         self.fake.network_failures = 2
         result, output = self.execute()
@@ -315,6 +419,12 @@ class ProvisioningTests(unittest.TestCase):
         self.assertEqual(self.fake.created["onboot"], 1)
 
     def test_network_deadline_retains_the_ct_without_uploads_or_package_installation(self):
+        """Bound waiting for an address, download connectivity or the requested static IP.
+
+        Advance the modeled clock to exhaust each deadline. Failure must stop
+        and retain the owned CT with autostart disabled, before uploading files
+        or running the guest package installer.
+        """
         for failure in ("address", "dns_or_connectivity", "wrong_static_address"):
             with self.subTest(failure=failure):
                 self.fake = FakePVE()
@@ -337,6 +447,10 @@ class ProvisioningTests(unittest.TestCase):
                                      for call in self.fake.calls))
 
     def test_template_download_must_produce_expected_volume_before_create(self):
+        """Reject a nominal download that leaves the selected template volume absent.
+
+        A successful command alone must not authorize CT creation.
+        """
         self.fake.cached = []
         self.fake.download_missing = True
         result, output = self.execute()
@@ -345,12 +459,17 @@ class ProvisioningTests(unittest.TestCase):
         self.assert_no_guest_mutations()
 
     def test_explicit_cached_template_does_not_refresh_or_download_catalogue(self):
+        """Use an explicitly selected cached template without catalog or download work."""
         result, output = self.execute("--template", VOLUME)
         self.assertEqual(result, 0, output)
         self.assertFalse(any(call[0] == "pveam" for call in self.fake.calls))
         self.assertFalse(any("/nodes/pve-test/aplinfo" in call for call in self.fake.calls))
 
     def test_missing_explicit_template_is_rejected(self):
+        """Reject a requested template volume that storage inventory cannot confirm.
+
+        Do not substitute another template or issue a guest mutation.
+        """
         self.fake.cached = []
         result, output = self.execute("--template", VOLUME)
         self.assertEqual(result, 2)
@@ -358,6 +477,7 @@ class ProvisioningTests(unittest.TestCase):
         self.assert_no_guest_mutations()
 
     def test_invalid_json_is_rejected_before_any_proxmox_command(self):
+        """Validate the canonical server list before querying or changing a PVE host."""
         self.config.write_text('{"version":1,"servers":[]}', encoding="utf-8")
         result, output = self.execute()
         self.assertEqual(result, 2)
@@ -365,6 +485,11 @@ class ProvisioningTests(unittest.TestCase):
         self.assertEqual(self.fake.calls, [])
 
     def test_parameter_injection_and_invalid_network_values_fail_before_inventory(self):
+        """Reject malformed or injection-shaped CLI values before touching host tools.
+
+        Cover resource, template and network boundaries, including embedded
+        separators, invalid addresses, unsupported IDs and traversal paths.
+        """
         for options in (
             ["--storage", "local-lvm:0"], ["--bridge", "vmbr0,firewall=0"],
             ["--hostname", "dns;touch /tmp/unsafe"], ["--ipv4", "192.0.2.50"],
@@ -381,6 +506,11 @@ class ProvisioningTests(unittest.TestCase):
                 self.assertEqual(self.fake.calls, [])
 
     def test_inactive_wrong_content_low_space_storage_or_bridge_and_quorum_block_creation(self):
+        """Require usable storage, an active bridge and cluster quorum before provisioning.
+
+        Each modeled preflight failure must block template mutations as well
+        as every pct command.
+        """
         for failure in ("inactive", "content", "space", "bridge", "quorum"):
             self.fake = FakePVE()
             if failure == "inactive":
@@ -400,6 +530,7 @@ class ProvisioningTests(unittest.TestCase):
                 self.assertFalse(any(call[0] == "pveam" for call in self.fake.calls))
 
     def test_unsupported_proxmox_major_is_rejected(self):
+        """Stop immediately after version discovery when the host reports PVE 8."""
         self.fake.version = "pve-manager/8.4.1/test"
         result, output = self.execute()
         self.assertEqual(result, 2)
@@ -407,6 +538,11 @@ class ProvisioningTests(unittest.TestCase):
         self.assertEqual(self.fake.calls, [["pveversion"]])
 
     def test_symlinked_installation_source_is_not_transferred(self):
+        """Reject a bundle file replaced by a symlink before any host command executes.
+
+        Source validation must not treat the linked configuration as dashboard
+        HTML and stage it for transfer.
+        """
         path = self.root / "index.html"
         path.unlink()
         path.symlink_to(self.config)
@@ -417,7 +553,14 @@ class ProvisioningTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
+    """Check CLI startup and subprocess boundaries without executing Proxmox commands."""
+
     def test_help_does_not_write_import_bytecode_into_the_checkout(self):
+        """Keep even a normal Python --help invocation free of checkout bytecode writes.
+
+        Copy the real CLI modules into a temporary directory and remove the
+        environment override so the test exercises the program's own policy.
+        """
         with tempfile.TemporaryDirectory(prefix="dobbelt-help-test-") as directory:
             root = Path(directory)
             for name in ("create_lxc.py", "render_config.py"):
@@ -430,6 +573,11 @@ class RunnerTests(unittest.TestCase):
             self.assertFalse((root / "__pycache__").exists())
 
     def test_subprocess_receives_an_argument_array_without_a_shell(self):
+        """Require bounded subprocess execution with literal argument boundaries.
+
+        A semicolon-containing argument must remain data, with no shell option
+        enabling interpretation as a second command.
+        """
         with patch.object(installer.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")) as execute, \
                 contextlib.redirect_stdout(io.StringIO()):
             installer.Runner().run(["pct", "create", "150", "literal;not-a-shell-command"])

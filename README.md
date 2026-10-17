@@ -49,6 +49,7 @@ Real Proxmox installation and recovery acceptance remains open in
 | [Configuration](docs/CONFIGURATION.md) | JSON fields, API permissions, generated routes, TLS, configuration changes and migration |
 | [LXC installation and operations](docs/LXC.md) | Host prerequisites, CLI options, service commands, troubleshooting, backup and recovery |
 | [Translations and frontend checks](docs/I18N.md) | Language catalogs, adding languages, unit and browser tests |
+| [Development](docs/DEVELOPMENT.md) | Source layout, readable code, English function documentation and test groups |
 
 The detailed guides under `docs/` are in English; all three READMEs cover
 installation, current status and the issue roadmap in their respective language.
@@ -274,8 +275,10 @@ not require a backend, a build step or an additional runtime dependency.
 Server names, domains, client names, comments and other values supplied by
 users or the Pi-hole APIs remain unchanged when the interface language changes.
 
-Setup documentation and nginx examples are also available in all three
-languages:
+The READMEs provide setup instructions in all three languages. Comments and
+function documentation in source code, snippets and nginx examples are always
+in English. The nginx example files below have identical contents; their
+existing filenames remain available for documentation links.
 
 | Language | Documentation | nginx example |
 | --- | --- | --- |
@@ -443,6 +446,11 @@ named parameters consistent across all language catalogs, and include
 translations for static text, dynamic states and accessibility labels.
 See the [translation guide](docs/I18N.md) for the message helpers, adding
 languages and running the automated checks.
+
+Keep maintained source readable, with descriptive names and clear control flow.
+Document every function, including nested callbacks and test fixtures, with a
+helpful English description at its definition. The [development guide](docs/DEVELOPMENT.md)
+explains the documentation conventions, source layout and verification steps.
 
 Before starting a tracked work package, refresh `main`, its issue, dependencies
 and existing PRs. Follow the workflow in
