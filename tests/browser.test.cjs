@@ -95,7 +95,7 @@ const EXPECTED = {
     },
     placeholder: 'fx netflix.com eller 192.168...',
     delete: /^Slet domænet /u,
-    domainAdded: 'domæne tilføjet'
+    domainAdded: 'ændringen er bekræftet'
   },
   en: {
     locale: 'en-GB',
@@ -114,7 +114,7 @@ const EXPECTED = {
     },
     placeholder: 'e.g. netflix.com or 192.168...',
     delete: /^Delete the domain /u,
-    domainAdded: 'domain added'
+    domainAdded: 'change confirmed'
   },
   de: {
     locale: 'de-DE',
@@ -133,7 +133,7 @@ const EXPECTED = {
     },
     placeholder: 'z. B. netflix.com oder 192.168...',
     delete: /^Die Domain /u,
-    domainAdded: 'Domain hinzugefügt'
+    domainAdded: 'Änderung bestätigt'
   }
 };
 
