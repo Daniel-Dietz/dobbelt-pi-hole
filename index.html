@@ -1041,6 +1041,7 @@ const I18N = {
     "queries.truncated.one": "{count} forespørgsel hentet for det valgte tidsrum – der er muligvis flere end vist; indsnævr tidsrummet for et fuldstændigt resultat.",
     "queries.truncated.other": "{count} forespørgsler hentet for det valgte tidsrum – der er muligvis flere end vist; indsnævr tidsrummet for et fuldstændigt resultat.",
         "multi.conflict": "Modstridende regel findes allerede; kontrollér målserveren.",
+    "multi.busy": "En anden ændring på disse Pi-hole-instanser er stadig i gang.",
     "multi.invalidRead": "Ufuldstændigt svar fra Pi-hole.",
     "multi.unknown": "Ukendt",
     "multi.disconnected": "Ikke forbundet",
@@ -1314,6 +1315,7 @@ const I18N = {
     "queries.truncated.one": "{count} query loaded for the selected time range – more queries may be available. Narrow the time range for complete results.",
     "queries.truncated.other": "{count} queries loaded for the selected time range – more queries may be available. Narrow the time range for complete results.",
         "multi.conflict": "A conflicting rule already exists; inspect the target instance.",
+    "multi.busy": "Another change to these Pi-hole instances is still running.",
     "multi.invalidRead": "Incomplete response from Pi-hole.",
     "multi.unknown": "Unknown",
     "multi.disconnected": "Not connected",
@@ -1587,6 +1589,7 @@ const I18N = {
     "queries.truncated.one": "{count} Anfrage wurde für den gewählten Zeitraum geladen – möglicherweise sind weitere Anfragen vorhanden. Grenzen Sie den Zeitraum für ein vollständiges Ergebnis ein.",
     "queries.truncated.other": "{count} Anfragen wurden für den gewählten Zeitraum geladen – möglicherweise sind weitere Anfragen vorhanden. Grenzen Sie den Zeitraum für ein vollständiges Ergebnis ein.",
         "multi.conflict": "Es besteht bereits eine widersprüchliche Regel; Zielinstanz prüfen.",
+    "multi.busy": "Eine weitere Änderung an diesen Pi-hole-Instanzen läuft noch.",
     "multi.invalidRead": "Unvollständige Antwort von Pi-hole.",
     "multi.unknown": "Unbekannt",
     "multi.disconnected": "Nicht verbunden",
@@ -3799,8 +3802,17 @@ function collectionCoverageHtml(states) {
  * @param {object} op Functions path(server), extract(result), isCurrent(server, rows), write(server, rows).
  * @returns {Promise<Array|null>} Per-instance outcomes; null when already in flight.
  */
+const activeInstanceWrites = new Set();
+/**
+ * Guard mutating operations across language changes and tab rerenders, not
+ * merely for as long as the original clicked DOM button exists.
+ */
 async function performCheckedWrites(button, targets, op) {
-  if (button?.dataset.multiBusy === "1") return null;
+  if (button?.dataset.multiBusy === "1" || targets.some(server => activeInstanceWrites.has(server.id))) {
+    toast(msg("multi.busy"), "err");
+    return null;
+  }
+  for (const server of targets) activeInstanceWrites.add(server.id);
   if (button) { button.dataset.multiBusy = "1"; button.disabled = true; }
   const outcomes = [];
   try {
@@ -3826,6 +3838,7 @@ async function performCheckedWrites(button, targets, op) {
       }
     }
   } finally {
+    for (const server of targets) activeInstanceWrites.delete(server.id);
     if (button) { delete button.dataset.multiBusy; if (button.isConnected) button.disabled = false; }
   }
   for (const outcome of outcomes) {
