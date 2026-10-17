@@ -1208,7 +1208,18 @@ const I18N = {
     "config.invalidJson": "Konfigurationsfilen config.json indeholder ikke gyldig JSON.",
     "config.invalidValue": "Konfigurationsfeltet »{field}« mangler eller er ugyldigt.",
     "config.unsupportedVersion": "Konfigurationens version mangler eller understøttes ikke. Generer konfigurationen med værktøjerne fra denne version af kontrolpanelet.",
-    "config.changed": "Pi-hole-konfigurationen er ændret. Genindlæs denne side, før du fortsætter."
+    "config.changed": "Pi-hole-konfigurationen er ændret. Genindlæs denne side, før du fortsætter.",
+    "multi.unknown": "Status ukendt",
+    "multi.skipped": "Sprunget over",
+    "multi.invalidResponse": "Pi-hole returnerede ufuldstændige data.",
+    "multi.readUnavailable": "Kunne ikke hente data fra: {servers}. Ukendte poster må ikke ændres.",
+    "multi.confirmedResult": "{server}: ændringen er bekræftet.",
+    "multi.failedResult": "{server}: ændringen mislykkedes ({error}).",
+    "multi.unknownResult": "{server}: resultatet er ukendt ({error}). Kontrollér den aktuelle tilstand før et nyt forsøg.",
+    "multi.skippedResult": "{server}: ingen ændring (ikke logget ind eller allerede opdateret).",
+    "multi.verifyRetry": "Kontrollér og prøv igen",
+    "multi.conflict": "Posten er ændret på serveren. Genindlæs den aktuelle tilstand.",
+    "multi.partialResponse": "Pi-hole rapporterede en fejl for den behandlede post."
   },
   "en": {
     "app.title": "Dobbelt-Pi-hole v{version} · Dashboard",
@@ -1482,7 +1493,18 @@ const I18N = {
     "config.invalidJson": "The configuration file config.json does not contain valid JSON.",
     "config.invalidValue": "The configuration field “{field}” is missing or invalid.",
     "config.unsupportedVersion": "The configuration version is missing or unsupported. Generate the configuration with the tools from this dashboard version.",
-    "config.changed": "The Pi-hole configuration has changed. Reload this page before continuing."
+    "config.changed": "The Pi-hole configuration has changed. Reload this page before continuing.",
+    "multi.unknown": "Unknown",
+    "multi.skipped": "Skipped",
+    "multi.invalidResponse": "Pi-hole returned incomplete data.",
+    "multi.readUnavailable": "Could not read data from: {servers}. Unknown entries cannot be modified.",
+    "multi.confirmedResult": "{server}: change confirmed.",
+    "multi.failedResult": "{server}: change failed ({error}).",
+    "multi.unknownResult": "{server}: outcome unknown ({error}). Check the current state before retrying.",
+    "multi.skippedResult": "{server}: no change (not signed in or already up to date).",
+    "multi.verifyRetry": "Verify and retry",
+    "multi.conflict": "The entry changed on the server. Reload the current state.",
+    "multi.partialResponse": "Pi-hole reported an error for the processed entry."
   },
   "de": {
     "app.title": "Dobbelt-Pi-hole v{version} · Übersicht",
@@ -1756,7 +1778,18 @@ const I18N = {
     "config.invalidJson": "Die Konfigurationsdatei config.json enthält kein gültiges JSON.",
     "config.invalidValue": "Das Konfigurationsfeld „{field}“ fehlt oder ist ungültig.",
     "config.unsupportedVersion": "Die Konfigurationsversion fehlt oder wird nicht unterstützt. Erzeugen Sie die Konfiguration mit den Werkzeugen dieser Dashboard-Version.",
-    "config.changed": "Die Pi-hole-Konfiguration wurde geändert. Laden Sie diese Seite neu, bevor Sie fortfahren."
+    "config.changed": "Die Pi-hole-Konfiguration wurde geändert. Laden Sie diese Seite neu, bevor Sie fortfahren.",
+    "multi.unknown": "Unbekannt",
+    "multi.skipped": "Übersprungen",
+    "multi.invalidResponse": "Pi-hole hat unvollständige Daten zurückgegeben.",
+    "multi.readUnavailable": "Daten konnten nicht geladen werden von: {servers}. Einträge mit unbekanntem Status dürfen nicht geändert werden.",
+    "multi.confirmedResult": "{server}: Änderung bestätigt.",
+    "multi.failedResult": "{server}: Änderung fehlgeschlagen ({error}).",
+    "multi.unknownResult": "{server}: Ergebnis unbekannt ({error}). Vor erneutem Versuch den aktuellen Zustand prüfen.",
+    "multi.skippedResult": "{server}: keine Änderung (nicht angemeldet oder bereits aktuell).",
+    "multi.verifyRetry": "Prüfen und erneut versuchen",
+    "multi.conflict": "Der Eintrag wurde auf dem Server geändert. Aktuellen Zustand neu laden.",
+    "multi.partialResponse": "Pi-hole hat für den bearbeiteten Eintrag einen Fehler gemeldet."
   }
 };
 
@@ -2509,7 +2542,8 @@ function toast(message, tone) {
   notification.className = "toast" + (tone === "ok" ? " ok" : tone === "err" ? " err" : "");
   notification.textContent = message;
   area.append(notification);
-  setTimeout(/** Remove this notification when its display interval ends. */ () => notification.remove(), 5500);
+  setTimeout(/** Remove this notification when its display interval ends. */ () => notification.remove(), 9500);
+  return notification;
 }
 /** Find a configured server by its stable display ID, or return undefined. */
 function serverById(id) {
@@ -3875,6 +3909,100 @@ function clearConfirmedDraft(outcomes, form, fields) {
   for (const [selector, previous] of fields) {
     const input = activeForm.querySelector(selector);
     if (input && input.value.trim() === previous) input.value = "";
+  }
+}
+
+
+/** Reject malformed collection responses rather than interpreting failed or incomplete reads as empty. */
+function requireApiRecords(response, field) {
+  if (!response || !Array.isArray(response[field])) throw new Error(msg("multi.invalidResponse"));
+  return response[field];
+}
+
+/** Track successful reads separately from skipped and unknown instance data. */
+function initialReadStates() {
+  return new Map(state.servers.map(server => [server.id, server.connected ? "unknown" : "skipped"]));
+}
+
+/** Replace actionable absence with an unknown/skipped indicator when an instance was not read. */
+function unavailableCell(readStates, server) {
+  const status = readStates.get(server.id);
+  return status === "ok" ? null : '<td><span class="badge off">' + htmlMsg(status === "unknown" ? "multi.unknown" : "multi.skipped") + "</span></td>";
+}
+
+/** Summarize failed instance reads without hiding partial data from healthy servers. */
+function incompleteReadHtml(readStates) {
+  const unknown = state.servers.filter(server => readStates.get(server.id) === "unknown");
+  return unknown.length ? '<p class="sub" role="alert">' + htmlMsg("multi.readUnavailable", { servers: unknown.map(server => server.label).join(", ") }) + "</p>" : "";
+}
+
+const activeMutations = new Set();
+
+/**
+ * Preflight the current state of each target before writing exactly once.
+ * Only an explicit user click can retry an unknown outcome, and only after another preflight.
+ */
+async function runInstanceMutation({ key, targets, preflight, write, button }) {
+  if (activeMutations.has(key)) return { busy: true, results: [], confirmed: 0 };
+  activeMutations.add(key);
+  if (button) button.disabled = true;
+  const results = [];
+  try {
+    for (const server of targets) {
+      if (!server.connected) {
+        results.push({ server, status: "skipped" });
+        continue;
+      }
+      try {
+        const decision = await preflight(server);
+        if (decision === false) {
+          results.push({ server, status: "skipped" });
+          continue;
+        }
+        const response = await write(server, decision);
+        if (response?.processed?.errors?.length) {
+          const failure = new Error(msg("multi.partialResponse"));
+          failure.httpStatus = 400;
+          throw failure;
+        }
+        results.push({ server, status: "confirmed" });
+      } catch (error) {
+        const status = error instanceof AuthError || (error.httpStatus >= 400 && error.httpStatus < 500) ? "failed" : "unknown";
+        results.push({ server, status, error: error.message || String(error) });
+      }
+    }
+    for (const result of results) {
+      const messageKey = result.status === "confirmed" ? "multi.confirmedResult" : result.status === "failed" ? "multi.failedResult" : result.status === "skipped" ? "multi.skippedResult" : "multi.unknownResult";
+      const notice = toast(msg(messageKey, { server: result.server.label, error: result.error || "" }), result.status === "confirmed" ? "ok" : result.status === "skipped" ? "" : "err");
+      if (result.status === "unknown" && notice) {
+        const retry = document.createElement("button");
+        retry.className = "btn xs";
+        retry.type = "button";
+        retry.textContent = msg("multi.verifyRetry");
+        retry.addEventListener("click", /** Retry only this instance after checking its latest state. */ () => {
+          notice.remove();
+          void runInstanceMutation({ key, targets: [result.server], preflight, write });
+        });
+        notice.append(" ", retry);
+      }
+    }
+    return { busy: false, results, confirmed: results.filter(result => result.status === "confirmed" || (result.status === "skipped" && result.server.connected)).length };
+  } finally {
+    activeMutations.delete(key);
+    if (button?.isConnected) button.disabled = false;
+  }
+}
+
+/** Clear only unchanged input values on full success, including pending language-switch snapshots. */
+function clearSubmittedFields(fields) {
+  for (const [id, value] of Object.entries(fields)) {
+    const element = document.getElementById(id);
+    if (element && element.value === value) element.value = "";
+    if (pendingLanguageFormState) {
+      for (const field of pendingLanguageFormState.snapshot.fields) {
+        if (field.selector === "#" + id && field.value === value) field.value = "";
+      }
+    }
   }
 }
 
