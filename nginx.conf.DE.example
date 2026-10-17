@@ -1,0 +1,114 @@
+# ------------------------------------------------------------------
+# Doppel-Pi-hole-Dashboard — nginx-Reverse-Proxy-Beispiel
+#
+# Anzupassende Werte:
+#   dns.example.com         -> Domainname für den Zugriff auf dieses Dashboard
+#   pihole1.example.com     -> Hostname oder IP-Adresse der ersten Pi-hole-Instanz
+#   pihole2.example.com     -> Hostname oder IP-Adresse der zweiten Pi-hole-Instanz
+#   pihole3.example.com     -> dritte Pi-hole-Instanz, wenn DEFAULT_SERVER_COUNT 3 oder 4 ist
+#   pihole4.example.com     -> vierte Pi-hole-Instanz, wenn DEFAULT_SERVER_COUNT 4 ist
+#   /etc/nginx/ssl/...      -> SSL-Zertifikat und privater Schlüssel
+#   /srv/web/dobbeltpihole  -> Verzeichnis mit index.html und chart.umd.min.js
+#
+# Warum dieser Proxy erforderlich ist: Das JavaScript des Dashboards ruft
+# /api1/... bis /api4/... über relative Pfade auf demselben Host ab. nginx
+# leitet diese Anfragen an die jeweiligen Pi-hole-Instanzen weiter. Dadurch
+# werden CORS-Probleme vermieden. DEFAULT_SERVER_COUNT wird ausschließlich
+# in index.html festgelegt (2, 3 oder 4).
+# Die ersten beiden Proxy-Blöcke sind aktiv. Entferne bei Bedarf die
+# Kommentarzeichen vor den zusätzlichen Blöcken.
+# Pi-hole behandelt CORS nicht an allen API-Endpunkten einheitlich.
+# Dieser Aufbau bietet daher eine einfache Grundlage für einen stabilen Betrieb.
+# ------------------------------------------------------------------
+
+server {
+    listen 443 ssl http2;
+    server_name dns.example.com;
+
+    ssl_certificate     /etc/nginx/ssl/dns.example.com/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/dns.example.com/privkey.pem;
+
+    root /srv/web/dobbeltpihole;
+    index index.html;
+    autoindex off;
+
+    # --- Grundlegende Sicherheitsheader -------------------------------
+    # Hinweis zu script-src 'unsafe-inline': Das Dashboard wird als eine
+    # eigenständige HTML-Datei mit direkt eingebettetem JavaScript ausgeliefert.
+    # Der Browser muss deshalb Inline-JavaScript ausführen dürfen.
+    # Diese CSP blockiert daher kein eingeschleustes Inline-<script>, falls
+    # dieses die Maskierung der Anwendung umgehen sollte. Die Richtlinie
+    # beschränkt vor allem, welche Quellen kontaktiert, eingebettet oder
+    # geladen werden dürfen.
+    #
+    # Wird das Dashboard von mehreren Personen verwendet, kann der
+    # <script>-Block in eine separate app.js-Datei ausgelagert werden.
+    # Anschließend kann 'unsafe-inline' aus script-src entfernt werden.
+    # Dadurch wird diese Lücke geschlossen. Bei ausschließlich persönlicher
+    # Nutzung ist der betroffene Benutzerkreis auf die eigene Person begrenzt.
+    #
+    # Beim Betrieb auf einem Synology NAS kann außerdem in DSM ein
+    # Zugriffssteuerungsprofil erstellt und zugewiesen werden. Dieses kann
+    # den Zugriff auf bestimmte IP-Adressen oder lokale Netzwerke beschränken,
+    # damit Unbefugte das Dashboard nicht erreichen können.
+
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self';" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "same-origin" always;
+
+    # --- Reverse-Proxy für 2–4 Pi-hole-Instanzen ------------------------
+    location /api1/ {
+        proxy_pass https://pihole1.example.com/api/;
+        proxy_ssl_verify off;              # Zertifikatsprüfung bei einem vertrauenswürdigen Zertifikat entsprechend konfigurieren
+        proxy_set_header Host pihole1.example.com;
+        proxy_ssl_server_name on;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 30s;
+    }
+
+    location /api2/ {
+        proxy_pass https://pihole2.example.com/api/;
+        proxy_ssl_verify off;              # Zertifikatsprüfung bei einem vertrauenswürdigen Zertifikat entsprechend konfigurieren
+        proxy_set_header Host pihole2.example.com;
+        proxy_ssl_server_name on;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 30s;
+    }
+
+    # Optionale Pi-hole-Instanz 3: Kommentarzeichen vor dem gesamten Block entfernen und Adresse anpassen.
+    # location /api3/ {
+    #     proxy_pass https://pihole3.example.com/api/;
+    #     proxy_ssl_verify off;              # Zertifikatsprüfung bei einem vertrauenswürdigen Zertifikat entsprechend konfigurieren
+    #     proxy_set_header Host pihole3.example.com;
+    #     proxy_ssl_server_name on;
+    #     proxy_connect_timeout 10s;
+    #     proxy_read_timeout 30s;
+    # }
+
+    # Optionale Pi-hole-Instanz 4: Kommentarzeichen vor dem gesamten Block entfernen und Adresse anpassen.
+    # location /api4/ {
+    #     proxy_pass https://pihole4.example.com/api/;
+    #     proxy_ssl_verify off;              # Zertifikatsprüfung bei einem vertrauenswürdigen Zertifikat entsprechend konfigurieren
+    #     proxy_set_header Host pihole4.example.com;
+    #     proxy_ssl_server_name on;
+    #     proxy_connect_timeout 10s;
+    #     proxy_read_timeout 30s;
+    # }
+
+    # --- Dashboard-Dateien --------------------------------------------
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    location ~ /\. {
+        deny all;
+    }
+}
+
+# Optional: HTTP auf HTTPS umleiten
+server {
+    listen 80;
+    server_name dns.example.com;
+    return 301 https://$host$request_uri;
+}

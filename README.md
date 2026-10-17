@@ -1,6 +1,6 @@
 # Double Pi-hole dashboard
 
-**English** | [Dansk](README.DA.md)
+**English** | [Dansk](README.DA.md) | [Deutsch](README.DE.md)
 
 
 A lightweight dashboard for managing two, three or four Pi-hole v6 instances from one
@@ -18,7 +18,7 @@ The dashboard includes:
 - Adlist management
 - Gravity updates on each instance, including the time of the last update
 - Actions that can be applied to one or all active instances
-- Danish and English user interfaces
+- Danish, English and German user interfaces
 
 The Pi-hole instances remain independent DNS servers. This project does not
 provide failover, a virtual IP address, a primary or secondary server, or
@@ -36,7 +36,7 @@ The dashboard is deliberately simple:
 - No database
 - No build process
 - No Node.js, PHP or Python
-- Server count and global names is configured in the HTML file; custom names and interface preferences stored locally in the browser
+- Server count and default names configured in the HTML file; custom names and interface preferences stored locally in the browser
 - Direct communication with the Pi-hole v6 APIs through nginx
 
 Chart.js is loaded as a separate local file and is only used for charts.
@@ -112,10 +112,33 @@ names.
 
 ## Languages
 
-The user interface is available in Danish and English. On first use, the
-language is selected automatically from the browser language. It can then be
-changed at the top of the dashboard, and the selection is stored locally in
-the browser.
+The user interface is available in **English**, **Dansk** and **Deutsch**.
+The language selector at the top of the dashboard changes the interface
+immediately, including dialog text, dynamic messages, tables and charts.
+Numbers, percentages, dates and times follow the selected language.
+
+The initial language is selected in this order:
+
+1. A supported language previously selected and saved in the browser's
+   `localStorage`.
+2. The first supported language in the browser's ordered language preferences.
+   Regional variants such as `de-DE`, `de-AT`, `en-GB` and `da-DK` are supported.
+3. English if no supported language is found.
+
+Translations use stable message keys and named parameters in complete
+`en`, `da` and `de` catalogs embedded in `index.html`. Adding a language does
+not require a backend, a build step or an additional runtime dependency.
+Server names, domains, client names, comments and other values supplied by
+users or the Pi-hole APIs remain unchanged when the interface language changes.
+
+Setup documentation and nginx examples are also available in all three
+languages:
+
+| Language | Documentation | nginx example |
+| --- | --- | --- |
+| English | [README.md](README.md) | [nginx.conf.example](nginx.conf.example) |
+| Dansk | [README.DA.md](README.DA.md) | [nginx.conf.DA.example](nginx.conf.DA.example) |
+| Deutsch | [README.DE.md](README.DE.md) | [nginx.conf.DE.example](nginx.conf.DE.example) |
 
 ## Security
 
@@ -139,7 +162,7 @@ access control in front of it.
 
 - **v1.1.005:** Complete Danish and English interfaces and documentation
 - **v1.2.006:** Support for two, three or four Pi-hole instances
-- **v1.3.xxx:** Additional languages
+- **v1.3.007:** Key-based multilingual support with complete Danish, English and German interfaces and documentation
 - **v1.4.xxx:** Docker image and simplified installation
 
 The dashboard supports two to four active instances. Additional instances
@@ -148,7 +171,11 @@ require both the matching server count in `index.html` and a proxy route in ngin
 ## Contributing
 
 Issues and pull requests are welcome. Contributions may include bug fixes,
-suggestions and, in future versions, translations into additional languages.
+suggestions and translations into additional languages. Keep message keys and
+named parameters consistent across all language catalogs, and include
+translations for static text, dynamic states and accessibility labels.
+See the [translation guide](docs/I18N.md) for the message helpers, adding
+languages and running the automated checks.
 
 ## License
 
