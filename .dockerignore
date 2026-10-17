@@ -1,3 +1,4 @@
+# Keep development metadata and credentials out of the deployment build context.
 .git
 .github
 .env
@@ -9,6 +10,7 @@ playwright-report
 __pycache__
 **/__pycache__
 *.pyc
+# Runtime configuration is mounted or generated; guides and test tooling are not runtime assets.
 config
 docs
 README*.md

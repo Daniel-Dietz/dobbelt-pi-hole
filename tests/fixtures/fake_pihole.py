@@ -10,9 +10,21 @@ from urllib.parse import urlsplit
 
 
 class FixtureServer(ThreadingHTTPServer):
+    """Host an HTTP fixture whose request history and stream state tests can inspect.
+
+    Worker threads share a locked request log and an event that lets a test
+    release a deliberately unfinished Gravity response. No DNS settings or
+    real Pi-hole state are changed by this server.
+    """
+
     daemon_threads = True
 
     def __init__(self, address, name):
+        """Bind the supplied host/port and initialize this named backend's state.
+
+        The name identifies the responding fixture in echoed API requests;
+        the log and stream controls start empty for each new server instance.
+        """
         super().__init__(address, FixtureHandler)
         self.fixture_name = name
         self.requests = []
@@ -22,12 +34,25 @@ class FixtureServer(ThreadingHTTPServer):
 
 
 class FixtureHandler(BaseHTTPRequestHandler):
+    """Echo API traffic and expose control endpoints for deterministic proxy tests.
+
+    Control requests are excluded from the API log so health polling and test
+    assertions do not look like dashboard traffic. The fixture deliberately
+    models only the HTTP behavior needed by the integration tests.
+    """
+
     protocol_version = "HTTP/1.1"
 
     def log_message(self, *_args):
+        """Suppress the standard access log; tests read structured request records."""
         pass
 
     def send_json(self, value, status=200, extra_headers=None):
+        """Send a UTF-8 JSON value with an explicit byte length and HTTP status.
+
+        Optional headers let individual fixtures simulate upstream policies.
+        HEAD requests receive the same metadata without a response body.
+        """
         body = json.dumps(value, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -39,6 +64,15 @@ class FixtureHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def handle_request(self):
+        """Serve fixture controls or record and answer an incoming API request.
+
+        API records preserve the raw path/query, method, headers and exact body
+        bytes as base64. Dedicated routes simulate authentication, HTTP errors,
+        a bodyless 204 and headers nginx must ignore. Gravity sends one flushed
+        chunk, waits for the test's release signal, then finishes; this exposes
+        accidental proxy buffering. Login returns a recognizable test SID and
+        intentionally performs no real password validation.
+        """
         body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
         path = urlsplit(self.path).path
         if path == "/__fixture__/health":
@@ -75,6 +109,8 @@ class FixtureHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         if path == "/api/__fixture__/untrusted-headers":
+            # These upstream headers probe credential isolation and nginx's
+            # refusal to honor backend-directed rerouting or buffering.
             return self.send_json(record, extra_headers={
                 "Set-Cookie": "fixture-upstream-cookie=blocked; Path=/; HttpOnly",
                 "WWW-Authenticate": 'Basic realm="upstream fixture"',
@@ -101,6 +137,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
                 self.wfile.write(f"{len(last):x}\r\n".encode("ascii") + last + b"\r\n0\r\n\r\n")
                 self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):
+                # A timed-out or failed test may close its socket during cleanup.
                 pass
             finally:
                 with self.server.request_lock:
@@ -110,6 +147,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
             record["session"] = {"sid": "fixture-session-" + self.server.fixture_name}
         self.send_json(record)
 
+    # Use identical recording and fixture dispatch for every supported method.
     do_GET = handle_request
     do_HEAD = handle_request
     do_POST = handle_request

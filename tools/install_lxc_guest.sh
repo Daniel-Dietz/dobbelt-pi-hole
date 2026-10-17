@@ -1,11 +1,16 @@
 #!/bin/bash
 # Install the dashboard into a fresh, dedicated Debian 13 container.
 # This script never creates containers and must not run on the Proxmox host.
+# Its inputs are a reviewed source bundle, private canonical JSON and listener
+# options. Success installs packages/files and enables the dedicated service;
+# failure may leave a partial new installation for the host installer to inspect.
 set -Eeuo pipefail
 umask 0077
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PYTHONDONTWRITEBYTECODE=1
 
+# Print the supported guest-side options to stdout without inspecting or changing
+# the container. This takes no arguments; the --help branch exits after calling it.
 usage() {
     cat <<'USAGE'
 Usage: install_lxc_guest.sh --source-dir ABS_REPO --config ABS_JSON [options]
@@ -25,6 +30,9 @@ The HTTP listener is a backend for a trusted LAN or a protected HTTPS proxy.
 USAGE
 }
 
+# Report the supplied message arguments to stderr and terminate with status 2.
+# Once traps are installed, exiting also removes temporary download staging;
+# this helper does not undo packages, files or services already installed.
 fail() {
     printf 'Installation error: %s\n' "$*" >&2
     exit 2
@@ -38,6 +46,8 @@ staging_dir=
 apt_refreshed=false
 declare -A seen_flags=()
 
+# Consume explicit option/value pairs once each. Refuse ambiguous duplicates
+# before any guest inspection or package installation changes can occur.
 while (($#)); do
     case "$1" in
         --help) usage; exit 0 ;;
@@ -57,6 +67,8 @@ while (($#)); do
     esac
 done
 
+# Establish the supported execution boundary before trusting the source bundle:
+# root inside a fresh Debian 13 container with a working systemd manager.
 [[ $source_dir = /* && $config_input = /* ]] || fail "--source-dir and --config must be absolute paths"
 ((EUID == 0)) || fail "run as root inside the dedicated Debian 13 container"
 [[ -r /etc/os-release ]] || fail "cannot identify the guest operating system"
@@ -68,6 +80,8 @@ systemd-detect-virt --container >/dev/null || fail "refusing to install outside 
 [[ $(cat /proc/1/comm) == systemd ]] || fail "the container must run systemd as PID 1"
 systemctl show-environment >/dev/null || fail "the container's systemd manager is unavailable"
 
+# Resolve inputs and require the installation files as regular, non-symlinked
+# assets. The bundle is deployed code, so it must come from a reviewed checkout.
 source_dir=$(readlink -e -- "$source_dir") || fail "source directory does not exist"
 config_input=$(readlink -e -- "$config_input") || fail "configuration file does not exist"
 [[ -d $source_dir && -f $config_input ]] || fail "source must be a directory and configuration must be a regular file"
@@ -75,6 +89,8 @@ for asset in index.html LICENSE tools/render_config.py lxc/nginx.conf lxc/dobbel
     [[ -f $source_dir/$asset && ! -L $source_dir/$asset ]] || fail "source bundle is missing a regular $asset"
 done
 
+# Refuse to adopt an existing dashboard account, service or installed file tree.
+# An equivalent canonical JSON is handled separately and may be retained.
 for installed in /opt/dobbelt-pi-hole /usr/share/dobbelt-pi-hole \
     /etc/systemd/system/dobbelt-pi-hole.service /etc/dobbelt-pi-hole/nginx.conf \
     /etc/dobbelt-pi-hole/listen.env /usr/share/licenses/dobbelt-pi-hole; do
@@ -125,11 +141,16 @@ canonical=/etc/dobbelt-pi-hole/config.json
 [[ ! -e /etc/dobbelt-pi-hole || -d /etc/dobbelt-pi-hole ]] || fail "configuration directory is not a directory"
 [[ ! -e $canonical || -f $canonical ]] || fail "existing configuration is not a regular file"
 
+# EXIT handler: remove only the temporary directory named by staging_dir, if it
+# was created. Installed application files and the canonical JSON are retained.
 cleanup() {
     if [[ -n $staging_dir ]]; then
         rm -rf -- "$staging_dir"
     fi
 }
+# ERR handler: capture the failed command's status before printing a diagnostic,
+# then exit with that same status. The EXIT trap performs download cleanup;
+# recovery of a partial guest installation belongs to the host/operator workflow.
 on_error() {
     local status=$?
     printf 'Installation failed (exit %s). No existing configuration was replaced. Review the preceding error before retrying.\n' "$status" >&2
@@ -138,6 +159,9 @@ on_error() {
 trap cleanup EXIT
 trap on_error ERR
 
+# Install the package names in "$@" noninteractively, without recommendations.
+# Refresh apt metadata only on the first call by updating apt_refreshed. Both
+# commands change the guest package state; a failure reaches the ERR/EXIT traps.
 install_packages() {
     if [[ $apt_refreshed == false ]]; then
         apt-get update
@@ -152,6 +176,10 @@ if ! command -v python3 >/dev/null; then
     install_packages python3
 fi
 
+# Reuse the bundled renderer for config and CSP validation before deployment.
+# Pass paths and listener values as positional data to this literal Python
+# program. It prints only normalized address/port on stdout for the shell below;
+# errors go to stderr, and conflicting canonical JSON is never overwritten.
 validated_listen=$(python3 - "$source_dir" "$config_input" "$canonical" "$listen_address" "$listen_port" <<'PY'
 import importlib.util
 import ipaddress
@@ -160,6 +188,8 @@ import re
 import sys
 
 source, supplied, canonical, address, port = sys.argv[1:]
+# Load the reviewed bundle's validator so host, guest and generated nginx use
+# the same schema rules. The canonical source and installed files stay untouched.
 spec = importlib.util.spec_from_file_location("dashboard_render_config", Path(source) / "tools/render_config.py")
 renderer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(renderer)
@@ -183,6 +213,9 @@ PY
 )
 read -r listen_address listen_port <<< "$validated_listen"
 
+# Download the pinned browser library and its license into private staging, then
+# verify both digests before copying either asset into the served directory.
+# Normal service startup uses these local files and needs no asset download.
 install_packages curl ca-certificates
 staging_dir=$(mktemp -d /tmp/dobbelt-pi-hole-install.XXXXXXXX)
 curl --fail --show-error --silent --location --proto '=https' --tlsv1.2 \
@@ -205,6 +238,9 @@ install_packages nginx
 systemctl disable nginx.service
 systemctl mask --now nginx.service
 
+# Keep program/assets root-owned and readable, while only the service group can
+# read private configuration. systemd creates the writable runtime directory;
+# the application account cannot rewrite its installed code or central JSON.
 useradd --system --user-group --home-dir /nonexistent --no-create-home \
     --shell /usr/sbin/nologin dobbelt-pi-hole
 install -d -o root -g root -m 0755 /opt/dobbelt-pi-hole /usr/share/dobbelt-pi-hole \
@@ -228,6 +264,9 @@ printf 'DASHBOARD_LISTEN_ADDRESS=%s\nDASHBOARD_LISTEN_PORT=%s\n' \
 install -o root -g dobbelt-pi-hole -m 0640 "$staging_dir/listen.env" /etc/dobbelt-pi-hole/listen.env
 install -o root -g root -m 0644 "$source_dir/lxc/dobbelt-pi-hole.service" /etc/systemd/system/dobbelt-pi-hole.service
 
+# Activate the dedicated unit and confirm its local HTTP listener responds.
+# /healthz is a service-liveness check; it does not authenticate to Pi-hole or
+# verify that a remote browser can reach the CT through its firewall/front proxy.
 systemctl daemon-reload
 systemctl enable --now dobbelt-pi-hole.service
 health_address=$listen_address

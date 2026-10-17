@@ -34,6 +34,8 @@ from render_config import ConfigError, load_config
 
 
 ROOT = Path(__file__).resolve().parents[1]
+# Snapshot only files needed inside the guest. The private JSON is validated
+# separately; Git metadata, unrelated files and host credentials are not bundled.
 BUNDLE_FILES = (
     "index.html", "LICENSE", "tools/render_config.py",
     "tools/install_lxc_guest.sh", "lxc/nginx.conf", "lxc/dobbelt-pi-hole.service",
@@ -58,9 +60,26 @@ class InstallError(RuntimeError):
 
 
 class Runner:
-    """Execute argument arrays with bounded timeouts, never through a shell."""
+    """Provide logged subprocess execution and decoded Proxmox inventory reads.
+
+    Callers supply argument arrays rather than host-shell command strings.
+    Tests can replace this boundary to simulate Proxmox without creating a CT.
+    """
 
     def run(self, arguments, *, timeout=60, capture=True, check=True):
+        """Execute a nonempty argument sequence and return its CompletedProcess.
+
+        Convert each argument to text, print the shell-quoted command for the
+        operator, and use the C locale for predictable command output. timeout
+        is in seconds; capture=False streams output instead of collecting it.
+        No implicit shell is started, though a caller may explicitly invoke a
+        guest shell for a fixed program such as NETWORK_PROBE.
+
+        Raise InstallError when execution or its timeout fails, and on a nonzero
+        exit when check=True. With check=False, return that exit code for the
+        caller to interpret. Captured failure output is limited in the reported
+        error; command arguments themselves are always logged.
+        """
         command = [str(argument) for argument in arguments]
         print("+ " + shlex.join(command), flush=True)
         environment = os.environ.copy()
@@ -78,6 +97,13 @@ class Runner:
         return result
 
     def get(self, path, *arguments):
+        """Read a Proxmox API path through pvesh and return its decoded JSON value.
+
+        path names the endpoint and arguments supplies any additional CLI
+        filters. The result may be an object, list or scalar, so the caller must
+        validate the expected shape. Propagate command failures as InstallError
+        and raise the same error type if stdout is not valid JSON.
+        """
         result = self.run(["pvesh", "get", path, *arguments, "--output-format", "json"])
         try:
             return json.loads(result.stdout)
@@ -87,7 +113,13 @@ class Runner:
 
 @dataclass(frozen=True)
 class Plan:
-    """An inspected local node, free guest ID and exact template volume."""
+    """Keep the inspected node, guest ID, template and installation identity.
+
+    node and ctid identify the intended guest; template is its full storage
+    volume ID. download records whether that template needs fetching. marker
+    becomes the CT description and is checked before later guest operations.
+    This immutable snapshot does not reserve the ID or lock Proxmox inventory.
+    """
 
     node: str
     ctid: int
@@ -97,7 +129,12 @@ class Plan:
 
 
 def parser():
-    """Describe the host installer; all environment-specific settings are options."""
+    """Return the host installer's ArgumentParser without inspecting Proxmox.
+
+    Define source, storage, networking and resource options plus the read-only
+    dry-run switch. Creating the parser performs no parsing or deployment; main
+    parses the supplied command line and then validates the resulting namespace.
+    """
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--config", type=Path, required=True, help="canonical instance JSON to copy into the new CT")
     result.add_argument("--storage", required=True, help="active rootdir storage for the new CT disk")
@@ -119,7 +156,16 @@ def parser():
 
 
 def validate_arguments(arguments):
-    """Reject malformed network/storage input before any Proxmox command runs."""
+    """Validate the parsed CLI namespace and normalize its IP strings in place.
+
+    Check identifier syntax, resource bounds, DHCP/static-address combinations,
+    nameserver literals and explicitly selected Debian template volume names.
+    Static IPv4, gateway and nameserver values are replaced with canonical text.
+    Return None on success or raise InstallError for invalid input.
+
+    This performs no commands or network probes: whether storage, bridges and
+    addresses are actually usable must be checked later against the target node.
+    """
     for key in ("storage", "template_storage"):
         if not STORAGE_ID.fullmatch(getattr(arguments, key)):
             raise InstallError(f"--{key.replace('_', '-')} is not a valid Proxmox storage ID")
@@ -172,7 +218,14 @@ def validate_arguments(arguments):
 
 
 def snapshot_source(root=ROOT):
-    """Read only the installation allowlist, excluding Git state and private files."""
+    """Return an installation-file snapshot as relative names mapped to bytes.
+
+    root is the reviewed checkout directory. Read only BUNDLE_FILES, refusing
+    symlinks, paths escaping root, missing files and files larger than 5 MiB.
+    Raise InstallError for unsafe sources; filesystem access errors propagate.
+    No files are written. Later hashing and transfer use these exact bytes so
+    source edits during provisioning cannot silently change the deployed bundle.
+    """
     result = {}
     for name in BUNDLE_FILES:
         source = root / name
@@ -186,7 +239,12 @@ def snapshot_source(root=ROOT):
 
 
 def ensure_host(runner):
-    """Require the supported host architecture, root and Proxmox CLI tools."""
+    """Require root, an amd64 host and the supported Proxmox VE 9 command tools.
+
+    Inspect local identity, architecture and executable availability, then use
+    runner to read pveversion. Return None when supported or raise InstallError
+    before provisioning begins. This does not install tools or change the host.
+    """
     if os.geteuid() != 0:
         raise InstallError("Run this installer as root on the target Proxmox VE node")
     if platform.machine() not in {"x86_64", "amd64"}:
@@ -200,7 +258,20 @@ def ensure_host(runner):
 
 
 def inventory_plan(arguments, runner):
-    """Inspect the local node, storage, bridge and ID before any guest mutation."""
+    """Resolve validated CLI choices against Proxmox inventory and return a Plan.
+
+    Through runner, check quorum, identify the local node, verify storage space
+    and content types, require an active bridge, and select/check an unused
+    cluster-wide guest ID. Choose a supported Debian template and attach a new
+    ownership marker. Reject unsupported or unavailable resources with
+    InstallError; an explicitly named template must already be cached.
+
+    When no template is specified, normal installs refresh the host's template
+    catalogue with pveam update; dry runs use the existing catalogue unchanged.
+    No template is downloaded and no CT is created here. Inventory can change
+    after this function returns, so allocation and ownership are checked again
+    during provision rather than treating the plan as a reservation.
+    """
     status = runner.get("/cluster/status")
     if not isinstance(status, list):
         raise InstallError("Invalid cluster status response")
@@ -246,6 +317,8 @@ def inventory_plan(arguments, runner):
                       and item.get("architecture", "amd64") == "amd64"]
         if not candidates:
             raise InstallError("No Debian 13 standard amd64 template is available in the PVE catalogue; check pveam update")
+        # Compare numeric filename components first and the full filename second
+        # so this sort-key callback chooses a deterministic newest candidate.
         name = max(candidates, key=lambda value: (tuple(map(int, re.findall(r"\d+", value))), value))
         volume = arguments.template_storage + ":vztmpl/" + name
     cached = runner.get(f"/nodes/{node}/storage/{arguments.template_storage}/content", "--content", "vztmpl")
@@ -256,7 +329,14 @@ def inventory_plan(arguments, runner):
 
 
 def create_command(arguments, plan):
-    """Build pct create with an unprivileged fresh rootfs and bounded resources."""
+    """Return the pct create argument array for a validated namespace and Plan.
+
+    Configure a new unprivileged Debian root disk, the requested resource and
+    IPv4 settings, deletion protection and the installation marker. Start and
+    automatic boot remain disabled until later provisioning succeeds. The NIC
+    firewall flag enables firewall participation; it does not create rules.
+    This only builds a command and neither allocates an ID nor changes a CT.
+    """
     network = f"name=eth0,bridge={arguments.bridge},ip={arguments.ipv4},ip6=manual,firewall=1,type=veth"
     if arguments.gateway:
         network += ",gw=" + arguments.gateway
@@ -276,13 +356,24 @@ def create_command(arguments, plan):
 
 
 def owns_container(runner, plan):
-    """Check a per-installation marker before acting on an already created ID."""
+    """Return whether the current CT description matches this installation marker.
+
+    Read plan.node/plan.ctid through runner and compare with plan.marker. Missing
+    or unreadable inventory propagates the runner's InstallError rather than
+    being treated as permission to act. This read is an identity check, not a
+    lock or an atomic guarantee about the following Proxmox operation.
+    """
     current = runner.get(f"/nodes/{plan.node}/lxc/{plan.ctid}/config")
     return isinstance(current, dict) and current.get("description", "").strip() == plan.marker
 
 
 def guest_command(plan, *arguments):
-    """Execute inside the fresh guest without inheriting the host environment."""
+    """Build a pct exec command for the planned CT without inheriting host env.
+
+    arguments supplies the guest executable and its arguments; each is converted
+    to text and placed after the CLI separator. Return the argument array only.
+    The caller must check ownership and execute it, normally through run_owned.
+    """
     return ["pct", "exec", str(plan.ctid), "--keep-env", "0", "--", *map(str, arguments)]
 
 
@@ -292,6 +383,12 @@ def run_owned(runner, plan, arguments, **options):
     pct has no conditional exec/push API. Protection prevents ordinary deletion;
     the marker additionally detects a CT replaced by an administrator who has
     deliberately cleared protection. Never continue into that replacement.
+
+    runner reads the identity from plan, then executes the arguments sequence
+    with forwarded options such as timeout, capture and check. Return its
+    CompletedProcess. A marker mismatch raises InstallError before execution;
+    command/read errors propagate. The separate check and operation do not
+    form an atomic Proxmox transaction or reserve the container.
     """
     if not owns_container(runner, plan):
         raise InstallError(f"CT {plan.ctid} ownership changed; refusing further guest operations")
@@ -301,9 +398,18 @@ def run_owned(runner, plan, arguments, **options):
 def wait_guest_network(arguments, plan, runner):
     """Wait for the configured IPv4 address and download networking before apt.
 
-    A working pct exec alone says nothing about DHCP or DNS readiness. Inspect
-    eth0, then resolve the package/license hosts and connect to the Chart.js
-    HTTPS endpoint. Individual guest probes and the retry window are bounded.
+    arguments supplies DHCP or the expected static IPv4 address; plan and runner
+    identify and inspect only the newly owned CT. Wait for a usable eth0 IPv4,
+    resolve the package/license hosts and test TCP reachability to the Chart.js
+    endpoint on port 443. This does not validate TLS, download assets or contact
+    any configured Pi-hole API.
+
+    A working pct exec alone says nothing about DHCP or DNS readiness. Individual
+    probes and the retry window are bounded; nonzero probe exits or malformed
+    address data trigger another probe. Return None once ready, or raise
+    InstallError when the window expires. Runner errors and ownership failures
+    propagate. This prints progress and runs guest inspection commands but
+    installs no packages or network settings.
     """
     deadline = time.monotonic() + NETWORK_WAIT_SECONDS
     expected_ip = None if arguments.ipv4 == "dhcp" else str(ipaddress.IPv4Interface(arguments.ipv4).ip)
@@ -344,7 +450,25 @@ def wait_guest_network(arguments, plan, runner):
 
 
 def provision(arguments, plan, files, config, runner):
-    """Create, populate and health-check a new CT; never delete it on failure."""
+    """Create and populate the planned CT from a checked source/config snapshot.
+
+    arguments holds validated deployment options; plan identifies the node,
+    template and ownership marker; files maps allowed relative paths to bytes;
+    config is the normalized canonical JSON. Use runner to download a missing
+    template, create/start the CT, wait for guest networking, copy the snapshot
+    and run the native installer. Host staging files are temporary; the guest
+    source bundle and installed configuration remain available for diagnosis.
+
+    Enable automatic boot only after the native service and HTTP health/public
+    configuration checks succeed. These checks do not authenticate to Pi-hole
+    or establish end-to-end DNS functionality. Return None and print the CT's
+    identity and access details on success.
+
+    On InstallError, OSError or interruption, retain the new CT and attempt to
+    stop it and disable automatic boot only while its marker still matches.
+    Report any incomplete cleanup and re-raise the original failure. Never
+    delete a CT, adopt an existing one or silently retry guest installation.
+    """
     created = False
     create_attempted = False
     try:
@@ -436,7 +560,19 @@ def provision(arguments, plan, files, config, runner):
 
 
 def main(argv=None, *, runner=None, root=ROOT):
-    """Validate the requested deployment, print its plan and optionally create it."""
+    """Run host preflight and a dry run or installation, returning a CLI status.
+
+    argv is an argument list, or None for the process command line. runner is
+    injectable for command-fixture tests; root selects the reviewed source
+    checkout. Validate local inputs, snapshot the allowed files, inspect Proxmox
+    and print the planned command plus source hashes. A dry run then exits;
+    otherwise provision performs the new-CT installation.
+
+    Return 0 on success, 2 for reported configuration/provisioning/filesystem
+    failures, or 130 after interruption. argparse handles help and syntax errors.
+    All mutations belong to the explicitly selected install path; the dry-run
+    path performs reads and console reporting only.
+    """
     arguments = parser().parse_args(argv)
     runner = runner or Runner()
     try:

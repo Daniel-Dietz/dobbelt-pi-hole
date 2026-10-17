@@ -1,18 +1,26 @@
+# Build the application from this reviewed checkout. The image name below labels
+# that local build; it does not imply a pre-published registry image is required.
 services:
   dashboard:
     build: .
     image: dobbelt-pi-hole:1.5.009
+    # Publish only on the Docker host's loopback interface for a local front proxy.
     ports:
       - "127.0.0.1:8080:8080"
+    # Mount the whole input directory so editors can replace config.json safely.
+    # Restart the service after editing; startup regenerates both public outputs.
     volumes:
       - type: bind
         source: ./config
         target: /config
         read_only: true
+    # The runtime account cannot alter installed code or assets. Writable state is
+    # ephemeral; generated configuration uses the same UID/GID as the Dockerfile.
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m,mode=1777
       - /run/dobbelt-pi-hole:rw,noexec,nosuid,size=1m,uid=101,gid=101,mode=0755
+    # nginx listens on an unprivileged port and needs no retained capabilities.
     cap_drop:
       - ALL
     security_opt:

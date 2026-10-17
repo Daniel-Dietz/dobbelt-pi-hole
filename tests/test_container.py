@@ -29,6 +29,12 @@ FIXTURE = ROOT / "tests" / "fixtures" / "fake_pihole.py"
 
 
 def docker(*args, check=True, timeout=30):
+    """Run a Docker argument array from the checkout and capture both output streams.
+
+    Return the completed process so callers can inspect expected failures.
+    With check enabled, a nonzero exit raises an assertion containing Docker's
+    diagnostics; timeout is passed to subprocess.run in seconds.
+    """
     result = subprocess.run(
         ["docker", *map(str, args)], cwd=ROOT, text=True,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout,
@@ -42,6 +48,14 @@ def docker(*args, check=True, timeout=30):
 
 
 def request(origin, path, method="GET", body=None, headers=None, timeout=5, allow_fixture_certificate=False, ca_file=None):
+    """Return the status, response headers and body bytes from one HTTP request.
+
+    The supplied origin selects the host and transport; path includes any
+    query string. Redirects are returned to the caller, not followed, and the
+    connection is always closed. HTTPS validates certificates against ca_file
+    or the default trust store unless the direct fixture-control exception is
+    explicitly enabled. That exception does not change nginx's TLS policy.
+    """
     url = urlsplit(origin)
     if url.scheme == "https":
         context = ssl.create_default_context(cafile=ca_file)
@@ -61,13 +75,25 @@ def request(origin, path, method="GET", body=None, headers=None, timeout=5, allo
 
 
 def expected_base(server):
+    """Derive the expected proxy prefix independently from a normalized fixture URL.
+
+    Hashing the server ID and API target checks that generated routes bind a
+    session to a particular destination rather than merely a display position.
+    """
     # Fixtures use already-normalized URLs. This independently checks the public contract.
     identity = hashlib.sha256((server["id"] + "\0" + server["apiUrl"]).encode("utf-8")).hexdigest()
     return "/api" + server["id"] + "/" + identity
 
 
 def make_fixture_certificate(directory, hostname):
-    """Generate a disposable certificate and test-only key, never committed or reused."""
+    """Create a one-day self-signed fixture certificate and return its Path.
+
+    OpenSSL writes a certificate and key into a new directory, valid for the
+    supplied DNS hostname and loopback IP. Both files are readable by the
+    unprivileged fixture container. They are temporary test material, never
+    deployment credentials; a missing OpenSSL binary or generation error fails
+    the test instead of silently dropping HTTPS coverage.
+    """
     if not shutil.which("openssl"):
         raise RuntimeError("OpenSSL is required to generate the disposable HTTPS fixture certificate")
     directory.mkdir(mode=0o755)
@@ -86,8 +112,21 @@ def make_fixture_certificate(directory, hostname):
 
 
 class ContainerTests(unittest.TestCase):
+    """Check the built dashboard image against isolated HTTP and HTTPS fixtures.
+
+    Containers use a suite-specific Docker network and loopback-published
+    ports. Assertions cover nginx's observable behavior rather than treating
+    a rendered configuration string as proof of correct proxy operation.
+    """
+
     @classmethod
     def setUpClass(cls):
+        """Require the test image and allocate shared backends with ordered cleanup.
+
+        Create four named HTTP fixtures, a private Docker network and a
+        temporary file directory. Registered cleanups remove containers before
+        the network and files, including resources created by a failed setup.
+        """
         if not shutil.which("docker"):
             raise RuntimeError("Docker is required for the container integration tests")
         docker("info", "--format", "{{.ServerVersion}}")
@@ -99,6 +138,7 @@ class ContainerTests(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory(prefix=cls.prefix + "-")
         cls.addClassCleanup(cls.temp.cleanup)
         docker("network", "create", cls.network)
+        # This callback removes only this suite's network after container cleanup.
         cls.addClassCleanup(lambda: docker("network", "rm", cls.network, check=False))
         cls.addClassCleanup(cls.remove_all_containers)
         cls.backends = {}
@@ -107,17 +147,30 @@ class ContainerTests(unittest.TestCase):
 
     @classmethod
     def remove_container(cls, name):
+        """Force-remove a container only if this suite registered its exact name.
+
+        Forget the name afterward so per-test and class cleanup can overlap
+        without attempting to manage unrelated Docker resources.
+        """
         if name in cls.containers:
             docker("rm", "--force", name, check=False)
             cls.containers.discard(name)
 
     @classmethod
     def remove_all_containers(cls):
+        """Remove all remaining registered containers using a stable name snapshot."""
         for name in tuple(cls.containers):
             cls.remove_container(name)
 
     @classmethod
     def run_container(cls, suffix, port, extra, command=()):
+        """Start the test image on the suite network and return its name and origin.
+
+        Extra Docker options and an optional command customize a fixture or
+        dashboard instance. The requested container port is published only on
+        host loopback, capabilities are dropped, and the name is registered
+        before startup. Origin is None if an early exit prevents port exposure.
+        """
         name = cls.prefix + "-" + suffix + "-" + uuid.uuid4().hex[:6]
         # Track names before creation so failed startup is cleaned up too.
         cls.containers.add(name)
@@ -135,6 +188,12 @@ class ContainerTests(unittest.TestCase):
 
     @classmethod
     def wait_ready(cls, container, path, expected=None, timeout=20):
+        """Poll a running container for HTTP 200 and an optional JSON predicate.
+
+        Stop on success, container exit or the deadline. Failed readiness
+        includes the last response/error and container logs so startup failures
+        remain diagnosable even when no usable HTTP service appeared.
+        """
         deadline, last = time.monotonic() + timeout, "no response"
         while time.monotonic() < deadline:
             inspection = json.loads(docker("inspect", container["name"]).stdout)[0]
@@ -154,6 +213,12 @@ class ContainerTests(unittest.TestCase):
 
     @classmethod
     def start_backend(cls, alias, tls_directory=None):
+        """Launch the echo fixture under a Docker DNS alias and wait for its health URL.
+
+        A supplied certificate directory enables HTTPS with its fixture.crt
+        and fixture.key files. Return container metadata, including the alias
+        and the test-only certificate exception for direct control requests.
+        """
         options = [
             "--network-alias", alias, "--entrypoint", "python3",
             "--mount", f"type=bind,src={FIXTURE},dst=/fixture/fake_pihole.py,readonly",
@@ -173,12 +238,22 @@ class ContainerTests(unittest.TestCase):
         return container
 
     def setUp(self):
+        """Reset shared backend request logs and track dashboards for this test.
+
+        Reset calls use control endpoints, so subsequent assertions see only
+        API traffic generated by the current test.
+        """
         self.apps = []
         for backend in self.backends.values():
             status, _headers, _body = request(backend["origin"], "/__fixture__/reset", "POST")
             self.assertEqual(status, 200)
 
     def tearDown(self):
+        """Print retained dashboard logs when this test or one of its subtests fails.
+
+        Actual container removal is handled by registered cleanup callbacks;
+        collecting logs first preserves evidence from early startup failures.
+        """
         # Logs are useful even when nginx failed before exposing a port.
         failed = any(test is self or getattr(test, "test_case", None) is self
                      for test, _traceback in self._outcome.result.errors + self._outcome.result.failures)
@@ -190,6 +265,11 @@ class ContainerTests(unittest.TestCase):
                 print(f"\nContainer logs ({app['name']}):\n{logs.stdout}{logs.stderr}", flush=True)
 
     def config(self, count=2):
+        """Return a fresh configuration targeting the requested number of fixtures.
+
+        Unicode and HTML-like label characters exercise safe public JSON
+        handling without requiring a live Pi-hole or mutating shared input.
+        """
         return {
             "version": 1, "defaultLanguage": "de",
             "servers": [
@@ -200,6 +280,13 @@ class ContainerTests(unittest.TestCase):
         }
 
     def start_dashboard(self, config=None, raw=None, missing=False, wait=True, ca_bundle=None):
+        """Start an isolated dashboard with a read-only private configuration mount.
+
+        Supply a configuration object, raw file text or a deliberately missing
+        file to exercise startup validation. Runtime files live on tmpfs; an
+        optional CA bundle controls nginx trust. Return metadata and the source
+        directory for later edits, registering cleanup before optional polling.
+        """
         directory = Path(self.temp.name) / uuid.uuid4().hex
         directory.mkdir(mode=0o755)
         if not missing:
@@ -222,21 +309,38 @@ class ContainerTests(unittest.TestCase):
         return app
 
     def get_json(self, container, path, status=200, **kwargs):
+        """Request JSON from a container, assert its status and return the decoded value.
+
+        Forward request options such as method, body and headers while inheriting
+        any direct HTTPS fixture certificate exception from container metadata.
+        """
         kwargs.setdefault("allow_fixture_certificate", container.get("allow_fixture_certificate", False))
         actual, _headers, body = request(container["origin"], path, **kwargs)
         self.assertEqual(actual, status, body.decode("utf-8", errors="replace"))
         return json.loads(body)
 
     def backend_requests(self, number):
+        """Return the selected shared backend's recorded API traffic via its control URL."""
         return self.get_json(self.backends[str(number)], "/__fixture__/requests")
 
     def assert_stale(self, app, path, method="POST"):
+        """Send a retired-session write and require the dashboard's configuration error.
+
+        The expected HTTP 409 and error code distinguish a stale route from a
+        backend rejection; callers separately verify no upstream received it.
+        """
         value = self.get_json(app, path, status=409, method=method,
                               body=b'{"fixture":"must not reach an upstream"}',
                               headers={"Content-Type": "application/json", "X-FTL-SID": "retired-session"})
         self.assertEqual(value["error"]["code"], "dashboard_config_changed")
 
     def assert_security_headers(self, headers):
+        """Assert delivered isolation/cache headers and return the script-hash CSP.
+
+        Require nginx's version to be hidden and inline scripts to use hashes
+        without unsafe-inline or unsafe-eval. Callers compare the returned
+        policy against the actual HTML when checking script integrity.
+        """
         self.assertEqual(headers.get("Server"), "nginx")
         self.assertEqual(headers.get("X-Content-Type-Options"), "nosniff")
         self.assertEqual(headers.get("X-Frame-Options"), "DENY")
@@ -253,6 +357,12 @@ class ContainerTests(unittest.TestCase):
         return policy
 
     def test_public_configuration_and_routes_for_two_three_and_four_servers(self):
+        """Check each supported instance count through the running image.
+
+        Public JSON must omit private targets, each route must reach its own
+        fixture, and locally served assets must match the delivered CSP. An
+        inactive instance route must reject writes instead of forwarding them.
+        """
         for count in (2, 3, 4):
             with self.subTest(count=count):
                 config = self.config(count)
@@ -293,6 +403,13 @@ class ContainerTests(unittest.TestCase):
                 self.remove_container(app["name"])
 
     def test_proxy_preserves_encoded_paths_queries_bodies_headers_and_statuses(self):
+        """Verify nginx preserves API payloads while isolating proxy credentials.
+
+        Exercise repeated/encoded query fields, a nested API root and write
+        methods. Front-proxy cookies and authorization must not reach Pi-hole;
+        upstream cookie, authentication and X-Accel headers must not change the
+        browser response policy. Error responses retain dashboard headers.
+        """
         config = self.config()
         config["servers"][1]["apiUrl"] = "http://pihole-fixture-2:8081/proxy/api"
         app = self.start_dashboard(config)
@@ -340,6 +457,12 @@ class ContainerTests(unittest.TestCase):
                 self.assert_security_headers(headers)
 
     def test_gravity_stream_delivers_a_chunk_before_the_upstream_finishes(self):
+        """Prove Gravity output reaches the client while its upstream stream is open.
+
+        The fixture waits for an explicit release after its first chunk, so a
+        buffering regression cannot pass merely because the final body matches.
+        Always release the fixture and close the client connection on exit.
+        """
         config = self.config()
         app = self.start_dashboard(config)
         address = urlsplit(app["origin"])
@@ -365,6 +488,11 @@ class ContainerTests(unittest.TestCase):
                 connection.close()
 
     def test_stale_and_legacy_routes_reject_writes_without_contacting_backends(self):
+        """Require retired target hashes, legacy routes and absent IDs to fail locally.
+
+        Inspect all backend logs to establish that rejected writes were not
+        replayed against either an old or a replacement Pi-hole destination.
+        """
         config = self.config()
         app = self.start_dashboard(config)
         previous = {**config["servers"][0], "apiUrl": "http://retired-fixture.invalid/api"}
@@ -375,6 +503,11 @@ class ContainerTests(unittest.TestCase):
             self.assertEqual(self.backend_requests(number), [], "Rejected writes must never reach an upstream")
 
     def test_missing_or_invalid_configuration_fails_before_nginx_serves(self):
+        """Require missing JSON, malformed JSON and duplicate IDs to stop startup.
+
+        Check the container's nonzero exit and configuration diagnostic rather
+        than mistaking a temporarily unavailable HTTP port for safe rejection.
+        """
         invalid = self.config()
         invalid["servers"][1]["id"] = "1"
         cases = ({"missing": True}, {"raw": "{ invalid JSON"}, {"config": invalid})
@@ -394,6 +527,11 @@ class ContainerTests(unittest.TestCase):
                 self.remove_container(app["name"])
 
     def test_offline_upstream_does_not_block_startup_and_runtime_dns_finds_it_later(self):
+        """Check that an initially absent backend hostname does not prevent startup.
+
+        The other target remains usable, and a fixture started later becomes
+        reachable through the existing nginx process without rebuilding it.
+        """
         config = self.config()
         late_alias = "late-fixture-" + uuid.uuid4().hex[:8]
         config["servers"][1]["apiUrl"] = "http://" + late_alias + ":8081/api"
@@ -408,6 +546,12 @@ class ContainerTests(unittest.TestCase):
         self.assertEqual(response["backend"], late_alias)
 
     def test_https_upstream_requires_trust_or_explicit_verification_override(self):
+        """Check rejection and both supported acceptance paths for a fixture TLS peer.
+
+        Default verification must reject the self-signed certificate before
+        sending an API request. Explicitly disabling verification or providing
+        its certificate as a trust bundle must allow the expected target.
+        """
         alias = "pihole-https-fixture"
         certificate = make_fixture_certificate(Path(self.temp.name) / "https-fixture", alias)
         backend = self.start_backend(alias, certificate.parent)
@@ -437,6 +581,12 @@ class ContainerTests(unittest.TestCase):
         self.assertEqual(len(self.get_json(backend, "/__fixture__/requests")), 2)
 
     def test_restart_applies_canonical_config_and_invalidates_previous_target_routes(self):
+        """Replace a target in the mounted JSON and verify route regeneration on restart.
+
+        Public names, language and active IDs must change with the new file.
+        A write using the retired route must reach neither the former backend
+        nor the replacement, while the newly generated routes remain usable.
+        """
         config = self.config()
         app = self.start_dashboard(config)
         old_base = expected_base(config["servers"][0])
@@ -458,6 +608,7 @@ class ContainerTests(unittest.TestCase):
         bindings = (inspection["NetworkSettings"]["Ports"] or {}).get("8080/tcp")
         if bindings:
             app["origin"] = "http://127.0.0.1:" + bindings[0]["HostPort"]
+        # The predicate waits for the replacement JSON, not merely any healthy response.
         self.wait_ready(app, "/config.json", lambda value: value["defaultLanguage"] == "en")
         public = self.get_json(app, "/config.json")
         self.assertEqual([server["id"] for server in public["servers"]], ["1", "2", "4"])

@@ -1,5 +1,9 @@
+# Native container service: render validated deployment input before starting
+# nginx under the dedicated, unprivileged application account.
 [Unit]
 Description=Double Pi-hole dashboard
+# Network ordering does not require live Pi-hole APIs; their DNS is resolved
+# when requests arrive rather than during startup configuration generation.
 After=network.target
 ConditionVirtualization=container
 StartLimitIntervalSec=60s
@@ -11,15 +15,22 @@ User=dobbelt-pi-hole
 Group=dobbelt-pi-hole
 UMask=0077
 Environment=PYTHONDONTWRITEBYTECODE=1
+# The root-owned environment file supplies only listener address/port settings.
+# Instance definitions remain in the separate canonical JSON below.
 EnvironmentFile=/etc/dobbelt-pi-hole/listen.env
 RuntimeDirectory=dobbelt-pi-hole
 RuntimeDirectoryMode=0750
+# A missing/invalid JSON or mismatched nginx configuration prevents startup.
 ExecStartPre=/usr/bin/python3 /opt/dobbelt-pi-hole/render_config.py --config /etc/dobbelt-pi-hole/config.json --output-dir /run/dobbelt-pi-hole --web-root /usr/share/dobbelt-pi-hole --listen-address ${DASHBOARD_LISTEN_ADDRESS} --listen-port ${DASHBOARD_LISTEN_PORT}
 ExecStartPre=/usr/sbin/nginx -e stderr -t -q -c /etc/dobbelt-pi-hole/nginx.conf
 ExecStart=/usr/sbin/nginx -e stderr -c /etc/dobbelt-pi-hole/nginx.conf -g "daemon off;"
+# Reload regenerates files, validates nginx and only then signals the master.
+# Individual output replacement is atomic, but these steps are not a transaction
+# and cannot roll back public JSON if a subsequent validation/reload fails.
 ExecReload=/usr/bin/python3 /opt/dobbelt-pi-hole/render_config.py --config /etc/dobbelt-pi-hole/config.json --output-dir /run/dobbelt-pi-hole --web-root /usr/share/dobbelt-pi-hole --listen-address ${DASHBOARD_LISTEN_ADDRESS} --listen-port ${DASHBOARD_LISTEN_PORT}
 ExecReload=/usr/sbin/nginx -e stderr -t -q -c /etc/dobbelt-pi-hole/nginx.conf
 ExecReload=/bin/kill -s HUP $MAINPID
+# Ask nginx to finish active requests gracefully, with a bounded stop deadline.
 KillSignal=SIGQUIT
 KillMode=mixed
 TimeoutStartSec=30s

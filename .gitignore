@@ -1,5 +1,7 @@
+# Dependencies and local test artifacts are recreated from the checked-in sources.
 node_modules/
 test-results/
 playwright-report/
+# The operator's upstream configuration stays local; commit only the example and schema.
 config/config.json
 __pycache__/

@@ -50,6 +50,7 @@ Proxmox-vært er fortsat åben i
 | [Konfiguration](docs/CONFIGURATION.md) | JSON-felter, API-rettigheder, genererede ruter, TLS, konfigurationsændringer og migrering |
 | [LXC-installation og drift](docs/LXC.md) | Værtskrav, CLI-parametre, tjenestekommandoer, fejlsøgning, backup og gendannelse |
 | [Oversættelser og frontend-kontroller](docs/I18N.md) | Sprogkataloger, tilføjelse af sprog, enheds- og browsertests |
+| [Udvikling](docs/DEVELOPMENT.md) | Kildekodens opbygning, læsbar kode, engelsk funktionsdokumentation og testgrupper |
 
 De detaljerede vejledninger under `docs/` er på engelsk; alle tre README-filer
 beskriver installation, aktuel status og roadmap med issues på deres eget sprog.
@@ -147,7 +148,7 @@ kopi af projektet:
 ```bash
 cd /root/dobbelt-pi-hole
 cp config/config.example.json config/config.json
-# Redigér config/config.json med dine egne Pi-hole-installationer.
+# Edit config/config.json with your own Pi-hole instances.
 python3 tools/create_lxc.py \
   --config /root/dobbelt-pi-hole/config/config.json \
   --storage local-lvm \
@@ -282,7 +283,10 @@ sprog kræver hverken backend, buildproces eller yderligere afhængigheder
 ved afvikling. Servernavne, domæner, klientnavne, kommentarer og andre værdier
 fra brugere eller Pi-hole-API'erne ændres ikke, når brugerfladens sprog skiftes.
 
-Opsætningsvejledning og nginx-eksempler findes også på alle tre sprog:
+README-filerne indeholder opsætningsvejledninger på alle tre sprog. Kommentarer
+og funktionsdokumentation i kildekode, kodeeksempler og nginx-eksempler er altid
+på engelsk. Nginx-eksempelfilerne nedenfor har identisk indhold; deres
+eksisterende filnavne bevares af hensyn til dokumentationslinks.
 
 | Sprog | Dokumentation | nginx-eksempel |
 | --- | --- | --- |
@@ -459,6 +463,12 @@ navngivne parametre i alle sprogkataloger, og medtag oversættelser af statisk
 tekst, dynamiske tilstande og tilgængelighedstekster.
 Se [oversættelsesvejledningen](docs/I18N.md) (på engelsk) for hjælpefunktioner,
 tilføjelse af sprog og kørsel af de automatiske kontroller.
+
+Hold den vedligeholdte kildekode læsbar med beskrivende navne og tydelig programlogik.
+Dokumentér hver funktion, også indlejrede callbacks og test-fixtures, ved dens
+definition med en nyttig engelsk beskrivelse.
+[Udviklingsvejledningen](docs/DEVELOPMENT.md) (på engelsk) forklarer
+dokumentationsreglerne, kildekodens opbygning og kontrollerne.
 
 Kontrollér aktuel `main`, det relevante issue, dets afhængigheder og eksisterende
 PR'er, før du begynder på en arbejdspakke. Følg arbejdsgangen i
