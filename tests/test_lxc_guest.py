@@ -246,19 +246,20 @@ class NativeGuestTests(unittest.TestCase):
         return uid
 
     def assert_file_permissions(self, uid):
-        paths = [PRIVATE_CONFIG, "/etc/dobbelt-pi-hole/nginx.conf", "/etc/dobbelt-pi-hole/listen.env",
-                 WEB_ROOT + "/index.html", "/opt/dobbelt-pi-hole/render_config.py", RUNTIME,
-                 RUNTIME + "/config.json", RUNTIME + "/nginx.conf"]
+        root_owned_paths = [PRIVATE_CONFIG, "/etc/dobbelt-pi-hole/nginx.conf", "/etc/dobbelt-pi-hole/listen.env",
+                            WEB_ROOT + "/index.html", "/opt/dobbelt-pi-hole/render_config.py"]
+        runtime_paths = [RUNTIME + "/config.json", RUNTIME + "/nginx.conf"]
+        paths = root_owned_paths + [RUNTIME] + runtime_paths
         result = self.guest_exec("python3", "-c",
                                 "import json,os,stat,sys;print(json.dumps({p:[os.stat(p).st_uid,os.stat(p).st_gid,stat.S_IMODE(os.stat(p).st_mode)] for p in sys.argv[1:]}))",
                                 *paths)
         metadata = json.loads(result.stdout)
-        for path in paths[:6]:
+        for path in root_owned_paths:
             self.assertEqual(metadata[path][0], 0, path)
             self.assertEqual(metadata[path][2] & 0o022, 0, path + " must not be writable by the service or other users")
         self.assertEqual(metadata[PRIVATE_CONFIG][2] & 0o007, 0, "The canonical configuration must not be world-readable")
         self.assertEqual(metadata[RUNTIME][0], uid)
-        for path in paths[-2:]:
+        for path in runtime_paths:
             self.assertEqual(metadata[path][0], uid, "ExecStartPre must run as the service account")
         readable = self.guest_exec("runuser", "--user", ACCOUNT, "--", "test", "-r", PRIVATE_CONFIG, check=False)
         self.assertEqual(readable.returncode, 0, "The service must read the canonical file to regenerate its runtime files")
