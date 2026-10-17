@@ -11,7 +11,7 @@ COPY container/nginx.conf /etc/nginx/nginx.conf
 COPY index.html /usr/share/nginx/html/index.html
 COPY LICENSE /usr/share/licenses/dobbelt-pi-hole/LICENSE
 
-# Pin and verify the same local chart library used by the standalone dashboard.
+# Download and verify the local chart library and its license at image build time.
 ADD --checksum=sha256:81ffafe13c37e1b25793b020d446f4d9739b949dadb7f9f79d709a0cad781c2f \
     https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js /usr/share/nginx/html/chart.umd.min.js
 ADD --checksum=sha256:5a0877ad6d818529be4f33009d0942cdf7e2ed7656156f4aba7308459a546030 \
