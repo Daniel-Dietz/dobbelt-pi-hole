@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "defaultLanguage": "auto",
+  "servers": [
+    {
+      "id": "1",
+      "label": "Pi-hole 1",
+      "apiUrl": "https://pihole1.example.com/api",
+      "verifyTls": true
+    },
+    {
+      "id": "2",
+      "label": "Pi-hole 2",
+      "apiUrl": "https://pihole2.example.com/api",
+      "verifyTls": true
+    }
+  ]
+}

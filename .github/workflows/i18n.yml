@@ -43,3 +43,21 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Verify all languages in the browser
         run: npm run test:browser
+
+  container:
+    name: External configuration and Docker behavior
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DASHBOARD_TEST_IMAGE: dobbelt-pi-hole:ci
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Validate configuration and generated proxy files
+        run: python3 -m unittest discover -s tests -p 'test_render_config.py' -v
+      - name: Validate Docker Compose configuration
+        run: docker compose -f compose.yaml config --quiet
+      - name: Build the deployment image
+        run: docker build --pull --tag "$DASHBOARD_TEST_IMAGE" .
+      - name: Exercise the image with isolated Pi-hole fixtures
+        run: python3 -m unittest discover -s tests -p 'test_container.py' -v

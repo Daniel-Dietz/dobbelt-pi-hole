@@ -3,9 +3,10 @@
 [English](README.md) | **Dansk** | [Deutsch](README.DE.md)
 
 Et let kontrolpanel til samlet administration af to, tre eller fire Pi-hole v6-installationer.
-Løsningen består af én selvstændig `index.html` uden backend, database eller
-buildproces. Browseren kommunikerer direkte med de aktive Pi-hole-installationers
-REST API gennem en nginx reverse proxy.
+Brugerfladen er fortsat én `index.html` uden applikationsbackend, database
+eller frontend-buildproces. Installationerne angives i én ekstern JSON-fil.
+Et lille Python-værktøj danner browserens konfiguration og nginx-proxyerne
+fra denne fil; i Docker sker det automatisk ved opstart.
 
 Kontrolpanelet indeholder:
 
@@ -31,11 +32,12 @@ relevante indstillinger ens fra ét kontrolpanel.
 Kontrolpanelet er bevidst holdt enkelt:
 
 - Én HTML-fil med HTML, CSS og JavaScript
-- Ingen backend
+- Ingen applikationsbackend
 - Ingen database
-- Ingen buildproces
-- Ingen Node.js, PHP eller Python
-- Antal servere samt deres navne på tværs af klienter sættes i HTML-filen; egne navne og visningsindstillinger gemmes lokalt i browseren
+- Ingen frontend-buildproces
+- Python bruges kun til validering og generering af konfiguration ved installation eller containeropstart
+- Serveradresser, antal, standardnavne og standardsprog i én ekstern JSON-fil
+- Egne navne og visningsindstillinger gemmes lokalt i browseren
 - Direkte kommunikation med Pi-hole v6 API gennem nginx
 
 Chart.js indlæses som en separat lokal fil og bruges kun til graferne.
@@ -44,69 +46,111 @@ Chart.js indlæses som en separat lokal fil og bruges kun til graferne.
 
 - To til fire Pi-hole **v6**-installationer med REST API. Løsningen fungerer ikke med
   det gamle PHP API i Pi-hole v5.
-- nginx eller en tilsvarende reverse proxy foran kontrolpanelet. Forespørgsler
-  til `/api1/...` og `/api2/...` samt `/api3/...` og `/api4/...`, når de bruges,
-  skal videresendes til de tilsvarende Pi-hole-installationer. Dermed undgås CORS-problemer.
+- Docker med Compose eller nginx og Python 3.10 eller nyere til manuel installation.
+- Netværksadgang fra kontrolpanelets nginx til alle konfigurerede Pi-hole-API'er.
 - Et app password til hver Pi-hole. Det oprettes under **Settings → API** i den
   enkelte Pi-holes eget webinterface.
 
-## Opsætning
+## Opsætning med Docker
 
-1. Kopiér `index.html` til den mappe, hvor nginx skal levere kontrolpanelet fra,
-   eksempelvis `/srv/web/pihole-dashboard/index.html`.
-2. Download Chart.js til samme mappe:
+Fra en lokal kopi af dette repository:
+
+```bash
+cp config/config.example.json config/config.json
+```
+
+Redigér `config/config.json` med navne og API-adresser for dine to til fire
+installationer, og start derefter kontrolpanelet:
+
+```bash
+docker compose up --build -d
+docker compose logs dashboard
+```
+
+Åbn **http://localhost:8080**, og log ind på hver aktiv Pi-hole med dens app
+password. Compose binder som standard kun til Docker-værtens loopback-adresse.
+Brug en HTTPS reverse proxy på samme vært, eller tilpas portbindingen i
+`compose.yaml`, hvis kontrolpanelet skal kunne åbnes direkte på lokalnettet.
+[nginx.conf.DA.example](nginx.conf.DA.example) viser en valgfri HTTPS-proxy foran
+kontrolpanelet.
+
+Mappen `./config` monteres skrivebeskyttet som `/config`. Ved opstart validerer
+containeren `/config/config.json`, danner begge konfigurationer og kontrollerer
+nginx, før den starter. En manglende eller ugyldig konfiguration stopper opstarten.
+Chart.js medfølger i imaget; der hentes ingen eksterne filer ved opstart.
+
+Efter ændringer i konfigurationen genstartes containeren, og browserfanen
+indlæses igen:
+
+```bash
+docker compose restart dashboard
+```
+
+## Manuel opsætning med nginx
+
+1. Kopiér `index.html` til webmappen, eksempelvis
+   `/srv/web/pihole-dashboard/index.html`, og hent Chart.js til samme mappe:
 
    ```bash
-   cd /srv/web/pihole-dashboard
-   curl -o chart.umd.min.js https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js
+   curl --fail --location -o /srv/web/pihole-dashboard/chart.umd.min.js \
+     https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js
    ```
 
-3. Kopiér `nginx.conf.DA.example` til din nginx-konfiguration.
-4. Tilpas domænet, Pi-hole-adresserne, certifikatstierne og placeringen af
-   webfilerne. Sæt `DEFAULT_SERVER_COUNT` i `index.html` til `2`, `3` eller `4`.
-   nginx-eksemplet har `/api1/` og `/api2/` aktive som standard. Fjern
-   kommentartegnene fra `/api3/`-blokken, og tilpas den ved tre installationer.
-   Ved fire installationer aktiveres og tilpasses både `/api3/` og `/api4/`.
-5. Kontrollér og genindlæs nginx:
+2. Kopiér [config/config.example.json](config/config.example.json) til en privat
+   placering som `/etc/dobbelt-pi-hole/config.json`, og tilpas navne og API-adresser.
+   Kildens JSON-fil må ikke ligge i webmappen.
+3. Dan browserkonfigurationen og nginx-proxyerne fra samme fil:
+
+   ```bash
+   python3 tools/render_config.py \
+     --config /etc/dobbelt-pi-hole/config.json \
+     --output-dir /etc/nginx/dobbelt-pi-hole \
+     --web-root /srv/web/pihole-dashboard \
+     --listen-address 127.0.0.1
+   ```
+
+4. Tilføj `include /etc/nginx/dobbelt-pi-hole/nginx.conf;` i nginx-konfigurationens
+   eksisterende `http`-blok. Den genererede server lytter på `127.0.0.1:8080`.
+   [nginx.conf.DA.example](nginx.conf.DA.example) kan bruges som en valgfri
+   HTTPS-proxy foran serveren; tilpas domænet og certifikatstierne.
+5. Kontrollér og genindlæs nginx, og åbn derefter kontrolpanelet for at logge ind:
 
    ```bash
    nginx -t && systemctl reload nginx
    ```
 
-6. Åbn kontrolpanelets adresse og log ind på alle aktive Pi-hole-installationer med
-   deres app passwords.
+Kør værktøjet, og genindlæs nginx igen efter ændringer i JSON-filen.
+[Konfigurationsvejledningen](docs/CONFIGURATION.md) (på engelsk) beskriver alle
+felter, TLS, filrettigheder og opgradering fra tidligere versioner.
 
 ## Antal servere og navne
 
-Antallet af aktive Pi-hole sættes **kun i `index.html`**:
+**`config.json` er den fælles kilde til installationsopsætningen.** Listen
+`servers` indeholder to, tre eller fire objekter, hver med et fast `id`
+(`"1"` til `"4"`), `label` og `apiUrl`. Antallet af objekter bestemmer
+serverantallet, og rækkefølgen bestemmer visningsrækkefølgen. `verifyTls` er som
+standard `true` for HTTPS-forbindelser til Pi-hole. Se
+[eksemplet](config/config.example.json) og [JSON-skemaet](config/config.schema.json).
 
-```js
-const DEFAULT_SERVER_COUNT = 2; // 2, 3 eller 4
-```
+Serverfarverne følger deres ID: blå, gul, lilla og orange. Visningen tilpasser
+sig antallet og skærmbredden med en maksimal sidebredde på 1900 px.
+API-stierne genereres automatisk; Pi-hole-adresser skal ikke vedligeholdes
+separat i nginx eller HTML.
 
-De første to, tre eller fire poster i `DEFAULT_SERVERS` bruges. API-stierne er
-`/api1`, `/api2`, `/api3` og `/api4`. nginx skal have en proxy til hver aktiv
-installation. De faktiske værtsnavne eller IP-adresser angives i nginx og ikke
-i browserens indstillinger.
+Navne kan også ændres under **Indstillinger**. De gemmes i browserens
+`localStorage` og erstatter de konfigurerede navne i netop den browser.
+**Gendan standardnavne** gendanner de aktuelle standardnavne fra filen.
+Antal installationer og deres adresser administreres i JSON-filen. En
+webgrænseflade til redigering af den centrale konfiguration er planlagt til
+senere.
 
-Standardnavne på tværs af klienter angives med `label` i `DEFAULT_SERVERS`:
-
-```js
-const DEFAULT_SERVERS = [
-    { id: "1", label: "Pi-hole 1", base: "/api1", color: "c-1", chip: "s1" },
-    { id: "2", label: "Pi-hole 2", base: "/api2", color: "c-2", chip: "s2" },
-    { id: "3", label: "Pi-hole 3", base: "/api3", color: "c-3", chip: "s3" },
-    { id: "4", label: "Pi-hole 4", base: "/api4", color: "c-4", chip: "s4" },
-];
-```
-
-Serverfarverne er henholdsvis blå, gul, lilla og orange. Visningen tilpasser sig
-antallet og skærmbredden med en maksimal sidebredde på 1900 px.
-
-Navnene på de aktive installationer kan også ændres under **Indstillinger**.
-Disse navne gemmes i browserens `localStorage` og erstatter standardnavnene i
-netop den browser. Antallet og API-stierne kan ikke ændres under Indstillinger.
-Ændringer af standardnavne i filen overskriver ikke lokalt gemte navne.
+Ved opgradering fra v1.3.007 eller tidligere flyttes installationsoplysningerne
+fra HTML og nginx til JSON-filen. De gamle API-proxyblokke erstattes med den
+genererede konfiguration. Eksisterende lokale navne overføres, men du skal
+**logge ind én gang på ny** på hver installation, fordi sessioner nu er knyttet
+til den konfigurerede API-adresse. Ændres en API-adresse senere, viser en gammel
+fane en besked om ændret konfiguration og kræver genindlæsning, før nye kald
+sendes. Ændringer af navne eller rækkefølge ændrer ikke API-identiteten.
 
 ## Sprog
 
@@ -119,9 +163,11 @@ Det indledende sprog vælges i denne rækkefølge:
 
 1. Et understøttet sprog, der tidligere er valgt og gemt i browserens
    `localStorage`.
-2. Det første understøttede sprog i browserens prioriterede sprogliste.
+2. Det konfigurerede `defaultLanguage`, hvis det er `da`, `en` eller `de`.
+   Standardværdien `auto` går videre til browserens sprogindstillinger.
+3. Det første understøttede sprog i browserens prioriterede sprogliste.
    Regionale varianter som `de-DE`, `de-AT`, `en-GB` og `da-DK` understøttes.
-3. Engelsk, hvis der ikke findes et understøttet sprog.
+4. Engelsk, hvis der ikke findes et understøttet sprog.
 
 Oversættelserne bruger faste meddelelsesnøgler og navngivne parametre i
 komplette `en`-, `da`- og `de`-kataloger indlejret i `index.html`. Et nyt
@@ -147,8 +193,8 @@ Opsætningsvejledning og nginx-eksempler findes også på alle tre sprog:
 - Kontrolpanelet neutraliserer værdier, der ikke er tillid til, før de vises,
   eksempelvis klientnavne, domæner og kommentarer.
 - Løsningen indeholder JavaScript direkte i HTML-filen. Det begrænser, hvor
-  restriktiv en Content Security Policy kan være. Se kommentaren i
-  `nginx.conf.DA.example`.
+  restriktiv en Content Security Policy kan være. Den genererede nginx-konfiguration
+  indeholder en politik, der understøtter de indlejrede scripts og den lokale Chart.js-fil.
 - Hvis kontrolpanelet afvikles på en Synology NAS, kan en profil til
   adgangskontrol i DSM begrænse adgangen til bestemte IP-adresser eller lokale
   netværk.
@@ -161,10 +207,8 @@ adgangskontrol foran det.
 - **v1.1.005:** Komplet dansk og engelsk brugerflade og dokumentation
 - **v1.2.006:** Understøttelse af to, tre eller fire Pi-hole-installationer
 - **v1.3.007:** Nøglebaseret flersproget understøttelse med komplet dansk, engelsk og tysk brugerflade og dokumentation
-- **v1.4.xxx:** Docker-image og forenklet installation
-
-Kontrolpanelet understøtter to til fire aktive installationer. Ekstra
-installationer kræver både det tilsvarende antal i `index.html` og en proxy i nginx.
+- **v1.4.008:** Ekstern JSON-konfiguration, genererede API-proxyer og Docker-image
+- **Planlagt:** Webgrænseflade til redigering af den centrale installationsopsætning
 
 ## Bidrag
 
@@ -186,5 +230,6 @@ Pi-hole v6 i 2026.
 Projektet er udgivet under MIT-licensen og må bruges, kopieres, ændres og
 videredistribueres i overensstemmelse med licensens vilkår. Se filen `LICENSE`.
 
-Chart.js medfølger ikke og skal hentes separat som beskrevet under opsætningen.
-Chart.js er et selvstændigt tredjepartsprojekt med sin egen licens.
+Docker-imaget indeholder Chart.js 4.4.1 og dets MIT-licens i
+`/usr/share/licenses/chart.js/LICENSE`. Ved manuel installation hentes Chart.js
+separat som beskrevet ovenfor. Chart.js er et selvstændigt tredjepartsprojekt.

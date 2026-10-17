@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Dobbelt-Pi-hole canonical configuration",
+  "description": "Private deployment input. Use tools/render_config.py for normalization and cross-instance validation; do not publish this file as browser configuration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "servers"],
+  "properties": {
+    "version": {"const": 1, "type": "integer"},
+    "defaultLanguage": {"type": "string", "enum": ["auto", "da", "en", "de"], "default": "auto"},
+    "servers": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "apiUrl"],
+        "properties": {
+          "id": {"type": "string", "enum": ["1", "2", "3", "4"]},
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Nonblank display name. The renderer enforces at most 120 Unicode code points after trimming and rejects control characters and unpaired surrogates."
+          },
+          "apiUrl": {
+            "type": "string",
+            "maxLength": 2048,
+            "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://[^/\\s?#]+/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*/?$",
+            "description": "HTTP(S) API URL without credentials, query, fragment, escapes or dot segments. The renderer checks host/port validity and duplicate normalized URLs."
+          },
+          "verifyTls": {"type": "boolean", "default": true}
+        }
+      }
+    }
+  }
+}

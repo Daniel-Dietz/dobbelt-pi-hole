@@ -17,6 +17,22 @@ const DOMAIN = 'Tillad.Domæner.example';
 const LIST_URL = 'https://lists.example/Tillad-Domæner.txt';
 const TIMESTAMP = 1700000000;
 const TABS = ['dashboard', 'queries', 'domains', 'hosts', 'clients', 'lists', 'gravity', 'settings'];
+const LABELS_KEY = 'ph_combo_labels_v1';
+const SESSION_PREFIX = 'ph_sid_v2:';
+function publicConfig(count = 2, defaultLanguage = 'auto') {
+  return { version: 1, defaultLanguage, servers: Array.from({ length: count }, (_, index) => {
+    const id = String(index + 1);
+    return { id, label: 'Configured Pi-hole ' + id, base: '/api' + id + '/' + id.repeat(64) };
+  }) };
+}
+
+function deferred(t) {
+  let release;
+  const promise = new Promise(resolve => { release = resolve; });
+  t.after(() => release());
+  return { promise, release };
+}
+
 const EXPECTED = {
   da: {
     locale: 'da-DK', tabs: ['Dashboard', 'Forespørgsler', 'Domæner', 'Lokal DNS', 'Klienter', 'Lister', 'Gravity', 'Indstillinger'],
@@ -70,18 +86,36 @@ after(async () => { await browser?.close(); });
 async function openDashboard(t, options = {}) {
   const { language = 'da', browserLanguages = ['en-US'], count = 2, connected = true,
     storageUnavailable = false, hash = 'dashboard', missingCharts = false, streamingGravity = false,
-    paginatedQueries = false, savedQueryFilters = null, authResponseGate = null } = options;
+    paginatedQueries = false, savedQueryFilters = null, authResponseGate = null,
+    runtimeConfig = publicConfig(count), configStatus = 200, configText = null, configResponseGate = null,
+    waitForReady = true, fakeClock = false, holdInitialSessions = false,
+    labelOverrides, localStorageEntries = {}, sessionStorageEntries = {} } = options;
   const context = await browser.newContext({ locale: browserLanguages[0], timezoneId: 'UTC', viewport: { width: 1600, height: 1100 } });
   t.after(() => context.close());
-  const requests = [], unexpected = [], errors = [], readGates = new Map();
+  const requests = [], configRequests = [], unexpected = [], errors = [], readGates = new Map();
+  const configuration = { body: runtimeConfig, status: configStatus, text: configText, gate: configResponseGate };
+  const initialServers = (Array.isArray(runtimeConfig?.servers) ? runtimeConfig.servers : [])
+    .filter(server => typeof server?.id === 'string' && typeof server.base === 'string');
+  const apiTargets = new Map();
+  function registerTargets(config) {
+    for (const server of Array.isArray(config?.servers) ? config.servers : []) {
+      if (typeof server?.id === 'string' && typeof server.base === 'string') apiTargets.set(server.base, server.id);
+    }
+  }
+  registerTargets(runtimeConfig);
+  let observeConfigRequest;
+  const configObserved = new Promise(resolve => { observeConfigRequest = resolve; });
   t.after(() => { for (const gate of readGates.values()) gate.release(); });
-  function pauseReads(endpoint) {
+  function pauseReads(endpoint, serverId = null) {
+    const key = serverId === null ? endpoint : serverId + ':' + endpoint;
     let release;
     const promise = new Promise(resolve => { release = resolve; });
-    const gate = { arrived: 0, promise, release() { readGates.delete(endpoint); release(); } };
-    readGates.set(endpoint, gate);
+    const gate = { arrived: 0, promise, release() { readGates.delete(key); release(); } };
+    readGates.set(key, gate);
     return gate;
   }
+  const initialSessionGate = holdInitialSessions
+    ? pauseReads('/dns/blocking', typeof holdInitialSessions === 'string' ? holdInitialSessions : null) : null;
   const serverData = Object.fromEntries([1, 2, 3, 4].map(id => [String(id), {
     blocking: true,
     domains: [{ domain: DOMAIN, type: 'deny', kind: 'exact', enabled: true, comment: RAW_TEXT, groups: [0] }],
@@ -90,14 +124,25 @@ async function openDashboard(t, options = {}) {
     suggestions: [{ hwaddr: 'AA:BB:CC:DD:EE:01', names: RAW_TEXT, macVendor: 'Example Vendor', addresses: '192.168.1.55' }],
     lists: [{ address: LIST_URL, type: 'block', enabled: true, comment: RAW_TEXT, groups: [0] }],
   }]));
-  await context.addInitScript(({ language, browserLanguages, connected, storageUnavailable, rawText, streamingGravity, savedQueryFilters }) => {
+  const initialLabels = labelOverrides === undefined
+    ? { overrides: Object.fromEntries(initialServers.map(server => [server.base, RAW_TEXT + ' ' + server.id])) }
+    : labelOverrides;
+  await context.addInitScript(({ language, browserLanguages, connected, storageUnavailable, streamingGravity, savedQueryFilters,
+    initialServers, initialLabels, localStorageEntries, sessionStorageEntries }) => {
     Object.defineProperty(navigator, 'languages', { get: () => browserLanguages });
     Object.defineProperty(navigator, 'language', { get: () => browserLanguages[0] });
     window.__xss = 0;
-    localStorage.setItem('ph_combo_cfg_v2', JSON.stringify({ servers: [1, 2, 3, 4].map(id => ({ id: String(id), label: rawText + ' ' + id })) }));
-    if (language !== null) localStorage.setItem('ph_combo_language', language);
-    if (savedQueryFilters) localStorage.setItem('ph_combo_ui_v1', JSON.stringify({ queries: savedQueryFilters }));
-    for (let id = 1; id <= 4; id++) if (connected) sessionStorage.setItem('ph_sid_' + id, 'fixture-sid-' + id);
+    // A reload must see the real results of prior app writes. In particular,
+    // configuration changes must not reseed sessions or personal labels.
+    if (sessionStorage.getItem('__fixture_initialized') !== 'yes') {
+      if (initialLabels !== null) localStorage.setItem('ph_combo_labels_v1', JSON.stringify(initialLabels));
+      if (language !== null) localStorage.setItem('ph_combo_language', language);
+      if (savedQueryFilters) localStorage.setItem('ph_combo_ui_v1', JSON.stringify({ queries: savedQueryFilters }));
+      for (const server of initialServers) if (connected) sessionStorage.setItem('ph_sid_v2:' + server.base, 'fixture-sid-' + server.id);
+      for (const [key, value] of Object.entries(localStorageEntries)) localStorage.setItem(key, value);
+      for (const [key, value] of Object.entries(sessionStorageEntries)) sessionStorage.setItem(key, value);
+      sessionStorage.setItem('__fixture_initialized', 'yes');
+    }
     if (storageUnavailable) {
       for (const method of ['getItem', 'setItem', 'removeItem']) Storage.prototype[method] = function () {
         throw new DOMException('Storage is disabled in this test', 'SecurityError');
@@ -114,12 +159,9 @@ async function openDashboard(t, options = {}) {
         return originalFetch(input, init);
       };
     }
-  }, { language, browserLanguages, connected, storageUnavailable, rawText: RAW_TEXT, streamingGravity, savedQueryFilters });
-  let html = readFileSync(HTML_PATH, 'utf8');
-  if (count !== 2) {
-    assert.match(html, /const DEFAULT_SERVER_COUNT\s*=\s*2\s*;/u, 'The supported instance-count configuration must be present');
-    html = html.replace(/const DEFAULT_SERVER_COUNT\s*=\s*2\s*;/u, `const DEFAULT_SERVER_COUNT = ${count};`);
-  }
+  }, { language, browserLanguages, connected, storageUnavailable, streamingGravity, savedQueryFilters,
+    initialServers, initialLabels, localStorageEntries, sessionStorageEntries });
+  const html = readFileSync(HTML_PATH, 'utf8');
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin !== ORIGIN) { unexpected.push(request.url()); return route.abort(); }
@@ -128,12 +170,21 @@ async function openDashboard(t, options = {}) {
       if (missingCharts) return route.fulfill({ status: 404, body: '' });
       return route.fulfill({ contentType: 'text/javascript', body: process.env.CHART_JS_PATH ? readFileSync(process.env.CHART_JS_PATH, 'utf8') : CHART_FIXTURE });
     }
-    const match = url.pathname.match(/^\/api([1-4])(\/.*)$/u);
-    if (!match) { unexpected.push(request.url()); return route.abort(); }
-    const [, id, endpoint] = match, data = serverData[id], method = request.method();
+    if (url.pathname === '/config.json') {
+      configRequests.push({ method: request.method(), headers: request.headers() });
+      observeConfigRequest();
+      if (configuration.gate) await configuration.gate;
+      registerTargets(configuration.body);
+      return route.fulfill({ status: configuration.status, contentType: 'application/json',
+        body: configuration.text === null ? JSON.stringify(configuration.body) : configuration.text });
+    }
+    const target = [...apiTargets].find(([base]) => url.pathname.startsWith(base + '/'));
+    if (!target) { unexpected.push(request.url()); return route.abort(); }
+    const [base, id] = target, endpoint = url.pathname.slice(base.length), data = serverData[id], method = request.method();
     const body = request.postData() ? JSON.parse(request.postData()) : undefined;
-    requests.push({ id, method, path: endpoint + url.search, body, sid: request.headers()['x-ftl-sid'] });
-    const gateKey = url.searchParams.has('cursor') && readGates.has(endpoint + ':cursor') ? endpoint + ':cursor' : endpoint;
+    requests.push({ id, base, method, path: endpoint + url.search, body, sid: request.headers()['x-ftl-sid'] });
+    const endpointGate = url.searchParams.has('cursor') && readGates.has(endpoint + ':cursor') ? endpoint + ':cursor' : endpoint;
+    const gateKey = readGates.has(id + ':' + endpointGate) ? id + ':' + endpointGate : endpointGate;
     if (method === 'GET' && readGates.has(gateKey)) {
       const gate = readGates.get(gateKey);
       gate.arrived++;
@@ -184,11 +235,23 @@ async function openDashboard(t, options = {}) {
   });
   const page = await context.newPage();
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto(ORIGIN + '/#' + hash);
+  if (fakeClock) await page.clock.install();
+  await Promise.all([
+    page.waitForRequest(request => new URL(request.url()).pathname === '/config.json'),
+    ...(holdInitialSessions ? initialServers.map(server => page.waitForRequest(request =>
+      new URL(request.url()).pathname === server.base + '/dns/blocking')) : []),
+    ...(typeof holdInitialSessions === 'string' ? initialServers.filter(server => server.id !== holdInitialSessions)
+      .map(server => page.waitForResponse(response => new URL(response.url()).pathname === server.base + '/dns/blocking')
+        .then(response => response.finished())) : []),
+    page.goto(ORIGIN + '/#' + hash),
+  ]);
+  await configObserved;
   await page.locator('#languageSelect option[value="de"]').waitFor({ state: 'attached' });
-  if (connected && !storageUnavailable) await waitTab(page, hash);
-  else await page.locator('[data-loginform="1"]').waitFor();
-  return { page, context, requests, unexpected, errors, serverData, pauseReads };
+  if (waitForReady) {
+    if (connected && !storageUnavailable) await waitTab(page, hash);
+    else await page.locator('[data-loginform="1"]').waitFor();
+  }
+  return { page, context, requests, configRequests, configuration, unexpected, errors, serverData, pauseReads, initialSessionGate };
 }
 
 async function waitTab(page, tab) {
@@ -213,6 +276,260 @@ async function assertNoCorruption(fixture) {
   assert.equal(await fixture.page.evaluate(() => window.__xss), 0, 'Text must never become executable HTML');
   assert.equal(await fixture.page.locator('#tabContent img, #serverPills img').count(), 0);
 }
+
+test('configuration loading blocks API calls while language, theme and navigation change', async t => {
+  const gate = deferred(t);
+  const fixture = await openDashboard(t, { language: null, browserLanguages: ['de-AT'],
+    configResponseGate: gate.promise, waitForReady: false }), { page } = fixture;
+  await page.locator('#configLoading').waitFor();
+  assert.match(await page.locator('#configLoading').textContent(), /Konfiguration/u);
+  assert.equal(fixture.configRequests.length, 1);
+  assert.equal(fixture.configRequests[0].headers['x-ftl-sid'], undefined, 'Configuration is public and must not receive a Pi-hole SID');
+  assert.deepEqual(fixture.requests, []);
+  await page.locator('#languageSelect').selectOption('en');
+  await page.locator('#themeToggle').click();
+  await page.evaluate(() => { location.hash = 'clients'; });
+  await page.waitForFunction(() => document.documentElement.lang === 'en');
+  await page.locator('#configLoading').waitFor();
+  assert.match(await page.locator('#configLoading').textContent(), /configuration/iu);
+  assert.deepEqual(fixture.requests, [], 'Shell controls must not start a tab before targets have been validated');
+  gate.release();
+  await waitTab(page, 'clients');
+  assert.equal(await page.locator('#serverPills .pill.on').count(), 2);
+  assert.equal(await page.locator('#tabs [data-tab="clients"]').getAttribute('class'), 'active');
+  assert.ok(fixture.requests.length > 0);
+  await assertNoCorruption(fixture);
+});
+
+test('initial session checks finish before forms become interactive and preserve startup choices', async t => {
+  const fixture = await openDashboard(t, { holdInitialSessions: true, waitForReady: false }), { page, initialSessionGate } = fixture;
+  assert.equal(initialSessionGate.arrived, 2);
+  await page.locator('#configLoading').waitFor();
+  assert.equal(await page.locator('#tabs button, #tabContent form').count(), 0);
+  await page.locator('#languageSelect').selectOption('en');
+  await page.locator('#themeToggle').click();
+  await page.evaluate(() => { location.hash = 'domains'; });
+  await page.locator('#languageSelect').selectOption('de');
+  await page.evaluate(() => { location.hash = 'clients'; });
+  assert.equal(await page.locator('#tabs button, #tabContent form').count(), 0, 'Pending authentication must not expose an operational form');
+  assert.ok(fixture.requests.every(request => request.path === '/dns/blocking'), 'Only the initial session checks may run at this stage');
+  const clientGate = fixture.pauseReads('/clients');
+  initialSessionGate.release();
+  await page.locator('#cClient').fill('192.168.1.98');
+  await page.locator('#cComment').fill('Draft typed as soon as the form became available');
+  assert.equal(await page.locator('html').getAttribute('lang'), 'de');
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'light');
+  assert.equal(await page.locator('#tabs [data-tab="clients"]').getAttribute('class'), 'active');
+  assert.ok(clientGate.arrived > 0);
+  clientGate.release();
+  await waitTab(page, 'clients');
+  await page.waitForLoadState('networkidle');
+  assert.equal(await page.locator('#cClient').inputValue(), '192.168.1.98');
+  assert.equal(await page.locator('#cComment').inputValue(), 'Draft typed as soon as the form became available');
+  assert.equal(fixture.requests.filter(request => request.path === '/clients').length, 2, 'Startup must render the final operational tab only once');
+  assert.equal(fixture.requests.filter(request => request.method !== 'GET').length, 0);
+  await assertNoCorruption(fixture);
+});
+
+test('a stalled initial session times out while a healthy peer loads and cannot reconnect late', async t => {
+  const fixture = await openDashboard(t, { language: 'de', holdInitialSessions: '2', waitForReady: false, fakeClock: true }),
+    { page, initialSessionGate } = fixture;
+  assert.equal(initialSessionGate.arrived, 1);
+  await page.locator('#configLoading').waitFor();
+  assert.match(await page.locator('#configLoading').textContent(), /Pi-hole-Sitzungen/u);
+  assert.equal(await page.locator('#tabs button, #tabContent form').count(), 0);
+  await page.clock.runFor(10001);
+  await page.clock.resume();
+  await page.locator('[data-loginform="2"]').waitFor();
+  await waitTab(page, 'dashboard');
+  assert.equal(await page.locator('#configLoading').count(), 0);
+  assert.deepEqual(await page.locator('#serverPills .pill.on b').allTextContents(), [RAW_TEXT + ' 1']);
+  assert.equal(await page.locator('#dashGrid .big-num').first().textContent(), (12345).toLocaleString('de-DE'));
+  const timedOutBase = fixture.configuration.body.servers[1].base;
+  assert.equal(await page.evaluate(key => sessionStorage.getItem(key), SESSION_PREFIX + timedOutBase), null);
+  assert.equal(fixture.requests.filter(request => request.id === '2').length, 1, 'The timed-out peer must not receive operational reads');
+  initialSessionGate.release();
+  await page.waitForLoadState('networkidle');
+  assert.deepEqual(await page.locator('#serverPills .pill.on b').allTextContents(), [RAW_TEXT + ' 1'], 'A late session response must not reconnect the timed-out peer');
+  assert.equal(await page.locator('[data-loginform="2"]').count(), 1);
+  assert.equal(await page.evaluate(key => sessionStorage.getItem(key), SESSION_PREFIX + timedOutBase), null);
+  await assertNoCorruption(fixture);
+});
+
+for (const scenario of [
+  { name: 'missing file', language: 'da', configStatus: 404 },
+  { name: 'malformed JSON', language: 'en', configText: '<img src=x onerror="window.__xss=1">' },
+  { name: 'invalid targets', language: 'de', runtimeConfig: { ...publicConfig(), version: 99 } },
+]) test(`configuration ${scenario.name} fails closed and can be retried`, async t => {
+  const fixture = await openDashboard(t, { ...scenario, waitForReady: false }), { page } = fixture;
+  const error = page.locator('#configError[role="alert"]');
+  await error.waitFor();
+  assert.match(await error.textContent(), /konfiguration|configuration/iu);
+  assert.deepEqual(fixture.requests, [], 'An unusable file must not fall back to hardcoded or browser-stored targets');
+  assert.equal(await page.locator('#serverPills .pill').count(), 0);
+  await page.locator('#languageSelect').selectOption('en');
+  await error.waitFor();
+  assert.match(await error.textContent(), /configuration/iu);
+  fixture.configuration.status = 200;
+  fixture.configuration.text = null;
+  fixture.configuration.body = publicConfig();
+  await page.locator('#configRetry').click();
+  await waitTab(page, 'dashboard');
+  assert.equal(fixture.configRequests.length, 2);
+  assert.equal(await page.locator('#serverPills .pill.on').count(), 2);
+  assert.equal(await page.locator('html').getAttribute('lang'), 'en');
+  assert.equal(await page.locator('#configError').count(), 0);
+  await assertNoCorruption(fixture);
+});
+
+test('a stalled configuration request times out without API calls and retry recovers', async t => {
+  const gate = deferred(t);
+  const fixture = await openDashboard(t, { language: 'de', configResponseGate: gate.promise,
+    waitForReady: false, fakeClock: true }), { page } = fixture;
+  await page.locator('#configLoading').waitFor();
+  await page.clock.runFor(10001);
+  await page.locator('#configError[role="alert"]').waitFor();
+  assert.deepEqual(fixture.requests, []);
+  fixture.configuration.gate = null;
+  await page.locator('#configRetry').click();
+  // The aborted first request must not install a late configuration after the
+  // successful retry has started.
+  gate.release();
+  await page.clock.resume();
+  await waitTab(page, 'dashboard');
+  assert.equal(fixture.configRequests.length, 2);
+  assert.equal(await page.locator('#serverPills .pill.on').count(), 2);
+  await assertNoCorruption(fixture);
+});
+
+test('configured labels and server order remain literal text in tabs and forms', async t => {
+  const config = publicConfig(3);
+  config.servers = [config.servers[2], config.servers[0], config.servers[1]]
+    .map(server => ({ ...server, label: RAW_TEXT + ' ' + server.id }));
+  const fixture = await openDashboard(t, { runtimeConfig: config, labelOverrides: null, hash: 'settings' }), { page } = fixture;
+  assert.deepEqual(await page.locator('#serverPills b').allTextContents(), config.servers.map(server => server.label));
+  assert.deepEqual(await page.locator('#settingsForm [data-label]').evaluateAll(inputs => inputs.map(input => input.value)), config.servers.map(server => server.label));
+  await visit(page, 'domains');
+  assert.deepEqual(await page.locator('#targetDomain option').allTextContents(), [
+    'Alle (' + config.servers.map(server => server.label).join(' + ') + ')',
+    ...config.servers.map(server => server.label),
+  ]);
+  await assertNoCorruption(fixture);
+});
+
+test('personal labels store only differences, survive file renames and reorder, and reset to the file', async t => {
+  const config = publicConfig();
+  const fixture = await openDashboard(t, { runtimeConfig: config, labelOverrides: null, hash: 'settings' }), { page } = fixture;
+  await page.locator('[data-label="1"]').fill(RAW_TEXT);
+  await page.locator('#settingsForm button[type="submit"]').click();
+  await page.waitForFunction(label => document.querySelector('#serverPills b')?.textContent === label, RAW_TEXT);
+  assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), LABELS_KEY), {
+    overrides: { [config.servers[0].base]: RAW_TEXT },
+  });
+  const beforeReload = fixture.requests.length;
+  fixture.configuration.body = { ...config, servers: [
+    { ...config.servers[1], label: 'Renamed second Pi-hole' },
+    { ...config.servers[0], label: 'Renamed first Pi-hole' },
+  ] };
+  await page.reload();
+  await waitTab(page, 'settings');
+  assert.deepEqual(await page.locator('#serverPills b').allTextContents(), ['Renamed second Pi-hole', RAW_TEXT]);
+  assert.equal(await page.locator('#serverPills .pill.on').count(), 2);
+  assert.ok(fixture.requests.slice(beforeReload).every(request => request.sid === 'fixture-sid-' + request.id), 'Unchanged targets keep their original scoped sessions');
+  assert.equal(await page.locator('[data-label="1"]').inputValue(), RAW_TEXT);
+  assert.equal(await page.locator('[data-label="2"]').inputValue(), 'Renamed second Pi-hole');
+  await page.locator('#resetLabels').click();
+  await page.waitForFunction(() => document.querySelector('[data-label="1"]')?.value === 'Renamed first Pi-hole');
+  assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), LABELS_KEY), { overrides: {} });
+  assert.deepEqual(await page.locator('#serverPills b').allTextContents(), ['Renamed second Pi-hole', 'Renamed first Pi-hole']);
+  assert.equal(fixture.requests.filter(request => request.method !== 'GET').length, 0, 'Personal labels never mutate Pi-hole configuration');
+  await assertNoCorruption(fixture);
+});
+
+test('Settings accepts 120 Unicode characters and visibly rejects an overlong label without saving', async t => {
+  const config = publicConfig();
+  config.servers[0].label = '😀'.repeat(120);
+  const fixture = await openDashboard(t, { language: 'de', runtimeConfig: config, labelOverrides: null, hash: 'settings' }), { page } = fixture;
+  const label = page.locator('[data-label="1"]');
+  assert.equal(await label.inputValue(), config.servers[0].label);
+  const edited = '🦊'.repeat(120);
+  await label.fill(edited);
+  assert.equal(await label.inputValue(), edited, 'Editing must not truncate surrogate pairs to a 120-code-unit maxlength');
+  await page.locator('#settingsForm button[type="submit"]').click();
+  await page.waitForFunction(value => document.querySelector('#serverPills b')?.textContent === value, edited);
+  const saved = { overrides: { [config.servers[0].base]: edited } };
+  assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), LABELS_KEY), saved);
+  await label.fill('x'.repeat(121));
+  await page.locator('#settingsForm button[type="submit"]').click();
+  assert.equal(await label.evaluate(input => input.validity.valid), false);
+  assert.match(await label.evaluate(input => input.validationMessage), /120/u);
+  assert.equal(await label.inputValue(), 'x'.repeat(121), 'Invalid text remains available for correction');
+  assert.equal(await page.locator('#serverPills b').first().textContent(), edited);
+  assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), LABELS_KEY), saved, 'Validation failure must not replace the saved label');
+  assert.equal(fixture.requests.filter(request => request.method !== 'GET').length, 0);
+  await assertNoCorruption(fixture);
+});
+
+test('changing a target fingerprint never reuses the previous target session or personal label', async t => {
+  const config = publicConfig();
+  const fixture = await openDashboard(t, { runtimeConfig: config }), { page } = fixture;
+  const changed = { ...config.servers[0], base: '/api1/' + 'a'.repeat(64), label: 'Replacement Pi-hole' };
+  fixture.configuration.body = { ...config, servers: [changed, config.servers[1]] };
+  const beforeReload = fixture.requests.length;
+  await page.reload();
+  await page.locator('[data-loginform="1"]').waitFor();
+  await waitTab(page, 'dashboard');
+  assert.deepEqual(await page.locator('#serverPills b').allTextContents(), ['Replacement Pi-hole', RAW_TEXT + ' 2']);
+  assert.equal(await page.locator('#serverPills .pill.on').count(), 1);
+  assert.equal(fixture.requests.slice(beforeReload).filter(request => request.id === '1').length, 0, 'The replacement stays logged out until explicitly authenticated');
+  assert.ok(fixture.requests.slice(beforeReload).filter(request => request.id === '2').every(request => request.sid === 'fixture-sid-2'));
+  assert.equal(await page.evaluate(key => sessionStorage.getItem(key), SESSION_PREFIX + changed.base), null);
+  await page.locator('[data-loginpw="1"]').fill('replacement-fixture-password');
+  await page.locator('[data-loginform="1"] button').click();
+  await page.waitForFunction(() => document.querySelectorAll('#serverPills .pill.on').length === 2);
+  const auth = fixture.requests.slice(beforeReload).find(request => request.id === '1' && request.method === 'POST');
+  assert.equal(auth?.base, changed.base);
+  assert.equal(auth.path, '/auth');
+  assert.equal(auth.sid, undefined, 'The old target SID must not be sent to the replacement');
+  assert.deepEqual(auth.body, { password: 'replacement-fixture-password' });
+  assert.equal(await page.evaluate(key => sessionStorage.getItem(key), SESSION_PREFIX + changed.base), 'fixture-login-1');
+  await assertNoCorruption(fixture);
+});
+
+test('legacy labels migrate once by ID while legacy targets, count and sessions are ignored', async t => {
+  const config = publicConfig();
+  const legacy = { count: 4, servers: [
+    { id: '1', label: RAW_TEXT, base: 'https://untrusted.invalid/api' },
+    { id: '2', label: ' ' }, { id: '3', label: 'Hidden legacy third' }, { id: '4', label: 'Hidden legacy fourth' },
+  ] };
+  const fixture = await openDashboard(t, { runtimeConfig: config, connected: false, labelOverrides: null,
+    localStorageEntries: { ph_combo_cfg_v2: JSON.stringify(legacy) },
+    sessionStorageEntries: Object.fromEntries([1, 2, 3, 4].map(id => ['ph_sid_' + id, 'legacy-session-' + id])),
+  }), { page } = fixture;
+  assert.deepEqual(await page.locator('#serverPills b').allTextContents(), [RAW_TEXT, config.servers[1].label]);
+  assert.deepEqual(fixture.requests, []);
+  assert.deepEqual(await page.evaluate(() => [1, 2, 3, 4].map(id => sessionStorage.getItem('ph_sid_' + id))), [null, null, null, null]);
+  assert.equal(await page.evaluate(() => localStorage.getItem('ph_combo_cfg_v2')), null);
+  assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), LABELS_KEY), { overrides: { [config.servers[0].base]: RAW_TEXT } });
+  await visit(page, 'settings');
+  await page.locator('#resetLabels').click();
+  await page.evaluate(value => localStorage.setItem('ph_combo_cfg_v2', value), JSON.stringify(legacy));
+  await page.reload();
+  await waitTab(page, 'settings');
+  assert.deepEqual(await page.locator('#serverPills b').allTextContents(), config.servers.map(server => server.label));
+  assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), LABELS_KEY), { overrides: {} }, 'An existing empty override document prevents remigration');
+  assert.deepEqual(fixture.requests, []);
+  await assertNoCorruption(fixture);
+});
+
+test('invalid personal labels do not override valid configured labels', async t => {
+  const config = publicConfig();
+  const fixture = await openDashboard(t, { runtimeConfig: config, labelOverrides: { overrides: {
+    [config.servers[0].base]: ' ', [config.servers[1].base]: 'x'.repeat(121),
+  } } }), { page } = fixture;
+  assert.deepEqual(await page.locator('#serverPills b').allTextContents(), config.servers.map(server => server.label));
+  await assertNoCorruption(fixture);
+});
 
 for (const code of ['da', 'en', 'de']) for (const count of [2, 3, 4]) {
   test(`${code}: every tab, localized charts and intact data with ${count} Pi-holes`, async t => {
@@ -251,11 +568,13 @@ for (const code of ['da', 'en', 'de']) for (const count of [2, 3, 4]) {
 }
 
 for (const scenario of [
-  { language: 'de', browserLanguages: ['da-DK'], expected: 'de' },
+  { language: 'de', browserLanguages: ['da-DK'], runtimeConfig: publicConfig(2, 'en'), expected: 'de' },
   { language: null, browserLanguages: ['de-AT', 'en-US'], expected: 'de' },
   { language: 'unsupported', browserLanguages: ['fr-FR', 'da-DK'], expected: 'da' },
   { language: 'EN_gb', browserLanguages: ['de-DE'], expected: 'en' },
   { language: null, browserLanguages: ['fr-FR', 'nl-NL'], expected: 'en' },
+  { language: null, browserLanguages: ['de-AT'], runtimeConfig: publicConfig(2, 'da'), expected: 'da' },
+  { language: 'unsupported', browserLanguages: ['de-DE'], runtimeConfig: publicConfig(2, 'en'), expected: 'en' },
 ]) test(`language preference ${JSON.stringify(scenario)} resolves correctly`, async t => {
   const fixture = await openDashboard(t, scenario);
   assert.equal(await fixture.page.locator('html').getAttribute('lang'), scenario.expected);
@@ -346,7 +665,7 @@ test('restricted browser storage keeps login and language switching usable', asy
   await page.locator('[data-loginpw="1"]').fill('fixture-password-Only');
   await page.locator('#languageSelect').selectOption('en');
   await page.waitForFunction(() => document.querySelector('[data-loginpw="1"]')?.value === 'fixture-password-Only');
-  const authRequested = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api1/auth');
+  const authRequested = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === fixture.configuration.body.servers[0].base + '/auth');
   await page.locator('[data-loginform="1"] button').click();
   const authRequest = await authRequested;
   // The combined total card exists before login completes. Switching language

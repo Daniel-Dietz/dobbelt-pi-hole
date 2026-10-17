@@ -1,0 +1,20 @@
+services:
+  dashboard:
+    build: .
+    image: dobbelt-pi-hole:1.4.008
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - type: bind
+        source: ./config
+        target: /config
+        read_only: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+      - /run/dobbelt-pi-hole:rw,noexec,nosuid,size=1m,uid=101,gid=101,mode=0755
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
