@@ -3930,34 +3930,27 @@ async function renderDomains(container, generation) {
         button.addEventListener("click", /** Copy the selected domain rule to one connected instance, retaining the source group assignments. */ async () => {
           const server = serverById(button.dataset.addDomainServer);
           const row = rows[Number(button.dataset.domainRow)];
-          if (!server.connected) {
-            toast(msg("domains.notLoggedIn", {
-              server: server.label
-            }), "err");
+          const sourceRecord = Object.values(row.byServer)[0];
+          if (!sourceRecord || !Array.isArray(sourceRecord.groups) || !Object.hasOwn(sourceRecord, "comment")) {
+            toast(msg("multi.invalidRead"), "err");
             return;
           }
-          const sourceRecord = Object.values(row.byServer)[0] || {};
-          try {
-            await apiCall(server, "/domains/" + row.type + "/" + row.kind, {
-              method: "POST",
-              body: {
-                domain: [row.domain],
-                comment: row.comment || "",
-                type: row.type,
-                kind: row.kind,
-                groups: sourceRecord.groups || [0]
+          const outcomes = await performCheckedWrites(button, [server], {
+            path: () => "/domains",
+            extract: response => requireCollection(response, "domains"),
+            isCurrent: (target, records) => {
+              if (records.some(record => record.domain === row.domain && record.kind === row.kind && record.type !== row.type)) {
+                throw new Error(msg("multi.conflict"));
               }
-            });
-            toast(msg("domains.added", {
-              server: server.label
-            }), "ok");
-          } catch (error) {
-            toast(msg("domains.requestError", {
-              server: server.label,
-              error: error.message
-            }), "err");
-          }
-          loadDomains();
+              return records.some(record => record.domain === row.domain && record.kind === row.kind && record.type === row.type);
+            },
+            write: target => apiCall(target, "/domains/" + row.type + "/" + row.kind, {
+              method: "POST",
+              body: { domain: [row.domain], comment: sourceRecord.comment ?? "", type: row.type,
+                kind: row.kind, groups: sourceRecord.groups }
+            })
+          });
+          if (outcomes && container.isConnected && generation === state.renderGen) loadDomains();
         });
       }
       for (const button of domainArea.querySelectorAll("[data-toggle-domain-server]")) {
@@ -3966,27 +3959,27 @@ async function renderDomains(container, generation) {
           const row = rows[Number(button.dataset.domainRow)];
           const record = row.byServer[server.id];
           if (record) {
-            try {
-              await apiCall(server, "/domains/" + row.type + "/" + encodeURIComponent(row.domain), {
-                method: "PUT",
-                body: {
-                  type: row.type,
-                  kind: row.kind,
-                  enabled: !record.enabled,
-                  comment: record.comment,
-                  groups: record.groups
+            const desiredEnabled = !record.enabled;
+            const outcomes = await performCheckedWrites(button, [server], {
+              path: () => "/domains",
+              extract: response => requireCollection(response, "domains"),
+              isCurrent: (target, records) => {
+                const current = records.find(item => item.domain === row.domain && item.type === row.type && item.kind === row.kind);
+                if (!current || !Array.isArray(current.groups) || !Object.hasOwn(current, "comment")) {
+                  throw new Error(msg("multi.invalidRead"));
                 }
-              });
-              toast(msg("domains.updated", {
-                server: server.label
-              }), "ok");
-            } catch (error) {
-              toast(msg("domains.requestError", {
-                server: server.label,
-                error: error.message
-              }), "err");
-            }
-            loadDomains();
+                return current.enabled === desiredEnabled;
+              },
+              write: (target, records) => {
+                const current = records.find(item => item.domain === row.domain && item.type === row.type && item.kind === row.kind);
+                return apiCall(target, "/domains/" + row.type + "/" + row.kind + "/" + encodeURIComponent(row.domain), {
+                  method: "PUT",
+                  body: { type: row.type, kind: row.kind, enabled: desiredEnabled,
+                    comment: current.comment, groups: current.groups }
+                });
+              }
+            });
+            if (outcomes && container.isConnected && generation === state.renderGen) loadDomains();
           }
         });
       }
@@ -4345,34 +4338,18 @@ async function renderHosts(container, generation) {
       for (const addButton of hostArea.querySelectorAll("[data-add-host]")) {
         addButton.addEventListener("click", /** Add a missing host record to one instance, reusing an observed address or asking the user for one. */ async () => {
           const targetServer = serverById(addButton.dataset.addHost);
-          if (!targetServer.connected) {
-            toast(msg("hosts.notLoggedIn", {
-              server: targetServer.label
-            }), "err");
-            return;
-          }
           const ipAddress = addButton.dataset.ip || uiPrompt(msg("hosts.promptIp", {
-            name: addButton.dataset.name,
-            server: targetServer.label
+            name: addButton.dataset.name, server: targetServer.label
           }), "");
-          if (!ipAddress) {
-            return;
-          }
+          if (!ipAddress) return;
           const rawHostRecord = ipAddress + " " + addButton.dataset.name;
-          try {
-            await apiCall(targetServer, "/config/dns/hosts/" + encodeURIComponent(rawHostRecord), {
-              method: "PUT"
-            });
-            toast(msg("hosts.added", {
-              server: targetServer.label
-            }), "ok");
-          } catch (error) {
-            toast(msg("hosts.requestError", {
-              server: targetServer.label,
-              error: error.message
-            }), "err");
-          }
-          loadHosts();
+          const outcomes = await performCheckedWrites(addButton, [targetServer], {
+            path: () => "/config/dns/hosts",
+            extract: requireHostRecords,
+            isCurrent: (server, records) => records.includes(rawHostRecord),
+            write: server => apiCall(server, "/config/dns/hosts/" + encodeURIComponent(rawHostRecord), { method: "PUT" })
+          });
+          if (outcomes && container.isConnected && generation === state.renderGen) loadHosts();
         });
       }
     }
