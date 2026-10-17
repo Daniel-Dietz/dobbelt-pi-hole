@@ -3,11 +3,12 @@
 [English](README.md) | [Dansk](README.DA.md) | **Deutsch**
 
 Ein schlankes Dashboard zur gemeinsamen Verwaltung von zwei, drei oder vier
-Pi-hole-v6-Instanzen. Die Oberfläche bleibt eine einzelne `index.html` ohne
-Anwendungsbackend, Datenbank oder Frontend-Build-Prozess. Die Instanzen werden
-in einer externen JSON-Datei konfiguriert. Ein kleines Python-Werkzeug erzeugt
-daraus die Browserkonfiguration und nginx-Proxy-Routen; unter Docker geschieht
-dies automatisch beim Start.
+Pi-hole-v6-Instanzen. Der Browser lädt `index.html`, eine externe
+JSON-Konfiguration und eine lokale Chart.js-Datei. Ein Anwendungsbackend,
+eine Datenbank oder ein Frontend-Build-Prozess sind nicht erforderlich.
+Die Instanzen werden in einer zentralen JSON-Datei konfiguriert. Ein kleines
+Python-Werkzeug erzeugt daraus die öffentliche Browserkonfiguration und
+nginx-Proxy-Routen; unter Docker geschieht dies automatisch beim Start.
 
 Das Dashboard bietet:
 

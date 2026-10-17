@@ -4,10 +4,11 @@
 
 
 A lightweight dashboard for managing two, three or four Pi-hole v6 instances from one
-interface. The application remains a single `index.html`, with no application
-backend, database or frontend build process. One external JSON file configures
-the instances; a small Python tool generates the browser configuration and
-nginx proxy routes from it. Docker runs this tool automatically at startup.
+interface. The browser loads `index.html`, an external JSON configuration and
+a local Chart.js file. There is no application backend, database or frontend
+build process. One central JSON file configures the instances; a small Python
+tool generates the public browser configuration and nginx proxy routes from
+it. Docker runs this tool automatically at startup.
 
 The dashboard includes:
 

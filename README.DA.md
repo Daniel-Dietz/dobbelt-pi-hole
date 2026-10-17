@@ -3,10 +3,11 @@
 [English](README.md) | **Dansk** | [Deutsch](README.DE.md)
 
 Et let kontrolpanel til samlet administration af to, tre eller fire Pi-hole v6-installationer.
-Brugerfladen er fortsat én `index.html` uden applikationsbackend, database
-eller frontend-buildproces. Installationerne angives i én ekstern JSON-fil.
-Et lille Python-værktøj danner browserens konfiguration og nginx-proxyerne
-fra denne fil; i Docker sker det automatisk ved opstart.
+Browseren indlæser `index.html`, en ekstern JSON-konfiguration og en lokal
+Chart.js-fil. Der er ingen applikationsbackend, database eller frontend-buildproces.
+Installationerne angives i én central JSON-fil. Et lille Python-værktøj danner
+browserens offentlige konfiguration og nginx-proxyerne fra denne fil; i Docker
+sker det automatisk ved opstart.
 
 Kontrolpanelet indeholder:
 
