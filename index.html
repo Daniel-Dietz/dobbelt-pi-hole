@@ -1040,7 +1040,16 @@ const I18N = {
     "queries.total.other": "{count} forespørgsler i alt for det valgte tidsrum.",
     "queries.truncated.one": "{count} forespørgsel hentet for det valgte tidsrum – der er muligvis flere end vist; indsnævr tidsrummet for et fuldstændigt resultat.",
     "queries.truncated.other": "{count} forespørgsler hentet for det valgte tidsrum – der er muligvis flere end vist; indsnævr tidsrummet for et fuldstændigt resultat.",
-    "domains.loading": "Indlæser…",
+        "multi.invalidRead": "Ufuldstændigt svar fra Pi-hole.",
+    "multi.unknown": "Ukendt",
+    "multi.disconnected": "Ikke forbundet",
+    "multi.unavailable": "Data kunne ikke hentes fra: {servers}. Posterne regnes ikke som manglende.",
+    "multi.confirmed": "{server}: ændringen er bekræftet.",
+    "multi.failed": "{server}: ændringen eller kontrollen mislykkedes. {error}",
+    "multi.skipped": "{server}: sprunget over (ikke forbundet).",
+    "multi.unchanged": "{server}: allerede i ønsket tilstand; ingen ændring sendt.",
+    "multi.uncertain": "{server}: ændringens resultat er ukendt. Kontrollér tilstanden før nyt forsøg. {error}",
+"domains.loading": "Indlæser…",
     "domains.domain": "Domæne",
     "domains.type": "Type",
     "domains.kind": "Slags",
@@ -1303,7 +1312,16 @@ const I18N = {
     "queries.total.other": "{count} queries in total for the selected time range.",
     "queries.truncated.one": "{count} query loaded for the selected time range – more queries may be available. Narrow the time range for complete results.",
     "queries.truncated.other": "{count} queries loaded for the selected time range – more queries may be available. Narrow the time range for complete results.",
-    "domains.loading": "Loading…",
+        "multi.invalidRead": "Incomplete response from Pi-hole.",
+    "multi.unknown": "Unknown",
+    "multi.disconnected": "Not connected",
+    "multi.unavailable": "Data unavailable from: {servers}. These records are not considered missing.",
+    "multi.confirmed": "{server}: change confirmed.",
+    "multi.failed": "{server}: change or preflight failed. {error}",
+    "multi.skipped": "{server}: skipped (not connected).",
+    "multi.unchanged": "{server}: already in the requested state; no write sent.",
+    "multi.uncertain": "{server}: write outcome unknown. Check the current state before retrying. {error}",
+"domains.loading": "Loading…",
     "domains.domain": "Domain",
     "domains.type": "Type",
     "domains.kind": "Match type",
@@ -1566,7 +1584,16 @@ const I18N = {
     "queries.total.other": "Insgesamt {count} Anfragen im gewählten Zeitraum.",
     "queries.truncated.one": "{count} Anfrage wurde für den gewählten Zeitraum geladen – möglicherweise sind weitere Anfragen vorhanden. Grenzen Sie den Zeitraum für ein vollständiges Ergebnis ein.",
     "queries.truncated.other": "{count} Anfragen wurden für den gewählten Zeitraum geladen – möglicherweise sind weitere Anfragen vorhanden. Grenzen Sie den Zeitraum für ein vollständiges Ergebnis ein.",
-    "domains.loading": "Wird geladen…",
+        "multi.invalidRead": "Unvollständige Antwort von Pi-hole.",
+    "multi.unknown": "Unbekannt",
+    "multi.disconnected": "Nicht verbunden",
+    "multi.unavailable": "Daten nicht verfügbar von: {servers}. Diese Einträge gelten nicht als fehlend.",
+    "multi.confirmed": "{server}: Änderung bestätigt.",
+    "multi.failed": "{server}: Änderung oder Vorprüfung fehlgeschlagen. {error}",
+    "multi.skipped": "{server}: übersprungen (nicht verbunden).",
+    "multi.unchanged": "{server}: gewünschter Zustand bereits vorhanden; keine Änderung gesendet.",
+    "multi.uncertain": "{server}: Ergebnis der Änderung unbekannt. Vor erneutem Versuch Zustand prüfen. {error}",
+"domains.loading": "Wird geladen…",
     "domains.domain": "Domain",
     "domains.type": "Typ",
     "domains.kind": "Abgleichart",
@@ -3734,6 +3761,81 @@ async function renderQueries(container, generation) {
   });
   document.getElementById("qFilter").addEventListener("input", /** Update query matches as the free-text filter is edited. */ () => renderQueryTable());
   await reloadQueries();
+}
+
+
+/** Reject an incomplete Pi-hole collection response instead of treating it as empty. */
+function requireCollection(result, key) {
+  if (!result || !Array.isArray(result[key])) throw new Error(msg("multi.invalidRead"));
+  return result[key];
+}
+/** Require an explicit hosts array in the nested configuration response. */
+function requireHostRecords(result) {
+  const rows = result?.config?.dns?.hosts;
+  if (!Array.isArray(rows)) throw new Error(msg("multi.invalidRead"));
+  return rows;
+}
+/** Render a read failure or disconnected server without offering mutating controls. */
+function uncertainCell(states, server) {
+  const kind = states.get(server.id);
+  return kind === "confirmed" ? "" : `<td><span class="badge off">${htmlMsg(kind === "skipped" ? "multi.disconnected" : "multi.unknown")}</span></td>`;
+}
+/** Explain which instances have not supplied complete data for this table. */
+function collectionCoverageHtml(states) {
+  const names = state.servers.filter(server => states.get(server.id) !== "confirmed").map(server => server.label);
+  return names.length ? `<p class="sub" role="status">${htmlMsg("multi.unavailable", { servers: names.join(", ") })}</p>` : "";
+}
+/**
+ * Preflight each selected target, then send at most one mutation per target.
+ * An unsuccessful preflight prevents a write; transport/5xx write failures
+ * remain uncertain and are never automatically retried.
+ * @param {HTMLElement} button Button to disable against duplicate clicks.
+ * @param {object[]} targets Selected Pi-hole instances.
+ * @param {object} op Functions path(server), extract(result), isCurrent(server, rows), write(server, rows).
+ * @returns {Promise<Array|null>} Per-instance outcomes; null when already in flight.
+ */
+async function performCheckedWrites(button, targets, op) {
+  if (button?.dataset.multiBusy === "1") return null;
+  if (button) { button.dataset.multiBusy = "1"; button.disabled = true; }
+  const outcomes = [];
+  try {
+    for (const server of targets) {
+      if (!server.connected) { outcomes.push({ server, status: "skipped" }); continue; }
+      let rows;
+      try { rows = op.extract(await apiCall(server, op.path(server))); }
+      catch (error) { outcomes.push({ server, status: "failed", error: error.message }); continue; }
+      if (op.isCurrent(server, rows)) { outcomes.push({ server, status: "unchanged" }); continue; }
+      try {
+        const result = await op.write(server, rows);
+        const errors = result?.processed?.errors || [];
+        outcomes.push(errors.length
+          ? { server, status: "failed", error: errors.map(item => item.error || item.item).join("; ") }
+          : { server, status: "confirmed" });
+      } catch (error) {
+        outcomes.push({ server,
+          status: error instanceof AuthError || (error.httpStatus >= 400 && error.httpStatus < 500) ? "failed" : "uncertain",
+          error: error.message });
+      }
+    }
+  } finally {
+    if (button) { delete button.dataset.multiBusy; if (button.isConnected) button.disabled = false; }
+  }
+  for (const outcome of outcomes) {
+    toast(msg("multi." + outcome.status, { server: outcome.server.label, error: outcome.error || "" }),
+      outcome.status === "confirmed" ? "ok" : outcome.status === "unchanged" ? "" : "err");
+  }
+  return outcomes;
+}
+/**
+ * Retain submitted form values unless all target outcomes are confirmed or
+ * already current. Do not erase edits to an original or rerendered form.
+ */
+function clearConfirmedDraft(outcomes, form, fields) {
+  if (!outcomes?.length || !outcomes.every(outcome => ["confirmed", "unchanged"].includes(outcome.status)) || !form.isConnected) return;
+  for (const [selector, previous] of fields) {
+    const input = form.querySelector(selector);
+    if (input && input.value.trim() === previous) input.value = "";
+  }
 }
 
 /**
