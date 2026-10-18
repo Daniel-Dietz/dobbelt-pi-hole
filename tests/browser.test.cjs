@@ -2621,3 +2621,95 @@ test('Issue #8 Codex: an obsolete client read cannot change the latest unavailab
     assert.equal(reads, 2);
     await assertNoCorruption(fixture);
   });
+
+
+test('Issue #9: normal API and login requests time out without destroying valid session state', /** Hold an API request and login until the browser deadline aborts both. */ async t => {
+  const fixture = await openDashboard(t, { language: 'de', fakeClock: true });
+  const { page } = fixture;
+  await page.evaluate(/** Intercept only selected requests with abort-aware promises. */ () => {
+    const original = window.fetch;
+    window.fetch = (url, init) => {
+      if (String(url).endsWith('/stats/top_clients') || (String(url).endsWith('/auth') && init?.method === 'POST')) {
+        return new Promise((resolve, reject) => {
+          init.signal.addEventListener('abort', /** Simulate the network ending its pending request on cancellation. */ () => reject(new DOMException('aborted', 'AbortError')), { once: true });
+        });
+      }
+      return original(url, init);
+    };
+    window.__issue9ApiTimeout = apiCall(serverById('1'), '/stats/top_clients').then(
+      /** Timeouts must not be counted as successes. */ () => 'unexpected-success',
+      /** Retain the localized deadline error for the test. */ error => error.message);
+    window.__issue9LoginTimeout = login(serverById('1'), 'synthetic-password').then(
+      /** Timeouts must not authenticate the instance. */ () => 'unexpected-success',
+      /** Retain the localized deadline error for the test. */ error => error.message);
+  });
+  await page.clock.runFor(15001);
+  const result = await page.evaluate(/** Read completed errors and the previously valid SID. */ async () => ({
+    errors: await Promise.all([window.__issue9ApiTimeout, window.__issue9LoginTimeout]),
+    sid: serverById('1').sid
+  }));
+  assert.deepEqual(result.errors, ['Zeitlimit für die Anfrage überschritten.', 'Zeitlimit für die Anfrage überschritten.']);
+  assert.equal(result.sid, 'fixture-sid-1');
+  await assertNoCorruption(fixture);
+});
+
+test('Issue #9: an obsolete one-hour query load never overwrites a newer 24-hour result', /** Pause an old range and complete the replacement before releasing it. */ async t => {
+  const fixture = await openDashboard(t, { language: 'en', hash: 'queries' });
+  const { page } = fixture;
+  const oldGate = deferred(t);
+  const oldRequest = deferred(t);
+  await page.route('**/queries?*', /** Delay only the one-hour range while serving the latest range normally. */ async route => {
+    const url = new URL(route.request().url());
+    const hours = (Number(url.searchParams.get('until')) - Number(url.searchParams.get('from'))) / 3600;
+    if (hours !== 1) return route.fallback();
+    oldRequest.release();
+    await oldGate.promise;
+    try {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ queries: [{ time: TIMESTAMP, domain: 'obsolete.example', type: 'A', status: 'FORWARDED' }] }) });
+    } catch { /* The cancelled stale request may no longer be fulfilled. */ }
+  });
+  await page.locator('#qRange').selectOption('1');
+  await oldRequest.promise;
+  await page.locator('#qRange').selectOption('24');
+  await page.waitForFunction(/** Wait for the later request to publish both servers' current rows. */ () => document.querySelector('#qStatus')?.textContent.includes('2 queries in total'));
+  oldGate.release();
+  await page.evaluate(/** Flush one rendering frame after releasing the old response. */ () => new Promise(requestAnimationFrame));
+  assert.equal(await page.locator('#qRange').inputValue(), '24');
+  assert.equal(await page.locator('#qArea tbody tr').count(), 2);
+  assert.doesNotMatch(await page.locator('#qArea').textContent(), /obsolete\.example/u);
+  await assertNoCorruption(fixture);
+});
+
+test('Issue #9: logout clears the local SID before an unsuccessful remote revoke finishes', /** A network failure must never retain local authentication. */ async t => {
+  const fixture = await openDashboard(t, { language: 'en' });
+  const result = await fixture.page.evaluate(/** Intercept the revoke, start logout and inspect local state immediately. */ async () => {
+    const server = serverById('1');
+    const original = window.fetch;
+    window.fetch = (url, init) => init?.method === 'DELETE' && String(url).endsWith('/auth')
+      ? Promise.reject(new TypeError('offline')) : original(url, init);
+    const pending = logout(server);
+    const clearedImmediately = !server.sid && !server.connected && sessionStorage.getItem(sessionStorageKey(server)) === null;
+    const remoteRevoked = await pending;
+    window.fetch = original;
+    return { clearedImmediately, remoteRevoked };
+  });
+  assert.deepEqual(result, { clearedImmediately: true, remoteRevoked: false });
+  await assertNoCorruption(fixture);
+});
+
+test('Issue #9: HTTP 401 on a raw Gravity response invalidates only the original server SID', /** Cover the raw-response authentication path, not only decoded JSON calls. */ async t => {
+  const fixture = await openDashboard(t, { language: 'en' });
+  const result = await fixture.page.evaluate(/** Replace only the raw Gravity response with an explicit session rejection. */ async () => {
+    const server = serverById('1');
+    const original = window.fetch;
+    window.fetch = (url, init) => String(url).includes('/action/gravity') && init?.method === 'POST'
+      ? Promise.resolve(new Response(null, { status: 401 })) : original(url, init);
+    let caught = false;
+    try { await apiCall(server, '/action/gravity?color=true', { method: 'POST', rawResponse: true }); }
+    catch (error) { caught = error instanceof AuthError; }
+    window.fetch = original;
+    return { caught, connected: server.connected, sid: server.sid, stored: sessionStorage.getItem(sessionStorageKey(server)), peerSid: serverById('2').sid };
+  });
+  assert.deepEqual(result, { caught: true, connected: false, sid: null, stored: null, peerSid: 'fixture-sid-2' });
+  await assertNoCorruption(fixture);
+});
