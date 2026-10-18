@@ -1045,6 +1045,8 @@ const I18N = {
     "queries.loadingMore.other": "{count} forespørgsler hentet hurtigt – henter resten af tidsrummet i baggrunden…",
     "queries.total.one": "{count} forespørgsel i alt for det valgte tidsrum.",
     "queries.total.other": "{count} forespørgsler i alt for det valgte tidsrum.",
+    "queries.partialProgress": "Henter data: {ready} af {total} Pi-hole-instanser er færdige; afventer de øvrige svar.",
+    "queries.partialResults": "Delvise data: {ready} af {total} Pi-hole-instanser leverede komplette svar; øvrige data er utilgængelige."
     "queries.truncated.one": "{count} forespørgsel hentet for det valgte tidsrum – der er muligvis flere end vist; indsnævr tidsrummet for et fuldstændigt resultat.",
     "queries.truncated.other": "{count} forespørgsler hentet for det valgte tidsrum – der er muligvis flere end vist; indsnævr tidsrummet for et fuldstændigt resultat.",
     "multi.busy": "En anden ændring på disse Pi-hole-instanser er stadig i gang.",
@@ -1335,6 +1337,8 @@ const I18N = {
     "queries.loadingMore.other": "{count} queries loaded quickly – loading the rest of the time range in the background…",
     "queries.total.one": "{count} query in total for the selected time range.",
     "queries.total.other": "{count} queries in total for the selected time range.",
+    "queries.partialProgress": "Loading data: {ready} of {total} Pi-hole instances finished; waiting for the remaining responses.",
+    "queries.partialResults": "Partial data: {ready} of {total} Pi-hole instances returned complete results; other data is unavailable."
     "queries.truncated.one": "{count} query loaded for the selected time range – more queries may be available. Narrow the time range for complete results.",
     "queries.truncated.other": "{count} queries loaded for the selected time range – more queries may be available. Narrow the time range for complete results.",
     "multi.busy": "Another change to these Pi-hole instances is still running.",
@@ -1625,6 +1629,8 @@ const I18N = {
     "queries.loadingMore.other": "{count} Anfragen wurden bereits geladen – der restliche Zeitraum wird im Hintergrund geladen…",
     "queries.total.one": "Insgesamt {count} Anfrage im gewählten Zeitraum.",
     "queries.total.other": "Insgesamt {count} Anfragen im gewählten Zeitraum.",
+    "queries.partialProgress": "Daten werden geladen: {ready} von {total} Pi-hole-Instanzen abgeschlossen; weitere Antworten stehen aus.",
+    "queries.partialResults": "Teildaten: {ready} von {total} Pi-hole-Instanzen lieferten vollständige Ergebnisse; weitere Daten fehlen."
     "queries.truncated.one": "{count} Anfrage wurde für den gewählten Zeitraum geladen – möglicherweise sind weitere Anfragen vorhanden. Grenzen Sie den Zeitraum für ein vollständiges Ergebnis ein.",
     "queries.truncated.other": "{count} Anfragen wurden für den gewählten Zeitraum geladen – möglicherweise sind weitere Anfragen vorhanden. Grenzen Sie den Zeitraum für ein vollständiges Ergebnis ein.",
     "multi.busy": "Eine weitere Änderung an diesen Pi-hole-Instanzen läuft noch.",
@@ -3611,7 +3617,7 @@ async function renderQueries(container, generation) {
   document.getElementById("qFilter").value = queryUiState.filter;
   document.getElementById("qServerFilter").value = queryUiState.server;
   document.getElementById("qPageSize").value = queryUiState.pageSize;
-  await refreshClientNames();
+  const nameRefresh = refreshClientNames();
   if (generation !== state.renderGen) {
     return;
   }
@@ -3855,14 +3861,18 @@ async function renderQueries(container, generation) {
    * then render again after all follow-up requests finish (at most 20 pages of 500 per instance).
    * Report per-instance request failures and indicate when that follow-up limit truncates results.
    */
+  /**
+   * Load each instance independently and publish its confirmed rows immediately.
+   * Each reload owns its own map, abort signal and view generation, so neither
+   * an obsolete response nor a late cursor can mutate the next time window.
+   */
   async function reloadQueries() {
-    // Abort an older reload even while it is reading cursor pages.
     queryLoadController?.abort();
     const controller = new AbortController();
     queryLoadController = controller;
     activeQueryAbortController = controller;
     const serial = ++queryLoadSerial;
-    const ownsView = /** Only the newest mounted load may update DOM, filters or toasts. */ () =>
+    const ownsView = /** Reject data after a range change, navigation or abort. */ () =>
       serial === queryLoadSerial && generation === state.renderGen && !controller.signal.aborted;
     const rangeHours = Number(document.getElementById("qRange").value);
     const untilTimestamp = Math.floor(Date.now() / 1000);
@@ -3871,49 +3881,67 @@ async function renderQueries(container, generation) {
     const queryStatus = document.getElementById("qStatus");
     loadingArea.innerHTML = `<p class="empty">${htmlMsg("queries.loading")}</p>`;
     queryStatus.textContent = "";
+    const connectedServers = state.servers.filter(
+      /** Only authenticated peers can supply query history. */ server => server.connected);
+    const results = new Map();
+    /**
+     * Build a fresh immutable row view and progress statement from completed instance reads.
+     * Unfinished and disconnected targets never silently count as empty or successful.
+     */
+    function publishResults() {
+      if (!ownsView()) return;
+      queryRows = state.servers.flatMap(
+        /** Keep rows grouped by configured server order, irrespective of response timing. */ server =>
+          (results.get(server.id)?.rows || []).map(
+            /** Attach the source instance without altering the server response. */ row => ({ server, ...row })));
+      rebuildQueryFilters();
+      renderQueryTable(false);
+      const snapshots = [...results.values()];
+      const finished = snapshots.filter(
+        /** Count both successes and failures for honest progress reporting. */ item => item.complete).length;
+      const succeeded = snapshots.filter(
+        /** Count a peer only when its cursor chain completed successfully. */ item => item.complete && !item.error).length;
+      const truncated = snapshots.some(
+        /** Carry forward any known cursor cap across partial updates. */ item => item.truncated);
+      if (finished < connectedServers.length) {
+        queryStatus.textContent = msg("queries.partialProgress", { ready: finished, total: connectedServers.length });
+      } else if (succeeded < state.servers.length) {
+        queryStatus.textContent = msg("queries.partialResults", { ready: succeeded, total: state.servers.length });
+      } else {
+        queryStatus.textContent = msgCount(truncated ? "queries.truncated" : "queries.total", queryRows.length);
+      }
+    }
     try {
-      const initial = await Promise.all(state.servers.map(
-      /** Fetch each instance into an isolated buffer instead of mutating shared queryRows. */
-      async server => {
-        if (!server.connected) return { server, rows: [], cursor: null };
-        try {
-          const response = await apiCall(server, "/queries?length=100&from=" + fromTimestamp + "&until=" + untilTimestamp, { signal: controller.signal });
-          return { server, rows: requireCollection(response, "queries"), cursor: response.cursor || null };
-        } catch (error) {
-          return { server, rows: [], cursor: null, error };
-        }
-      }));
-      if (!ownsView()) return;
-      const cursors = initial.filter(/** Follow cursors only for successfully read instances. */ entry => entry.cursor);
-      queryRows = initial.flatMap(/** Attach each source server after the current initial stage finishes. */ entry =>
-        entry.rows.map(/** Decorate the data with the source instance without mutation. */ row => ({ server: entry.server, ...row })));
-      for (const entry of initial) {
-        if (entry.error) toast(msg("queries.serverError", { server: entry.server.label, error: entry.error.message }), "err");
-      }
-      rebuildQueryFilters();
-      renderQueryTable(false);
-      queryStatus.textContent = msgCount(cursors.length ? "queries.loadingMore" : "queries.total", queryRows.length);
-      if (!cursors.length) return;
-      const remaining = await Promise.all(cursors.map(
-      /** Read each cursor chain into an isolated per-instance buffer. */
-      async entry => {
-        try {
-          const result = await fetchQueryPages(entry.server, fromTimestamp, untilTimestamp, entry.cursor, controller.signal);
-          return { server: entry.server, ...result };
-        } catch (error) {
-          return { server: entry.server, rows: [], truncated: false, error };
-        }
-      }));
-      if (!ownsView()) return;
-      const anyTruncated = remaining.some(/** Record whether any cursor reached its page cap. */ entry => entry.truncated);
-      queryRows = queryRows.concat(remaining.flatMap(/** Publish only the current run's cursor results. */ entry =>
-        entry.rows.map(/** Attach the source instance to the returned page. */ row => ({ server: entry.server, ...row }))));
-      for (const entry of remaining) {
-        if (entry.error) toast(msg("queries.serverError", { server: entry.server.label, error: entry.error.message }), "err");
-      }
-      queryStatus.textContent = msgCount(anyTruncated ? "queries.truncated" : "queries.total", queryRows.length);
-      rebuildQueryFilters();
-      renderQueryTable(false);
+      await Promise.all(connectedServers.map(
+        /** Each peer publishes its initial page before other peers have finished. */ async server => {
+          const item = { rows: [], complete: false, error: null, truncated: false };
+          try {
+            const response = await apiCall(server,
+              "/queries?length=100&from=" + fromTimestamp + "&until=" + untilTimestamp,
+              { signal: controller.signal });
+            if (!ownsView()) return;
+            item.rows = requireCollection(response, "queries");
+            results.set(server.id, item);
+            publishResults();
+            if (response.cursor) {
+              const pages = await fetchQueryPages(server, fromTimestamp, untilTimestamp, response.cursor, controller.signal);
+              if (!ownsView()) return;
+              item.rows = item.rows.concat(pages.rows);
+              item.truncated = pages.truncated;
+            }
+          } catch (error) {
+            if (!ownsView()) return;
+            item.error = error;
+            toast(msg("queries.serverError", { server: server.label, error: error.message }), "err");
+          } finally {
+            if (ownsView()) {
+              item.complete = true;
+              results.set(server.id, item);
+              publishResults();
+            }
+          }
+        }));
+      if (ownsView() && connectedServers.length === 0) publishResults();
     } finally {
       if (queryLoadController === controller) queryLoadController = null;
       if (activeQueryAbortController === controller) activeQueryAbortController = null;
@@ -3943,6 +3971,13 @@ async function renderQueries(container, generation) {
     }
   });
   document.getElementById("qFilter").addEventListener("input", /** Update query matches as the free-text filter is edited. */ () => renderQueryTable());
+  void nameRefresh.then(
+    /** Refresh visible client names without replacing filters or resurrecting another tab. */ accepted => {
+      if (accepted && generation === state.renderGen && queryRows.length) {
+        rebuildQueryFilters();
+        renderQueryTable(false);
+      }
+    }).catch(/** An optional friendly-name lookup never blocks query rows. */ () => {});
   await reloadQueries();
 }
 
