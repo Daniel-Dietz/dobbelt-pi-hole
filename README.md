@@ -298,13 +298,24 @@ existing filenames remain available for documentation links.
   explicitly retrying; no mutation is automatically replayed.
   These safeguards are tracked in
   [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8).
-- **Requests and browser state:** general request deadlines, query-load race
-  protection and clearer session/permission states remain in
-  [#9](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/9) and
-  [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10). Theme changes
-  can discard unfinished forms; draft preservation, keyboard improvements and
-  broader browser/mobile checks are tracked in
-  [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11).
+- **Requests and browser state:** normal Pi-hole requests, login and logout
+  have a 15-second browser deadline; restored-session checks use 10 seconds.
+  Gravity starts within the normal deadline, with a separate two-minute
+  stream-idle limit and 30-minute overall stream limit. Healthy Pi-hole
+  summaries and query rows are shown while other instances are still loading,
+  and combined data is explicitly marked partial when a target is missing.
+  Changing a query range or leaving its tab cancels obsolete query/cursor
+  reads; late results cannot overwrite the selected range. HTTP 401 invalidates
+  the original session only. Failed verification of a restored SID marks
+  that connection unverified and offers a manual session retry. A normal API
+  transport error retains the SID but does not change an established
+  connection state. Logout clears the local SID immediately and reports
+  whether remote revocation was confirmed. See the
+  [request and session guide](docs/CONFIGURATION.md#browser-request-limits-and-session-state).
+  More specific API permissions remain in
+  [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10); draft
+  preservation, keyboard improvements and broader browser/mobile checks
+  remain in [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11).
 - **Configuration changes:** startup validates the JSON, but a restart with
   invalid input can leave the service unavailable. Keep a working copy of the
   private configuration. Staged validation, coordinated activation and

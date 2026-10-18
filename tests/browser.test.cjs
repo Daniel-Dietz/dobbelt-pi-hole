@@ -196,6 +196,9 @@ async function openDashboard(t, options = {}) {
     waitForReady = true,
     fakeClock = false,
     holdInitialSessions = false,
+    holdSummaryServer = null,
+    holdQueriesServer = null,
+    holdOptionalServer = null,
     contentSecurityPolicy = null,
     origin = ORIGIN,
     html = readFileSync(HTML_PATH, 'utf8'),
@@ -267,6 +270,9 @@ async function openDashboard(t, options = {}) {
     return gate;
   }
   const initialSessionGate = holdInitialSessions ? pauseReads('/dns/blocking', typeof holdInitialSessions === 'string' ? holdInitialSessions : null) : null;
+  const summaryGate = holdSummaryServer ? pauseReads('/stats/summary', holdSummaryServer) : null;
+  const queriesGate = holdQueriesServer ? pauseReads('/queries', holdQueriesServer) : null;
+  const optionalGate = holdOptionalServer ? pauseReads('/stats/top_clients', holdOptionalServer) : null;
   const serverData = Object.fromEntries([1, 2, 3, 4].map(/** Allocate independent writable API data for each possible instance so mutations cannot leak between fixtures. */ id => [String(id), {
     blocking: true,
     domains: [{
@@ -667,7 +673,10 @@ async function openDashboard(t, options = {}) {
     errors,
     serverData,
     pauseReads,
-    initialSessionGate
+    initialSessionGate,
+    summaryGate,
+    queriesGate,
+    optionalGate
   };
 }
 
@@ -804,7 +813,7 @@ async function openRedirectDashboard(t, {
       end = html.indexOf('async function logout(');
     assert.ok(start >= 0 && end > start);
     const guarded = html.slice(start, end),
-      guard = /^[ \t]*redirect: "error",\r?\n/gm;
+      guard = /redirect: "error",?[ \t\r\n]*/gm;
     assert.equal([...guarded.matchAll(guard)].length, 2, 'Remove exactly the API and login guards');
     html = html.slice(0, start) + guarded.replace(guard, '') + html.slice(end);
     const hash = /** Recompute the inline application's CSP hash after an in-memory guard removal, preserving a realistic negative control. */ source => {
@@ -1115,7 +1124,7 @@ test('initial session checks finish before forms become interactive and preserve
   assert.equal(fixture.requests.filter(/** Select writes to prove startup and language changes did not submit any form. */ request => request.method !== 'GET').length, 0);
   await assertNoCorruption(fixture);
 });
-test('a stalled initial session times out while a healthy peer loads and cannot reconnect late', /** Time out one initial session with a controlled clock while a healthy peer loads, then reject the late response. */ async t => {
+test('a stalled initial session stays unverified and retains its SID for a later retry', /** Preserve saved credentials on network failure while keeping late responses from reconnecting automatically. */ async t => {
   const fixture = await openDashboard(t, {
       language: 'de',
       holdInitialSessions: '2',
@@ -1138,13 +1147,17 @@ test('a stalled initial session times out while a healthy peer loads and cannot 
   assert.deepEqual(await page.locator('#serverPills .pill.on b').allTextContents(), [RAW_TEXT + ' 1']);
   assert.equal(await page.locator('#dashGrid .big-num').first().textContent(), 12345 .toLocaleString('de-DE'));
   const timedOutBase = fixture.configuration.body.servers[1].base;
-  assert.equal(await page.evaluate(/** Read the timed-out route's saved SID immediately after the startup timeout. */ key => sessionStorage.getItem(key), SESSION_PREFIX + timedOutBase), null);
+  assert.equal(await page.evaluate(/** Keep the potentially valid SID when the instance is temporarily unavailable. */ key => sessionStorage.getItem(key), SESSION_PREFIX + timedOutBase), 'fixture-sid-2');
+  assert.equal(await page.locator('[data-session-retry="2"]').count(), 1);
   assert.equal(fixture.requests.filter(/** Count requests to the stalled peer to ensure it never receives ordinary tab reads. */ request => request.id === '2').length, 1, 'The timed-out peer must not receive operational reads');
   initialSessionGate.release();
   await page.waitForLoadState('networkidle');
   assert.deepEqual(await page.locator('#serverPills .pill.on b').allTextContents(), [RAW_TEXT + ' 1'], 'A late session response must not reconnect the timed-out peer');
   assert.equal(await page.locator('[data-loginform="2"]').count(), 1);
-  assert.equal(await page.evaluate(/** Read the timed-out route's SID again after its late response to detect unintended reconnection. */ key => sessionStorage.getItem(key), SESSION_PREFIX + timedOutBase), null);
+  assert.equal(await page.evaluate(/** A late, obsolete response must not clear the saved SID. */ key => sessionStorage.getItem(key), SESSION_PREFIX + timedOutBase), 'fixture-sid-2');
+  await page.locator('[data-session-retry="2"]').click();
+  await page.waitForFunction(/** Verify the retained SID before reporting the instance connected. */ () => state.servers.find(server => server.id === '2')?.connected === true);
+  assert.equal(await page.locator('#serverPills .pill.on').count(), 2);
   await assertNoCorruption(fixture);
 });
 for (const scenario of [{
@@ -2617,3 +2630,504 @@ test('Issue #8 Codex: an obsolete client read cannot change the latest unavailab
     assert.equal(reads, 2);
     await assertNoCorruption(fixture);
   });
+
+
+test('Issue #9: normal API and login requests time out without destroying valid session state', /** Hold an API request and login until the browser deadline aborts both. */ async t => {
+  const fixture = await openDashboard(t, { language: 'de', fakeClock: true });
+  const { page } = fixture;
+  await page.evaluate(/** Intercept only selected requests with abort-aware promises. */ () => {
+    const original = window.fetch;
+    window.fetch = (url, init) => {
+      if (String(url).endsWith('/stats/top_clients') || (String(url).endsWith('/auth') && init?.method === 'POST')) {
+        return new Promise((resolve, reject) => {
+          init.signal.addEventListener('abort', /** Simulate the network ending its pending request on cancellation. */ () => reject(new DOMException('aborted', 'AbortError')), { once: true });
+        });
+      }
+      return original(url, init);
+    };
+    window.__issue9ApiTimeout = apiCall(serverById('1'), '/stats/top_clients').then(
+      /** Timeouts must not be counted as successes. */ () => 'unexpected-success',
+      /** Retain the localized deadline error for the test. */ error => error.message);
+    window.__issue9LoginTimeout = login(serverById('1'), 'synthetic-password').then(
+      /** Timeouts must not authenticate the instance. */ () => 'unexpected-success',
+      /** Retain the localized deadline error for the test. */ error => error.message);
+  });
+  await page.clock.runFor(15001);
+  const result = await page.evaluate(/** Read completed errors and the previously valid SID. */ async () => ({
+    errors: await Promise.all([window.__issue9ApiTimeout, window.__issue9LoginTimeout]),
+    sid: serverById('1').sid
+  }));
+  assert.deepEqual(result.errors, ['Zeitlimit für die Anfrage überschritten.', 'Zeitlimit für die Anfrage überschritten.']);
+  assert.equal(result.sid, 'fixture-sid-1');
+  await assertNoCorruption(fixture);
+});
+
+test('Issue #9: an obsolete one-hour query load never overwrites a newer 24-hour result', /** Pause an old range and complete the replacement before releasing it. */ async t => {
+  const fixture = await openDashboard(t, { language: 'en', hash: 'queries' });
+  const { page } = fixture;
+  const oldGate = deferred(t);
+  const oldRequest = deferred(t);
+  await page.route('**/queries?*', /** Delay only the one-hour range while serving the latest range normally. */ async route => {
+    const url = new URL(route.request().url());
+    const hours = (Number(url.searchParams.get('until')) - Number(url.searchParams.get('from'))) / 3600;
+    if (hours !== 1) return route.fallback();
+    oldRequest.release();
+    await oldGate.promise;
+    try {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ queries: [{ time: TIMESTAMP, domain: 'obsolete.example', type: 'A', status: 'FORWARDED' }] }) });
+    } catch { /* The cancelled stale request may no longer be fulfilled. */ }
+  });
+  await page.locator('#qRange').selectOption('1');
+  await oldRequest.promise;
+  await page.locator('#qRange').selectOption('24');
+  await page.waitForFunction(/** Wait for the later request to publish both servers' current rows. */ () => document.querySelector('#qStatus')?.textContent.includes('2 queries in total'));
+  oldGate.release();
+  await page.evaluate(/** Flush one rendering frame after releasing the old response. */ () => new Promise(requestAnimationFrame));
+  assert.equal(await page.locator('#qRange').inputValue(), '24');
+  assert.equal(await page.locator('#qArea tbody tr').count(), 2);
+  assert.doesNotMatch(await page.locator('#qArea').textContent(), /obsolete\.example/u);
+  await assertNoCorruption(fixture);
+});
+
+test('Issue #9: logout clears the local SID before an unsuccessful remote revoke finishes', /** A network failure must never retain local authentication. */ async t => {
+  const fixture = await openDashboard(t, { language: 'en' });
+  const result = await fixture.page.evaluate(/** Intercept the revoke, start logout and inspect local state immediately. */ async () => {
+    const server = serverById('1');
+    const original = window.fetch;
+    window.fetch = (url, init) => init?.method === 'DELETE' && String(url).endsWith('/auth')
+      ? Promise.reject(new TypeError('offline')) : original(url, init);
+    const pending = logout(server);
+    const clearedImmediately = !server.sid && !server.connected && sessionStorage.getItem(sessionStorageKey(server)) === null;
+    const remoteRevoked = await pending;
+    window.fetch = original;
+    return { clearedImmediately, remoteRevoked };
+  });
+  assert.deepEqual(result, { clearedImmediately: true, remoteRevoked: false });
+  await assertNoCorruption(fixture);
+});
+
+test('Issue #9: HTTP 401 on a raw Gravity response invalidates only the original server SID', /** Cover the raw-response authentication path, not only decoded JSON calls. */ async t => {
+  const fixture = await openDashboard(t, { language: 'en' });
+  const result = await fixture.page.evaluate(/** Replace only the raw Gravity response with an explicit session rejection. */ async () => {
+    const server = serverById('1');
+    const original = window.fetch;
+    window.fetch = (url, init) => String(url).includes('/action/gravity') && init?.method === 'POST'
+      ? Promise.resolve(new Response(null, { status: 401 })) : original(url, init);
+    let caught = false;
+    try { await apiCall(server, '/action/gravity?color=true', { method: 'POST', rawResponse: true }); }
+    catch (error) { caught = error instanceof AuthError; }
+    window.fetch = original;
+    return { caught, connected: server.connected, sid: server.sid, stored: sessionStorage.getItem(sessionStorageKey(server)), peerSid: serverById('2').sid };
+  });
+  assert.deepEqual(result, { caught: true, connected: false, sid: null, stored: null, peerSid: 'fixture-sid-2' });
+  await assertNoCorruption(fixture);
+});
+
+
+for (const language of ['da', 'en', 'de']) {
+  test('Issue #9: stale 401 cannot clear a replacement login (' + language + ')',
+    /** An obsolete authenticated request may fail without logging out a newer successful login. */
+    async t => {
+      const fixture = await openDashboard(t, { language });
+      const result = await fixture.page.evaluate(
+        /** Delay one request's HTTP 401 until the same instance has authenticated with a fresh SID. */
+        async () => {
+          const server = serverById('1');
+          const originalFetch = window.fetch;
+          let releaseOld;
+          const oldResponse = new Promise(resolve => { releaseOld = resolve; });
+          window.fetch = (url, options) => {
+            if (String(url).endsWith('/stats/summary') &&
+                options?.headers?.['X-FTL-SID'] === 'fixture-sid-1') return oldResponse;
+            if (String(url).endsWith('/auth') && options?.method === 'POST') {
+              return Promise.resolve(new Response(
+                JSON.stringify({ session: { sid: 'replacement-sid-1' } }),
+                { status: 200, headers: { 'Content-Type': 'application/json' } }
+              ));
+            }
+            return originalFetch(url, options);
+          };
+          try {
+            const staleCall = apiCall(server, '/stats/summary').then(
+              () => false, error => error instanceof AuthError
+            );
+            await login(server, 'replacement-password');
+            releaseOld(new Response(null, { status: 401 }));
+            const gotAuthError = await staleCall;
+            return {
+              gotAuthError,
+              connected: server.connected,
+              sid: server.sid,
+              saved: sessionStorage.getItem(sessionStorageKey(server)),
+              peerSid: serverById('2').sid
+            };
+          } finally {
+            window.fetch = originalFetch;
+          }
+        });
+      assert.deepEqual(result, {
+        gotAuthError: true,
+        connected: true,
+        sid: 'replacement-sid-1',
+        saved: 'replacement-sid-1',
+        peerSid: 'fixture-sid-2'
+      });
+      await assertNoCorruption(fixture);
+    });
+}
+
+test('Issue #9: late logout 401 cannot clear a new session',
+  /** A stale remote-revocation result must not mutate credentials created after local logout. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'da' });
+    const result = await fixture.page.evaluate(
+      /** Complete an old DELETE only after a replacement login succeeds. */
+      async () => {
+        const server = serverById('1');
+        const originalFetch = window.fetch;
+        let finishRevoke;
+        const heldRevoke = new Promise(resolve => { finishRevoke = resolve; });
+        window.fetch = (url, options) => {
+          if (String(url).endsWith('/auth') && options?.method === 'DELETE') return heldRevoke;
+          if (String(url).endsWith('/auth') && options?.method === 'POST') {
+            return Promise.resolve(new Response(
+              JSON.stringify({ session: { sid: 'after-logout-sid' } }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            ));
+          }
+          return originalFetch(url, options);
+        };
+        try {
+          const pendingLogout = logout(server);
+          await login(server, 'new-password');
+          finishRevoke(new Response(null, { status: 401 }));
+          const revoked = await pendingLogout;
+          return {
+            revoked,
+            connected: server.connected,
+            sid: server.sid,
+            saved: sessionStorage.getItem(sessionStorageKey(server))
+          };
+        } finally {
+          window.fetch = originalFetch;
+        }
+      });
+    assert.deepEqual(result, {
+      revoked: false,
+      connected: true,
+      sid: 'after-logout-sid',
+      saved: 'after-logout-sid'
+    });
+    await assertNoCorruption(fixture);
+  });
+
+for (const language of ['da', 'en', 'de']) {
+  test('Issue #9: a healthy dashboard card renders while a peer hangs (' + language + ')',
+    /** Publish one instance's confirmed summary without misrepresenting an outstanding peer as successful. */
+    async t => {
+      const fixture = await openDashboard(t, { language, holdSummaryServer: '2', waitForReady: false });
+      const { page, summaryGate } = fixture;
+      await page.locator('[data-dashboard-preview="1"]').waitFor();
+      await page.locator('[data-dashboard-pending="2"]').waitFor();
+      assert.ok(summaryGate.arrived > 0, 'The second instance must still be pending');
+      assert.equal(await page.locator('[data-dashboard-preview="1"] .big-num').textContent(),
+        (12345).toLocaleString(EXPECTED[language].locale));
+      const progress = await page.locator('[data-dashboard-progress="true"]').textContent();
+      assert.ok(progress.includes('1') && progress.includes('2'), 'The combined total must identify partial coverage');
+      summaryGate.release();
+      await page.locator('#dashGrid [data-toggle-block="2"]').waitFor();
+      assert.equal(await page.locator('#dashGrid [data-toggle-block]').count(), 2);
+      await assertNoCorruption(fixture);
+    });
+
+  test('Issue #9: queries from a healthy server appear before the peer responds (' + language + ')',
+    /** Verify that one slow /queries response cannot delay another server's visible rows. */
+    async t => {
+      const fixture = await openDashboard(t, {
+        language, hash: 'queries', holdQueriesServer: '2', waitForReady: false
+      });
+      const { page, queriesGate } = fixture;
+      await page.locator('#qArea tbody tr').first().waitFor();
+      assert.ok(queriesGate.arrived > 0, 'A second peer request must still be held');
+      assert.equal(await page.locator('#qArea tbody tr').count(), 1);
+      const status = await page.locator('#qStatus').textContent();
+      assert.ok(status.includes('1') && status.includes('2'), 'Progress must disclose that not all instances responded');
+      queriesGate.release();
+      await page.waitForFunction(
+        /** Wait for both independent instance results instead of a fixed delay. */
+        () => document.querySelectorAll('#qArea tbody tr').length === 2
+      );
+      assert.equal(await page.locator('#qArea tbody tr').count(), 2);
+      await assertNoCorruption(fixture);
+    });
+}
+
+test('Issue #9: older client-name refresh cannot overwrite a newer result',
+  /** Resolve two friendly-name requests in reverse order and keep only the latest generation. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const result = await fixture.page.evaluate(
+      /** Delay the first instance response past the second generation's completion. */
+      async () => {
+        const originalFetch = window.fetch;
+        let releaseOld;
+        const oldResponse = new Promise(resolve => { releaseOld = resolve; });
+        let calls = 0;
+        const target = serverById('1').base + '/clients';
+        window.fetch = (url, options) => {
+          if (String(url) === target) {
+            calls++;
+            if (calls === 1) return oldResponse;
+            return Promise.resolve(new Response(
+              JSON.stringify({ clients: [{ client: '192.168.1.10', comment: 'Current name' }] }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            ));
+          }
+          return originalFetch(url, options);
+        };
+        try {
+          const first = refreshClientNames();
+          const second = await refreshClientNames();
+          releaseOld(new Response(
+            JSON.stringify({ clients: [{ client: '192.168.1.10', comment: 'Obsolete name' }] }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          ));
+          const firstPublished = await first;
+          return { firstPublished, second, name: state.clientNames.get('192.168.1.10') };
+        } finally {
+          window.fetch = originalFetch;
+        }
+      }
+    );
+    assert.deepEqual(result, { firstPublished: false, second: true, name: 'Current name' });
+    await assertNoCorruption(fixture);
+  });
+
+
+for (const language of ['da', 'en', 'de']) {
+  test('Issue #9: a timed-out HTTP 200 body cannot confirm an API read or write (' + language + ')',
+    /** Abort stalled JSON bodies after valid HTTP headers without inventing a successful read or mutation. */
+    async t => {
+      const fixture = await openDashboard(t, { language, fakeClock: true });
+      const { page } = fixture;
+      await page.evaluate(
+        /** Replace two JSON response bodies with never-ending streams that reject only when their deadline aborts. */
+        () => {
+          const originalFetch = window.fetch;
+          window.__issue9BodyOriginalFetch = originalFetch;
+          window.fetch = (url, init) => {
+            const uri = String(url);
+            if (uri.endsWith('/stats/summary') ||
+                (uri.endsWith('/dns/blocking') && init?.method === 'POST')) {
+              const stream = new ReadableStream({
+                /** Simulate the browser aborting a response body after headers have arrived. */
+                start(controller) {
+                  init.signal.addEventListener('abort',
+                    /** The fetch body reader must see the cancellation rather than an empty JSON document. */
+                    () => controller.error(new DOMException('body aborted', 'AbortError')),
+                    { once: true });
+                }
+              });
+              return Promise.resolve(new Response(stream, {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+              }));
+            }
+            return originalFetch(url, init);
+          };
+          const server = serverById('1');
+          window.__issue9BodyOutcomes = Promise.all([
+            apiCall(server, '/stats/summary').then(
+              /** An unread response body must not count as a confirmed read. */
+              () => ({ operation: 'read', confirmed: true }),
+              /** Retain the deadline category as well as its translated message. */
+              error => ({ operation: 'read', confirmed: false, timeout: error instanceof RequestTimeoutError, message: error.message })
+            ),
+            apiCall(server, '/dns/blocking', { method: 'POST', body: { blocking: false } }).then(
+              /** Successful HTTP headers alone must never confirm the remote write. */
+              () => ({ operation: 'write', confirmed: true }),
+              /** A lost write acknowledgement is not automatically repeated. */
+              error => ({ operation: 'write', confirmed: false, timeout: error instanceof RequestTimeoutError, message: error.message })
+            )
+          ]);
+        });
+      await page.clock.runFor(15001);
+      const result = await page.evaluate(
+        /** Read the completed deadline results and restore the original browser fetch. */
+        async () => {
+          const outcomes = await window.__issue9BodyOutcomes;
+          window.fetch = window.__issue9BodyOriginalFetch;
+          return {
+            outcomes,
+            expectedMessage: msg('common.requestTimeout'),
+            stillConnected: serverById('1').connected,
+            sid: serverById('1').sid
+          };
+        });
+      assert.deepEqual(result.outcomes.map(({ operation, confirmed, timeout }) =>
+        ({ operation, confirmed, timeout })), [
+        { operation: 'read', confirmed: false, timeout: true },
+        { operation: 'write', confirmed: false, timeout: true }
+      ]);
+      assert.ok(result.outcomes.every(outcome => outcome.message === result.expectedMessage));
+      assert.equal(result.stillConnected, true, 'A stalled body alone cannot invalidate the original SID');
+      assert.equal(result.sid, 'fixture-sid-1');
+      await assertNoCorruption(fixture);
+    });
+}
+
+
+test('Issue #9 Codex: an optional slow endpoint cannot hold back the healthy summary',
+  /** A blocked optional top-clients request must not delay the confirmed summary preview. */
+  async t => {
+    const fixture = await openDashboard(t, {
+      language: 'de', holdOptionalServer: '1', waitForReady: false
+    });
+    const { page, optionalGate } = fixture;
+    await page.locator('[data-dashboard-preview="1"]').waitFor();
+    assert.ok(optionalGate.arrived > 0, 'Top clients must still be held when the summary appears');
+    assert.equal(await page.locator('[data-dashboard-preview="1"] .big-num').textContent(), (12345).toLocaleString('de-DE'));
+    optionalGate.release();
+    await page.locator('#dashGrid [data-toggle-block="1"]').waitFor();
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #9 Codex: Gravity 401 restores login without leaving the view',
+  /** A raw-stream 401 must update the instance pill and expose a working login form on Gravity. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en', hash: 'gravity' });
+    const { page } = fixture;
+    await page.evaluate(
+      /** Intercept the next Gravity update as a rejected session while preserving all other requests. */
+      () => {
+        const originalFetch = window.fetch;
+        window.fetch = (url, init) =>
+          String(url).includes('/action/gravity?') && init?.method === 'POST'
+            ? Promise.resolve(new Response(null, { status: 401 }))
+            : originalFetch(url, init);
+      }
+    );
+    await page.locator('#gravBtn1').click();
+    await page.locator('#gravLogin1 [data-loginform="1"]').waitFor();
+    assert.equal(await page.locator('#serverPills .pill.on').count(), 1);
+    assert.equal(await page.locator('#gravBtn1').isDisabled(), true);
+    assert.equal(await page.locator('[data-tab="gravity"]').getAttribute('class'), 'active');
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #9 Codex: Gravity pre-stream timeout uses normal request deadline wording',
+  /** A timed-out POST before headers arrive must not claim that a stream timed out. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'da', hash: 'gravity', fakeClock: true });
+    const { page } = fixture;
+    await page.evaluate(
+      /** Hold the next Gravity POST until its request signal aborts. */
+      () => {
+        const originalFetch = window.fetch;
+        window.fetch = (url, init) =>
+          String(url).includes('/action/gravity?') && init?.method === 'POST'
+            ? new Promise((resolve, reject) => {
+              init.signal.addEventListener('abort',
+                /** Propagate the aborted header wait into the API deadline classifier. */
+                () => reject(new DOMException('request cancelled', 'AbortError')), { once: true });
+            })
+            : originalFetch(url, init);
+      }
+    );
+    await page.locator('#gravBtn1').click();
+    await page.clock.runFor(15001);
+    const result = await page.evaluate(
+      /** Read the failed operation and both locale-sensitive status messages. */
+      () => ({
+        actual: state.gravityRuns.get('1')?.error,
+        status: state.gravityRuns.get('1')?.status,
+        expected: msg('common.requestTimeout'),
+        stream: msg('gravity.streamTimeout')
+      })
+    );
+    assert.equal(result.status, 'error');
+    assert.equal(result.actual, result.expected);
+    assert.notEqual(result.actual, result.stream);
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #9 Codex: truncated queries remain warned when another instance is unavailable',
+  /** Never call a 20-page cursor cap complete or hide its guidance behind partial coverage. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en', hash: 'queries' });
+    const { page } = fixture;
+    await page.evaluate(
+      /** Force one peer's pagination to remain open while the other instance is disconnected. */
+      () => {
+        const first = serverById('1');
+        serverById('2').connected = false;
+        const originalFetch = window.fetch;
+        window.fetch = (url, init) => String(url).startsWith(first.base + '/queries?')
+          ? Promise.resolve(new Response(JSON.stringify({
+              queries: [{time: 1700000000, domain: 'capped.example', type: 'A', status: 'FORWARDED'}],
+              cursor: 'never-ending'
+            }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+          : originalFetch(url, init);
+      }
+    );
+    await page.locator('#qReload').click();
+    await page.waitForFunction(
+      /** Wait for the cursor limit to become visible after all twenty follow-up pages. */
+      () => document.querySelector('#qStatus')?.textContent.includes('Narrow the time range')
+    );
+    const status = await page.locator('#qStatus').textContent();
+    assert.match(status, /Partial data:/u);
+    assert.match(status, /Narrow the time range/u);
+    assert.equal(await page.locator('#qArea tbody tr').count(), 21);
+    await assertNoCorruption(fixture);
+  });
+
+
+for (const revoked of [true, false]) {
+  test('Issue #9 Codex: obsolete logout notices do not contradict a replacement session (' +
+    (revoked ? 'confirmed revoke' : 'failed revoke') + ')',
+    /** An old DELETE completion must never announce logout after a new session has authenticated. */
+    async t => {
+      const fixture = await openDashboard(t, { language: 'en' });
+      const { page } = fixture;
+      await page.evaluate(
+        /** Hold the old remote revoke until the UI has accepted a fresh login. */
+        () => {
+          const originalFetch = window.fetch;
+          let release;
+          window.__oldRevokeResponse = new Promise(resolve => { release = resolve; });
+          window.__releaseOldRevoke = release;
+          window.fetch = (url, init) => String(url).endsWith('/auth') && init?.method === 'DELETE'
+            ? window.__oldRevokeResponse
+            : originalFetch(url, init);
+        });
+      await page.locator('[data-logout="1"]').first().click();
+      await page.locator('[data-loginform="1"]').waitFor();
+      await page.locator('[data-loginpw="1"]').fill('replacement-password');
+      await page.locator('[data-loginform="1"] button').click();
+      await page.waitForFunction(
+        /** Observe the replacement session before allowing the obsolete DELETE to finish. */
+        () => serverById('1')?.sid === 'fixture-login-1' && serverById('1').connected
+      );
+      await page.evaluate(
+        /** Deliver either a confirmed revoke or a remote failure for the already retired SID. */
+        revokedSuccessfully => {
+          window.__releaseOldRevoke(revokedSuccessfully
+            ? new Response(null, { status: 204 })
+            : new Response(JSON.stringify({ error: { message: 'synthetic revoke failure' } }), {
+                status: 503,
+                headers: { 'Content-Type': 'application/json' }
+              }));
+        }, revoked);
+      await page.evaluate(
+        /** Flush the old async handler and its toast microtasks before checking the user interface. */
+        () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      );
+      assert.equal(await page.locator('.toast').filter({ hasText: /Logged out|Logged out locally/u }).count(), 0,
+        'An obsolete logout completion cannot override the current authenticated status');
+      assert.equal(await page.evaluate(/** Read the active session after the old revoke settles. */
+        () => serverById('1')?.sid), 'fixture-login-1');
+      assert.equal(await page.locator('#serverPills .pill.on').count(), 2);
+      await assertNoCorruption(fixture);
+    });
+}

@@ -967,6 +967,12 @@ const I18N = {
     "auth.loginFailed": "Login fejlede",
     "auth.loggedIn": "Logget ind på {server}",
     "auth.loggedOut": "Logget ud af {server}",
+    "auth.localLogoutOnly": "Logget ud lokalt af {server}; fjernsessionen kunne ikke bekræftes afsluttet.",
+    "auth.sessionUnverified": "Forbindelsen kunne ikke bekræftes; sessionen er gemt.",
+    "auth.sessionUnverifiedOn": "{server}: Forbindelsen kunne ikke bekræftes. Prøv igen.",
+    "auth.retrySession": "Prøv forbindelsen igen",
+    "common.requestTimeout": "Anmodningen overskred tidsgrænsen.",
+    "gravity.streamTimeout": "Gravity-opdateringen overskred strømningens tidsgrænse.",
     "pagination.showing": "Viser {shown} af {total}",
     "pagination.previous": "‹ Forrige",
     "pagination.next": "Næste ›",
@@ -992,6 +998,7 @@ const I18N = {
     "dashboard.blockedTotal": "Blokeret i alt",
     "dashboard.blockedPercent": "Blokeret %",
     "dashboard.totalHint": "Tallene er en simpel sum af de aktive Pi-holes – brug fanen Gravity til at opdatere bloklister, og Forespørgsler for en samlet log.",
+    "dashboard.partialCoverage": "Delvise data: {ready} af {total} Pi-hole-instanser har bekræftede data. Summen udelader ventende, utilgængelige og afbrudte instanser.",
     "dashboard.blockingEnabledToast": "{server}: blokering slået til",
     "dashboard.blockingDisabledToast": "{server}: blokering slået fra",
     "dashboard.serverError": "{server}: {error}",
@@ -1038,6 +1045,8 @@ const I18N = {
     "queries.loadingMore.other": "{count} forespørgsler hentet hurtigt – henter resten af tidsrummet i baggrunden…",
     "queries.total.one": "{count} forespørgsel i alt for det valgte tidsrum.",
     "queries.total.other": "{count} forespørgsler i alt for det valgte tidsrum.",
+    "queries.partialProgress": "Henter data: {ready} af {total} Pi-hole-instanser er færdige; afventer de øvrige svar.",
+    "queries.partialResults": "Delvise data: {ready} af {total} Pi-hole-instanser leverede komplette svar; øvrige data er utilgængelige.",
     "queries.truncated.one": "{count} forespørgsel hentet for det valgte tidsrum – der er muligvis flere end vist; indsnævr tidsrummet for et fuldstændigt resultat.",
     "queries.truncated.other": "{count} forespørgsler hentet for det valgte tidsrum – der er muligvis flere end vist; indsnævr tidsrummet for et fuldstændigt resultat.",
     "multi.busy": "En anden ændring på disse Pi-hole-instanser er stadig i gang.",
@@ -1250,6 +1259,12 @@ const I18N = {
     "auth.loginFailed": "Login failed",
     "auth.loggedIn": "Logged in to {server}",
     "auth.loggedOut": "Logged out of {server}",
+    "auth.localLogoutOnly": "Logged out locally from {server}; remote session revocation was not confirmed.",
+    "auth.sessionUnverified": "Connection not verified; saved session retained.",
+    "auth.sessionUnverifiedOn": "{server}: Could not verify the connection. Retry.",
+    "auth.retrySession": "Retry connection",
+    "common.requestTimeout": "The request timed out.",
+    "gravity.streamTimeout": "The Gravity stream exceeded its deadline.",
     "pagination.showing": "Showing {shown} of {total}",
     "pagination.previous": "‹ Previous",
     "pagination.next": "Next ›",
@@ -1275,6 +1290,7 @@ const I18N = {
     "dashboard.blockedTotal": "Total blocked",
     "dashboard.blockedPercent": "Blocked %",
     "dashboard.totalHint": "These figures are the sum of all active Pi-holes. Use the Gravity tab to update blocklists and the Queries tab for a combined log.",
+    "dashboard.partialCoverage": "Partial data: {ready} of {total} Pi-hole instances have confirmed data. Totals exclude pending, unavailable and disconnected instances.",
     "dashboard.blockingEnabledToast": "{server}: blocking enabled",
     "dashboard.blockingDisabledToast": "{server}: blocking disabled",
     "dashboard.serverError": "{server}: {error}",
@@ -1321,6 +1337,8 @@ const I18N = {
     "queries.loadingMore.other": "{count} queries loaded quickly – loading the rest of the time range in the background…",
     "queries.total.one": "{count} query in total for the selected time range.",
     "queries.total.other": "{count} queries in total for the selected time range.",
+    "queries.partialProgress": "Loading data: {ready} of {total} Pi-hole instances finished; waiting for the remaining responses.",
+    "queries.partialResults": "Partial data: {ready} of {total} Pi-hole instances returned complete results; other data is unavailable.",
     "queries.truncated.one": "{count} query loaded for the selected time range – more queries may be available. Narrow the time range for complete results.",
     "queries.truncated.other": "{count} queries loaded for the selected time range – more queries may be available. Narrow the time range for complete results.",
     "multi.busy": "Another change to these Pi-hole instances is still running.",
@@ -1533,6 +1551,12 @@ const I18N = {
     "auth.loginFailed": "Anmeldung fehlgeschlagen",
     "auth.loggedIn": "Bei {server} angemeldet",
     "auth.loggedOut": "Von {server} abgemeldet",
+    "auth.localLogoutOnly": "Lokal von {server} abgemeldet; die Abmeldung auf dem Server konnte nicht bestätigt werden.",
+    "auth.sessionUnverified": "Verbindung nicht bestätigt; gespeicherte Sitzung bleibt erhalten.",
+    "auth.sessionUnverifiedOn": "{server}: Verbindung konnte nicht bestätigt werden. Erneut versuchen.",
+    "auth.retrySession": "Verbindung erneut prüfen",
+    "common.requestTimeout": "Zeitlimit für die Anfrage überschritten.",
+    "gravity.streamTimeout": "Zeitlimit für den Gravity-Stream überschritten.",
     "pagination.showing": "{shown} von {total} werden angezeigt",
     "pagination.previous": "‹ Zurück",
     "pagination.next": "Weiter ›",
@@ -1558,6 +1582,7 @@ const I18N = {
     "dashboard.blockedTotal": "Insgesamt blockiert",
     "dashboard.blockedPercent": "Blockiert %",
     "dashboard.totalHint": "Die Werte sind die Summe aller aktiven Pi-holes. Auf dem Reiter Gravity können Sie die Sperrlisten aktualisieren; der Reiter Anfragen zeigt das gemeinsame Protokoll.",
+    "dashboard.partialCoverage": "Teildaten: Für {ready} von {total} Pi-hole-Instanzen liegen bestätigte Daten vor. Ausstehende, nicht erreichbare und getrennte Instanzen fehlen in der Summe.",
     "dashboard.blockingEnabledToast": "{server}: Blockierung aktiviert",
     "dashboard.blockingDisabledToast": "{server}: Blockierung deaktiviert",
     "dashboard.serverError": "{server}: {error}",
@@ -1604,6 +1629,8 @@ const I18N = {
     "queries.loadingMore.other": "{count} Anfragen wurden bereits geladen – der restliche Zeitraum wird im Hintergrund geladen…",
     "queries.total.one": "Insgesamt {count} Anfrage im gewählten Zeitraum.",
     "queries.total.other": "Insgesamt {count} Anfragen im gewählten Zeitraum.",
+    "queries.partialProgress": "Daten werden geladen: {ready} von {total} Pi-hole-Instanzen abgeschlossen; weitere Antworten stehen aus.",
+    "queries.partialResults": "Teildaten: {ready} von {total} Pi-hole-Instanzen lieferten vollständige Ergebnisse; weitere Daten fehlen.",
     "queries.truncated.one": "{count} Anfrage wurde für den gewählten Zeitraum geladen – möglicherweise sind weitere Anfragen vorhanden. Grenzen Sie den Zeitraum für ein vollständiges Ergebnis ein.",
     "queries.truncated.other": "{count} Anfragen wurden für den gewählten Zeitraum geladen – möglicherweise sind weitere Anfragen vorhanden. Grenzen Sie den Zeitraum für ein vollständiges Ergebnis ein.",
     "multi.busy": "Eine weitere Änderung an diesen Pi-hole-Instanzen läuft noch.",
@@ -2418,6 +2445,7 @@ async function loadRuntimeConfiguration() {
     label: overrides[server.base] || server.label,
     sid: storedValue(sessionStorageKey(server), "sessionStorage") || null,
     connected: false,
+    unverified: false,
     checking: true
   }));
   for (const id of ["1", "2", "3", "4"]) {
@@ -2570,28 +2598,44 @@ function exactClientIp(value) {
  * Refresh the shared IPv4-to-friendly-name lookup from connected instances' client comments.
  * Ignore unavailable client lists and keep the first nonblank name in configured server order.
  */
+let clientNamesRefreshSerial = 0;
+/**
+ * Load friendly names without allowing an older tab's completion to replace newer data.
+ * A fresh call aborts the previous read and only its own server snapshot can publish.
+ * @returns {Promise<boolean>} Whether the current request published a complete name map.
+ */
 async function refreshClientNames() {
-  const clientLists = await Promise.all(state.servers.map(/** Read one connected instance's client list; an unavailable instance contributes no name overrides. */ async server => {
-    if (!server.connected) {
-      return [];
+  const serial = ++clientNamesRefreshSerial;
+  const servers = [...state.servers];
+  activeClientNamesAbortController?.abort();
+  const controller = new AbortController();
+  activeClientNamesAbortController = controller;
+  const clientLists = await Promise.all(servers.map(
+    /** Read every instance independently; missing optional comments never authenticate another target. */
+    async server => {
+      if (!server.connected) return [];
+      try {
+        const response = await apiCall(server, "/clients", { signal: controller.signal });
+        return requireCollection(response, "clients");
+      } catch {
+        return [];
+      }
     }
-    try {
-      return (await apiCall(server, "/clients")).clients || [];
-    } catch {
-      return [];
-    }
-  }));
+  ));
+  if (serial !== clientNamesRefreshSerial || controller.signal.aborted ||
+      servers.length !== state.servers.length ||
+      servers.some((server, index) => server !== state.servers[index])) return false;
   const namesByIp = new Map();
   for (const clients of clientLists) {
     for (const client of clients) {
       const ip = exactClientIp(client.client);
       const name = String(client.comment || "").trim();
-      if (ip && name && !namesByIp.has(ip)) {
-        namesByIp.set(ip, name);
-      }
+      if (ip && name && !namesByIp.has(ip)) namesByIp.set(ip, name);
     }
   }
   state.clientNames = namesByIp;
+  if (activeClientNamesAbortController === controller) activeClientNamesAbortController = null;
+  return true;
 }
 /**
  * Choose a client's saved IPv4 name, then its API-provided name, IP or a dash.
@@ -2631,142 +2675,183 @@ function pageSizeOf(selectId) {
   const selection = document.getElementById(selectId).value;
   return selection === "all" ? Infinity : Number(selection);
 }
-/** Identify HTTP 401 failures that have already cleared the affected instance's local session. */
+/** Identify HTTP 401 failures that invalidate only the affected Pi-hole session. */
 class AuthError extends Error {}
+/** Identify a request that reached its deadline, rather than a user-initiated cancellation. */
+class RequestTimeoutError extends Error {}
+// Normal requests are bounded independently from the longer Gravity streaming operation.
+const API_REQUEST_TIMEOUT_MS = 15000;
+const GRAVITY_STREAM_TIMEOUT_MS = 30 * 60 * 1000;
+const GRAVITY_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 /**
- * Send a request through one server's fingerprinted same-origin route, without following redirects.
- * Attach that server's SID and serialize an optional JSON body. A stale route raises
- * a configuration error. Normal responses clear the session on HTTP 401, return null
- * for HTTP 204, and otherwise decode JSON or text and reject unsuccessful status codes.
- * @param {Object} server Configured server whose session and route own this request.
- * @param {string} path API suffix beginning with /; encode user-controlled path segments before calling.
- * @param {Object} options Request method, body, rawResponse flag and optional AbortSignal.
- * @returns {Promise<*>} Decoded data, or the Response when rawResponse is true.
- * Raw callers own status and body handling. This helper has no default request timeout.
+ * Combine an external AbortSignal with a finite, cancelable deadline.
+ * The caller disposes of this deadline after reading the response body. Gravity
+ * keeps its separate stream timer outside this per-request helper.
+ * @param {AbortSignal|undefined} externalSignal Cancellation owned by the view.
+ * @param {number} timeoutMs Limit for fetching and decoding a normal response.
+ * @returns {object} Signal, timedOut predicate and timer disposal function.
+ */
+function requestSignals(externalSignal, timeoutMs) {
+  const deadlineController = new AbortController();
+  let expired = false;
+  const timer = setTimeout(/** Abort an overlong API or login response. */ () => {
+    expired = true;
+    deadlineController.abort();
+  }, timeoutMs);
+  return {
+    signal: externalSignal ? AbortSignal.any([externalSignal, deadlineController.signal]) : deadlineController.signal,
+    timedOut: /** Distinguish a deadline from a manual navigation cancellation. */ () => expired,
+    dispose: /** Release the browser timer when the response finishes. */ () => clearTimeout(timer)
+  };
+}
+/**
+ * Send one target-bound API request, rejecting redirects and bounding the entire
+ * response lifetime. HTTP 401 clears only this instance's SID, including streaming
+ * requests; a transport failure retains session credentials for a later probe.
+ * @param {object} server Configured instance and currently stored SID.
+ * @param {string} path Encoded API suffix.
+ * @param {object} options Method, body, rawResponse flag, optional AbortSignal and deadline.
+ * @returns {Promise<*>} Decoded JSON/text, null for 204, or a stream Response.
  */
 async function apiCall(server, path, {
   method = "GET",
   body,
   rawResponse = false,
-  signal: requestSignal
+  signal: requestSignal,
+  timeoutMs = API_REQUEST_TIMEOUT_MS,
+  invalidateSessionOn401 = true
 } = {}) {
-  const headers = {
-    "Content-Type": "application/json"
-  };
-  if (server.sid) {
-    headers["X-FTL-SID"] = server.sid;
+  const deadline = requestSignals(requestSignal, timeoutMs);
+  const { signal } = deadline;
+  const headers = { "Content-Type": "application/json" };
+  const requestSid = server.sid;
+  if (requestSid) headers["X-FTL-SID"] = requestSid;
+  try {
+    const response = await fetch(server.base.replace(/\/$/, "") + path, {
+      method, redirect: "error", headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal
+    });
+    if (response.status === 409 &&
+      (await response.clone().json().catch(/** A malformed 409 body cannot prove a configuration change. */ () => null))?.error?.code === "dashboard_config_changed") {
+      const failure = new Error(msg("config.changed"));
+      failure.httpStatus = 409;
+      throw failure;
+    }
+    if (response.status === 401) {
+      // A delayed response from an old request must not invalidate a newly logged-in SID.
+      if (invalidateSessionOn401 && server.sid === requestSid) {
+        server.connected = false;
+        server.unverified = false;
+        server.sid = null;
+        storeValue(sessionStorageKey(server), null, "sessionStorage");
+      }
+      throw new AuthError(msg("auth.notConnectedOn", { server: server.label }));
+    }
+    if (rawResponse) return response;
+    if (response.status === 204) return null;
+    const payload = (response.headers.get("content-type") || "").includes("application/json")
+      ? await response.json().catch(/** Preserve aborts and deadlines; only malformed complete JSON may fall back to null. */ error => {
+        if (signal.aborted) throw error;
+        return null;
+      })
+      : await response.text();
+    if (!response.ok) {
+      const failure = new Error(payload?.error?.message || (typeof payload === "string" ? payload : "HTTP " + response.status));
+      failure.httpStatus = response.status;
+      throw failure;
+    }
+    return payload;
+  } catch (error) {
+    if (deadline.timedOut()) throw new RequestTimeoutError(msg("common.requestTimeout"));
+    throw error;
+  } finally {
+    deadline.dispose();
   }
-  const response = await fetch(server.base.replace(/\/$/, "") + path, {
-    method,
-    redirect: "error",
-    headers,
-    body: undefined !== body ? JSON.stringify(body) : undefined,
-    signal: requestSignal
-  });
-  if (response.status === 409 && (await response.clone().json().catch(/** Treat an unreadable conflict body as an ordinary response rather than inventing a configuration-change code. */ () => null))?.error?.code === "dashboard_config_changed") {
-    // The fingerprinted proxy rejects this request before forwarding to Pi-hole.
-    // Preserve HTTP 409 so an unexecuted mutation is classified as failed, not uncertain.
-    const failure = new Error(msg("config.changed"));
-    failure.httpStatus = 409;
-    throw failure;
-  }
-  if (rawResponse) {
-    return response;
-  }
-  if (response.status === 401) {
-    server.connected = false;
-    server.sid = null;
-    storeValue(sessionStorageKey(server), null, "sessionStorage");
-    throw new AuthError(msg("auth.notConnectedOn", {
-      server: server.label
-    }));
-  }
-  if (response.status === 204) {
-    return null;
-  }
-  const payload = (response.headers.get("content-type") || "").includes("application/json") ? await response.json().catch(/** Represent an unreadable JSON response as null while retaining its HTTP status for error handling. */ () => null) : await response.text();
-  if (!response.ok) {
-    const message = payload && payload.error && payload.error.message || (typeof payload == "string" ? payload : "HTTP " + response.status);
-    const failure = new Error(message);
-    failure.httpStatus = response.status;
-    throw failure;
-  }
-  return payload;
 }
 /**
- * Authenticate one configured instance and store its returned SID for this browser tab.
- * Reject redirects, changed routes and failed login responses. The password is sent
- * only in this request body and is never persisted by the dashboard.
- * @param {Object} server Server receiving the login request.
- * @param {string} password Password or Pi-hole app password entered by the user.
+ * Login to one Pi-hole with a 15-second deadline and no redirect following.
+ * Only an authenticated response installs a new route-bound SID.
  */
 async function login(server, password) {
-  const response = await fetch(server.base.replace(/\/$/, "") + "/auth", {
-    method: "POST",
-    redirect: "error",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      password
-    })
-  });
-  const payload = await response.json().catch(/** Let a malformed login response follow the existing login-failure path. */ () => null);
-  if (response.status === 409 && payload?.error?.code === "dashboard_config_changed") {
-    throw new Error(msg("config.changed"));
+  const deadline = requestSignals(undefined, API_REQUEST_TIMEOUT_MS);
+  const { signal } = deadline;
+  try {
+    const response = await fetch(server.base.replace(/\/$/, "") + "/auth", {
+      method: "POST", redirect: "error",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }), signal
+    });
+    const payload = await response.json().catch(/** An invalid login payload is a failed authentication. */ () => null);
+    if (response.status === 409 && payload?.error?.code === "dashboard_config_changed") {
+      throw new Error(msg("config.changed"));
+    }
+    if (!response.ok || !payload?.session?.sid) {
+      throw new Error(payload?.error?.message || msg("auth.loginFailed"));
+    }
+    server.sid = payload.session.sid;
+    server.connected = true;
+    server.unverified = false;
+    storeValue(sessionStorageKey(server), server.sid, "sessionStorage");
+  } catch (error) {
+    if (deadline.timedOut()) throw new RequestTimeoutError(msg("common.requestTimeout"));
+    throw error;
+  } finally {
+    deadline.dispose();
   }
-  if (!response.ok || !payload || !payload.session) {
-    const message = payload && payload.error && payload.error.message || msg("auth.loginFailed");
-    throw new Error(message);
-  }
-  server.sid = payload.session.sid;
-  server.connected = true;
-  storeValue(sessionStorageKey(server), server.sid, "sessionStorage");
 }
 /**
- * Try to revoke the server session, then always clear the local SID and connected state.
- * A failed revocation request does not prove that the remote session was invalidated.
+ * Clear the browser SID immediately, then attempt a bounded server-side revoke.
+ * Revocation uses an isolated snapshot so its late HTTP status cannot revive or
+ * clear a subsequent login to the same instance.
+ * @returns {Promise<boolean>} True only for a confirmed remote revocation.
  */
 async function logout(server) {
-  try {
-    await apiCall(server, "/auth", {
-      method: "DELETE"
-    });
-  } catch {}
+  const previousSid = server.sid;
   server.sid = null;
   server.connected = false;
+  server.unverified = false;
   storeValue(sessionStorageKey(server), null, "sessionStorage");
+  if (!previousSid) return false;
+  try {
+    // A late revoke response belongs only to the retired SID, never to a replacement login.
+    await apiCall({ ...server, sid: previousSid }, "/auth", { method: "DELETE", invalidateSessionOn401: false });
+    return true;
+  } catch {
+    return false;
+  }
 }
 /**
- * Check a restored SID with a bounded read of the blocking endpoint.
- * Missing or failed sessions become disconnected; failures also clear the stored SID.
- * Always finish the checking state so configuration startup can complete.
+ * Verify a restored tab-local SID without discarding it on transport errors.
+ * Only an explicit HTTP 401 proves invalid authentication; an unreachable server
+ * remains unverified and may be retried without requiring the password again.
  */
 async function checkSession(server) {
   if (!server.sid) {
     server.connected = false;
+    server.unverified = false;
     server.checking = false;
     return;
   }
-  const controller = new AbortController();
-  const timeout = setTimeout(/** Abort the restored-session probe when its deadline expires. */ () => controller.abort(), SESSION_CHECK_TIMEOUT_MS);
+  const probedSid = server.sid;
   try {
-    await apiCall(server, "/dns/blocking", {
-      signal: controller.signal
-    });
-    if (controller.signal.aborted) {
-      throw controller.signal.reason;
+    await apiCall(server, "/dns/blocking", { timeoutMs: SESSION_CHECK_TIMEOUT_MS });
+    if (server.sid === probedSid) {
+      server.connected = true;
+      server.unverified = false;
     }
-    server.connected = true;
-  } catch {
-    server.connected = false;
-    server.sid = null;
-    storeValue(sessionStorageKey(server), null, "sessionStorage");
+  } catch (error) {
+    if (server.sid === probedSid) {
+      server.connected = false;
+      server.unverified = !(error instanceof AuthError);
+    }
   } finally {
-    clearTimeout(timeout);
     server.checking = false;
   }
 }
+let activeQueryAbortController = null;
+let activeDashboardAbortController = null;
+let activeClientNamesAbortController = null;
 let dashboardCharts = [];
 /**
  * Release all Chart.js instances before the dashboard is replaced.
@@ -2839,8 +2924,8 @@ function renderPills() {
     return;
   }
   document.getElementById("serverPills").innerHTML = state.servers.map(/** Render one instance's session indicator with an escaped display name. */ server => {
-    const statusClass = server.checking ? "" : server.connected ? "on" : "off";
-    const statusLabel = htmlMsg(server.checking ? "auth.checking" : server.connected ? "auth.connected" : "auth.notConnected");
+    const statusClass = server.checking ? "" : server.connected ? "on" : server.unverified ? "" : "off";
+    const statusLabel = htmlMsg(server.checking ? "auth.checking" : server.connected ? "auth.connected" : server.unverified ? "auth.sessionUnverified" : "auth.notConnected");
     return `<span class="pill ${statusClass}"><span class="dot"></span><b>${escapeHtml(server.label)}</b> · ${statusLabel}</span>`;
   }).join("");
 }
@@ -2854,6 +2939,15 @@ function renderPills() {
 async function switchTab(tabId, updateHash = true) {
   if (configurationStatus !== "ready") {
     return;
+  }
+  // Navigation aborts stale dashboard reads and shared client-name lookups.
+  activeDashboardAbortController?.abort();
+  activeDashboardAbortController = null;
+  activeClientNamesAbortController?.abort();
+  // Navigation or translation abandons pending query cursors from the old render.
+  if (state.activeTab === "queries" && activeQueryAbortController) {
+    activeQueryAbortController.abort();
+    activeQueryAbortController = null;
   }
   if (state.activeTab === "dashboard" && tabId !== "dashboard") {
     destroyDashboardCharts();
@@ -2928,7 +3022,7 @@ function loginBoxHtml(server) {
   return server.connected ? `<div class="row-inline">
     <span class="badge on">${htmlMsg("auth.connected")}</span>
     <button class="btn xs" data-logout="${server.id}">${htmlMsg("auth.logout")}</button>
-  </div>` : `<form class="row-inline" data-loginform="${server.id}">
+  </div>` : `${server.unverified && server.sid ? `<div class="row-inline"><span class="sub">${htmlMsg("auth.sessionUnverified")}</span><button class="btn xs" data-session-retry="${server.id}">${htmlMsg("auth.retrySession")}</button></div>` : ""}<form class="row-inline" data-loginform="${server.id}">
     <input type="password" placeholder="${htmlMsg("auth.password")}" aria-label="${htmlMsg("auth.passwordFor", {
     server: server.label
   })}" autocomplete="current-password" data-loginpw="${server.id}" style="flex:1;min-width:140px;">
@@ -2964,17 +3058,31 @@ function bindLoginHandlers(container, onSessionChange) {
       }
     });
   }
-  for (const button of container.querySelectorAll("[data-logout]")) {
-    button.addEventListener("click", /** Clear the selected instance's session and refresh indicators and the owning view. */ async () => {
-      const server = serverById(button.dataset.logout);
-      await logout(server);
-      toast(msg("auth.loggedOut", {
-        server: server.label
-      }), "ok");
+  for (const button of container.querySelectorAll("[data-session-retry]")) {
+    button.addEventListener("click", /** Re-probe the retained SID without resending a password. */ async () => {
+      const server = serverById(button.dataset.sessionRetry);
+      if (!server?.sid || server.checking) return;
+      server.checking = true;
+      button.disabled = true;
       renderPills();
-      if (onSessionChange) {
-        onSessionChange();
-      }
+      await checkSession(server);
+      renderPills();
+      if (server.unverified) toast(msg("auth.sessionUnverifiedOn", { server: server.label }), "err");
+      if (onSessionChange) onSessionChange();
+    });
+  }
+  for (const button of container.querySelectorAll("[data-logout]")) {
+    button.addEventListener("click", /** Clear local credentials immediately and report remote-revocation success separately. */ async () => {
+      const server = serverById(button.dataset.logout);
+      const noticeRevision = (server.logoutNoticeRevision || 0) + 1;
+      server.logoutNoticeRevision = noticeRevision;
+      const remoteRevocation = logout(server);
+      renderPills();
+      if (onSessionChange) onSessionChange();
+      const confirmed = await remoteRevocation;
+      // Do not announce an old logout after another login or a newer logout.
+      if (server.logoutNoticeRevision !== noticeRevision || server.sid || server.connected) return;
+      toast(msg(confirmed ? "auth.loggedOut" : "auth.localLogoutOnly", { server: server.label }), confirmed ? "ok" : "err");
     });
   }
 }
@@ -2992,10 +3100,38 @@ async function renderDashboard(container, generation) {
   const summaryGrid = document.getElementById("dashGrid");
   const detailGrid = document.getElementById("dashDetailGrid");
   const chartArea = document.getElementById("dashChartArea");
-  await refreshClientNames();
-  if (generation !== state.renderGen) {
-    return;
+  const controller = new AbortController();
+  activeDashboardAbortController = controller;
+  const ownsView = /** Ignore results from a replaced dashboard or cancelled view. */ () =>
+    generation === state.renderGen && !controller.signal.aborted;
+  const clientNamesPromise = refreshClientNames();
+  const earlyResults = new Map();
+  /**
+   * Show each healthy Pi-hole immediately without implying that pending peers supplied data.
+   * This read-only preview is replaced by the interactive dashboard after all reads settle.
+   */
+  function paintEarlySummary() {
+    if (!ownsView()) return;
+    const ready = [...earlyResults.values()].filter(
+      /** Count only server responses containing an actual summary. */ result => result.server.connected && result.summary);
+    const totalQueries = ready.reduce(
+      /** Aggregate only verified summary responses, not pending or failed targets. */ (sum, result) => sum + (Number(result.summary.queries?.total) || 0), 0);
+    summaryGrid.innerHTML = state.servers.map(
+      /** Keep a placeholder for pending targets so the layout remains stable. */ server => {
+        const result = earlyResults.get(server.id);
+        const heading = '<h2><span class="tag tag-' + escapeHtml(server.chip.slice(1)) + '">' + escapeHtml(server.label) + '</span></h2>';
+        if (!result) return '<div class="card" data-dashboard-pending="' + escapeHtml(server.id) + '">' + heading + '<p class="empty">' + htmlMsg("common.loading") + '</p></div>';
+        if (!server.connected) return '<div class="card">' + heading + '<p class="sub">' + htmlMsg("dashboard.notLoggedIn") + '</p></div>';
+        if (!result.summary) return '<div class="card">' + heading + '<p class="empty">' + htmlMsg("dashboard.statusUnavailable") + '</p></div>';
+        const queries = result.summary.queries || {};
+        return '<div class="card" data-dashboard-preview="' + escapeHtml(server.id) + '">' + heading +
+          '<div class="big-num">' + fmtNum(queries.total) + '</div><div class="sub">' +
+          escapeHtml(msgCount("dashboard.queriesToday", queries.total)) + '</div></div>';
+      }).join("") + '<div class="card" data-dashboard-progress="true"><h2><span class="tag tag-combo">' +
+      htmlMsg("dashboard.total") + '</span></h2><div class="big-num">' + (ready.length ? fmtNum(totalQueries) : '–') +
+      '</div><p class="sub">' + htmlMsg("dashboard.partialCoverage", {ready:ready.length,total:state.servers.length}) + '</p></div>';
   }
+  paintEarlySummary();
   const serverResults = await Promise.all(state.servers.map(
   /**
    * Collect one instance's summary and blocking state, with best-effort optional detail requests.
@@ -3010,9 +3146,20 @@ async function renderDashboard(container, generation) {
       };
     }
     try {
+      const [summaryResponse, blockingResponse] = await Promise.all([
+        apiCall(requestedServer, "/stats/summary", { signal: controller.signal }),
+        apiCall(requestedServer, "/dns/blocking", { signal: controller.signal })
+      ]);
+      // Optional charts must not delay an already confirmed summary card.
+      if (ownsView()) {
+        earlyResults.set(requestedServer.id, {
+          server: requestedServer,
+          summary: summaryResponse,
+          blocking: blockingResponse
+        });
+        paintEarlySummary();
+      }
       const [
-        summaryResponse,
-        blockingResponse,
         topDomainsResponse,
         topBlockedResponse,
         topClientsResponse,
@@ -3021,15 +3168,13 @@ async function renderDashboard(container, generation) {
         clientHistoryResponse,
         upstreamsResponse
       ] = await Promise.all([
-        apiCall(requestedServer, "/stats/summary"),
-        apiCall(requestedServer, "/dns/blocking"),
-        apiCall(requestedServer, "/stats/top_domains").catch(/** Allow the summary to render when the top allowed-domain request fails. */ () => null),
-        apiCall(requestedServer, "/stats/top_domains?blocked=true").catch(/** Allow the summary to render when the top blocked-domain request fails. */ () => null),
-        apiCall(requestedServer, "/stats/top_clients").catch(/** Allow the summary to render when the top-client request fails. */ () => null),
-        apiCall(requestedServer, "/stats/query_types").catch(/** Leave query-type details unavailable when their request fails. */ () => null),
-        apiCall(requestedServer, "/history").catch(/** Leave the query-history chart unavailable when its request fails. */ () => null),
-        apiCall(requestedServer, "/history/clients").catch(/** Leave the client-history chart unavailable when its request fails. */ () => null),
-        apiCall(requestedServer, "/stats/upstreams").catch(/** Leave upstream details unavailable when their request fails. */ () => null)
+        apiCall(requestedServer, "/stats/top_domains", { signal: controller.signal }).catch(/** Allow the summary to render when the top allowed-domain request fails. */ () => null),
+        apiCall(requestedServer, "/stats/top_domains?blocked=true", { signal: controller.signal }).catch(/** Allow the summary to render when the top blocked-domain request fails. */ () => null),
+        apiCall(requestedServer, "/stats/top_clients", { signal: controller.signal }).catch(/** Allow the summary to render when the top-client request fails. */ () => null),
+        apiCall(requestedServer, "/stats/query_types", { signal: controller.signal }).catch(/** Leave query-type details unavailable when their request fails. */ () => null),
+        apiCall(requestedServer, "/history", { signal: controller.signal }).catch(/** Leave the query-history chart unavailable when its request fails. */ () => null),
+        apiCall(requestedServer, "/history/clients", { signal: controller.signal }).catch(/** Leave the client-history chart unavailable when its request fails. */ () => null),
+        apiCall(requestedServer, "/stats/upstreams", { signal: controller.signal }).catch(/** Leave upstream details unavailable when their request fails. */ () => null)
       ]);
       return {
         server: requestedServer,
@@ -3050,13 +3195,20 @@ async function renderDashboard(container, generation) {
         blocking: null
       };
     }
+  }).map(async pendingRequest => {
+    const result = await pendingRequest;
+    if (ownsView()) {
+      earlyResults.set(result.server.id, result);
+      paintEarlySummary();
+    }
+    return result;
   }));
-  if (generation !== state.renderGen) {
-    return;
-  }
+  await clientNamesPromise;
+  if (!ownsView()) return;
   let combinedQueries = 0;
   let combinedBlockedQueries = 0;
   let hasSummaryData = false;
+  const summaryCoverage = serverResults.filter(/** Count only returned usable summaries. */ result => result.server.connected && result.summary).length;
   summaryGrid.innerHTML = serverResults.map(
   /** Render an instance's login prompt, unavailable state or summary and add available counts to the combined totals. */
   summaryResult => {
@@ -3108,7 +3260,7 @@ async function renderDashboard(container, generation) {
 				<hr class="sep">
 				<div class="stat-row"><span class="k">${htmlMsg("dashboard.blockedTotal")}</span><span class="v">${hasSummaryData ? fmtNum(combinedBlockedQueries) : "–"}</span></div>
 				<div class="stat-row"><span class="k">${htmlMsg("dashboard.blockedPercent")}</span><span class="v">${hasSummaryData && combinedQueries ? fmtPct(combinedBlockedQueries / combinedQueries * 100) : "–"}</span></div>
-				<p class="sub" style="margin-top:10px;">${htmlMsg("dashboard.totalHint")}</p>
+				<p class="sub" style="margin-top:10px;">${summaryCoverage === state.servers.length ? htmlMsg("dashboard.totalHint") : htmlMsg("dashboard.partialCoverage", {ready:summaryCoverage, total:state.servers.length})}</p>
 				</div>`;
   bindLoginHandlers(summaryGrid, /** Rebuild the dashboard after one of its login controls changes the session. */ () => switchTab("dashboard"));
   for (const blockingButton of summaryGrid.querySelectorAll("[data-toggle-block]")) {
@@ -3431,7 +3583,7 @@ async function renderDashboard(container, generation) {
  * Render the combined query log with persistent filters, natural sorting and local pagination.
  * Fetch an initial page from each connected instance, then follow their cursors within
  * the selected time window. Tab generations prevent updates to a replaced view;
- * overlapping reloads within this same view still share the current row buffer.
+ * overlapping reloads cancel older cursor chains and publish only the newest row buffer.
  * @param {HTMLElement} container Active-tab container to populate.
  * @param {number} generation Render generation assigned by switchTab.
  */
@@ -3481,11 +3633,13 @@ async function renderQueries(container, generation) {
   document.getElementById("qFilter").value = queryUiState.filter;
   document.getElementById("qServerFilter").value = queryUiState.server;
   document.getElementById("qPageSize").value = queryUiState.pageSize;
-  await refreshClientNames();
+  const nameRefresh = refreshClientNames();
   if (generation !== state.renderGen) {
     return;
   }
   let queryRows = [];
+  let queryLoadSerial = 0;
+  let queryLoadController = null;
 
   let sortKey = queryUiState.sortKey;
   let sortDirection = queryUiState.sortDir;
@@ -3686,9 +3840,10 @@ async function renderQueries(container, generation) {
    * @param {number} pageFromTimestamp Beginning of the time window, in Unix seconds.
    * @param {number} pageUntilTimestamp End of the time window, in Unix seconds.
    * @param {*} initialCursor Cursor returned with the initial page.
+   * @param {AbortSignal} loadSignal Cancelled when the view or time range changes.
    * @returns {Promise<Object>} Collected rows, a truncation flag and the remaining cursor, if any.
    */
-  async function fetchQueryPages(pageServer, pageFromTimestamp, pageUntilTimestamp, initialCursor) {
+  async function fetchQueryPages(pageServer, pageFromTimestamp, pageUntilTimestamp, initialCursor, loadSignal) {
     const collectedRows = [];
     let cursor = undefined !== initialCursor ? initialCursor : null;
     for (let fetchPageIndex = 0; fetchPageIndex < 20; fetchPageIndex++) {
@@ -3696,8 +3851,10 @@ async function renderQueries(container, generation) {
       if (cursor != null) {
         queryPath += "&cursor=" + encodeURIComponent(cursor);
       }
-      const pageResponse = await apiCall(pageServer, queryPath);
-      const pageRows = pageResponse.queries || [];
+      if (loadSignal.aborted) return { rows: [], truncated: false, cursor: null };
+      const pageResponse = await apiCall(pageServer, queryPath, { signal: loadSignal });
+      if (loadSignal.aborted) return { rows: [], truncated: false, cursor: null };
+      const pageRows = requireCollection(pageResponse, "queries");
       collectedRows.push(...pageRows);
       if (!pageResponse.cursor || pageRows.length === 0) {
         return {
@@ -3720,7 +3877,19 @@ async function renderQueries(container, generation) {
    * then render again after all follow-up requests finish (at most 20 pages of 500 per instance).
    * Report per-instance request failures and indicate when that follow-up limit truncates results.
    */
+  /**
+   * Load each instance independently and publish its confirmed rows immediately.
+   * Each reload owns its own map, abort signal and view generation, so neither
+   * an obsolete response nor a late cursor can mutate the next time window.
+   */
   async function reloadQueries() {
+    queryLoadController?.abort();
+    const controller = new AbortController();
+    queryLoadController = controller;
+    activeQueryAbortController = controller;
+    const serial = ++queryLoadSerial;
+    const ownsView = /** Reject data after a range change, navigation or abort. */ () =>
+      serial === queryLoadSerial && generation === state.renderGen && !controller.signal.aborted;
     const rangeHours = Number(document.getElementById("qRange").value);
     const untilTimestamp = Math.floor(Date.now() / 1000);
     const fromTimestamp = untilTimestamp - 3600 * rangeHours;
@@ -3728,68 +3897,74 @@ async function renderQueries(container, generation) {
     const queryStatus = document.getElementById("qStatus");
     loadingArea.innerHTML = `<p class="empty">${htmlMsg("queries.loading")}</p>`;
     queryStatus.textContent = "";
-    queryRows = [];
-    const cursorsByServer = {};
-    await Promise.all(state.servers.map(/** Fetch one instance's initial query page and remember its cursor for the follow-up request. */ async initialServer => {
-      if (initialServer.connected) {
-        try {
-          const initialResponse = await apiCall(initialServer, "/queries?length=100&from=" + fromTimestamp + "&until=" + untilTimestamp);
-          for (const initialRow of initialResponse.queries || []) {
-            queryRows.push({
-              server: initialServer,
-              ...initialRow
-            });
-          }
-          if (initialResponse.cursor) {
-            cursorsByServer[initialServer.id] = initialResponse.cursor;
-          }
-        } catch (initialError) {
-          toast(msg("queries.serverError", {
-            server: initialServer.label,
-            error: initialError.message
-          }), "err");
-        }
-      }
-    }));
-    if (generation !== state.renderGen) {
-      return;
-    }
-    rebuildQueryFilters();
-    renderQueryTable(false);
-    const hasMorePages = Object.keys(cursorsByServer).length > 0;
-    queryStatus.textContent = msgCount(hasMorePages ? "queries.loadingMore" : "queries.total", queryRows.length);
-    if (!hasMorePages) {
-      return;
-    }
-    let anyTruncated = false;
-    await Promise.all(state.servers.map(/** Fetch the remaining bounded pages for an instance with a cursor and append rows with their source server. */ async remainingServer => {
-      if (remainingServer.connected && cursorsByServer[remainingServer.id]) {
-        try {
-          const {
-            rows: remainingRows,
-            truncated: serverTruncated
-          } = await fetchQueryPages(remainingServer, fromTimestamp, untilTimestamp, cursorsByServer[remainingServer.id]);
-          if (serverTruncated) {
-            anyTruncated = true;
-          }
-          for (const remainingRow of remainingRows) {
-            queryRows.push({
-              server: remainingServer,
-              ...remainingRow
-            });
-          }
-        } catch (remainingError) {
-          toast(msg("queries.serverError", {
-            server: remainingServer.label,
-            error: remainingError.message
-          }), "err");
-        }
-      }
-    }));
-    if (generation === state.renderGen) {
-      queryStatus.textContent = msgCount(anyTruncated ? "queries.truncated" : "queries.total", queryRows.length);
+    const connectedServers = state.servers.filter(
+      /** Only authenticated peers can supply query history. */ server => server.connected);
+    const results = new Map();
+    /**
+     * Build a fresh immutable row view and progress statement from completed instance reads.
+     * Unfinished and disconnected targets never silently count as empty or successful.
+     */
+    function publishResults() {
+      if (!ownsView()) return;
+      queryRows = state.servers.flatMap(
+        /** Keep rows grouped by configured server order, irrespective of response timing. */ server =>
+          (results.get(server.id)?.rows || []).map(
+            /** Attach the source instance without altering the server response. */ row => ({ server, ...row })));
       rebuildQueryFilters();
       renderQueryTable(false);
+      const snapshots = [...results.values()];
+      const finished = snapshots.filter(
+        /** Count both successes and failures for honest progress reporting. */ item => item.complete).length;
+      const succeeded = snapshots.filter(
+        /** Exclude failed and cursor-capped responses from the complete-success count. */ item =>
+          item.complete && !item.error && !item.truncated).length;
+      const truncated = snapshots.some(
+        /** Carry forward any known cursor cap across partial updates. */ item => item.truncated);
+      const partial = finished < connectedServers.length || succeeded < state.servers.length;
+      const status = finished < connectedServers.length
+        ? msg("queries.partialProgress", { ready: finished, total: connectedServers.length })
+        : succeeded < state.servers.length
+          ? msg("queries.partialResults", { ready: succeeded, total: state.servers.length })
+          : msgCount("queries.total", queryRows.length);
+      // A partial result can *also* exceed the cursor limit; always explain both.
+      queryStatus.textContent = status + (truncated
+        ? (partial ? " " : "") + msgCount("queries.truncated", queryRows.length)
+        : "");
+    }
+    try {
+      await Promise.all(connectedServers.map(
+        /** Each peer publishes its initial page before other peers have finished. */ async server => {
+          const item = { rows: [], complete: false, error: null, truncated: false };
+          try {
+            const response = await apiCall(server,
+              "/queries?length=100&from=" + fromTimestamp + "&until=" + untilTimestamp,
+              { signal: controller.signal });
+            if (!ownsView()) return;
+            item.rows = requireCollection(response, "queries");
+            results.set(server.id, item);
+            publishResults();
+            if (response.cursor) {
+              const pages = await fetchQueryPages(server, fromTimestamp, untilTimestamp, response.cursor, controller.signal);
+              if (!ownsView()) return;
+              item.rows = item.rows.concat(pages.rows);
+              item.truncated = pages.truncated;
+            }
+          } catch (error) {
+            if (!ownsView()) return;
+            item.error = error;
+            toast(msg("queries.serverError", { server: server.label, error: error.message }), "err");
+          } finally {
+            if (ownsView()) {
+              item.complete = true;
+              results.set(server.id, item);
+              publishResults();
+            }
+          }
+        }));
+      if (ownsView() && connectedServers.length === 0) publishResults();
+    } finally {
+      if (queryLoadController === controller) queryLoadController = null;
+      if (activeQueryAbortController === controller) activeQueryAbortController = null;
     }
   }
   document.getElementById("qReload").addEventListener("click", /** Save query preferences before explicitly reloading the selected time window. */ () => {
@@ -3816,6 +3991,13 @@ async function renderQueries(container, generation) {
     }
   });
   document.getElementById("qFilter").addEventListener("input", /** Update query matches as the free-text filter is edited. */ () => renderQueryTable());
+  void nameRefresh.then(
+    /** Refresh visible client names without replacing filters or resurrecting another tab. */ accepted => {
+      if (accepted && generation === state.renderGen && queryRows.length) {
+        rebuildQueryFilters();
+        renderQueryTable(false);
+      }
+    }).catch(/** An optional friendly-name lookup never blocks query rows. */ () => {});
   await reloadQueries();
 }
 
@@ -5342,6 +5524,23 @@ async function renderGravity(container, generation) {
   }
 
   /**
+   * Refresh the currently mounted login controls after authentication expires.
+   * Preserve the retained Gravity output; never write into a different tab's DOM.
+   * @param {object} server Instance whose credentials changed.
+   */
+  function refreshGravityAuth(server) {
+    if (state.activeTab !== "gravity" || !state.servers.includes(server)) return;
+    renderPills();
+    const loginContainer = document.getElementById("gravLogin" + server.id);
+    if (!loginContainer) return;
+    loginContainer.innerHTML = server.connected ? "" : loginBoxHtml(server);
+    if (!server.connected) {
+      bindLoginHandlers(loginContainer,
+        /** Re-render Gravity with its retained output after a successful re-login. */ () => switchTab("gravity"));
+    }
+  }
+
+  /**
    * Refresh the instance's reported last Gravity update time and repaint its status.
    * A disconnected or failed read produces a distinct display status instead of a new timestamp.
    */
@@ -5358,6 +5557,7 @@ async function renderGravity(container, generation) {
       run.lastStatus = "loaded";
     } catch {
       run.lastStatus = server.connected ? "statusError" : "notLoggedIn";
+      if (!server.connected) refreshGravityAuth(server);
     }
     paint(server);
   }
@@ -5369,42 +5569,45 @@ async function renderGravity(container, generation) {
    */
   async function update(server) {
     const run = runFor(server);
-    if (run.running || !server.connected) {
-      return;
-    }
-    Object.assign(run, {
-      rawLog: "",
-      running: true,
-      status: "running",
-      error: "",
-      httpStatus: null
-    });
+    if (run.running || !server.connected) return;
+    Object.assign(run, { rawLog: "", running: true, status: "running", error: "", httpStatus: null });
     paint(server);
+    const controller = new AbortController();
+    let idleTimer = null;
+    let idleExpired = false;
+    let hardExpired = false;
+    const absoluteDeadline = setTimeout(/** End even a verbose Gravity stream after its overall deadline. */ () => {
+      hardExpired = true;
+      controller.abort();
+    }, GRAVITY_STREAM_TIMEOUT_MS);
+    /** Renew the inactivity deadline after each received Gravity output chunk. */
+    function refreshIdleDeadline() {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(/** Abort a silent stream instead of leaving its controls locked forever. */ () => {
+        idleExpired = true;
+        controller.abort();
+      }, GRAVITY_IDLE_TIMEOUT_MS);
+    }
     try {
       const response = await apiCall(server, "/action/gravity?color=true", {
-        method: "POST",
-        rawResponse: true
+        method: "POST", rawResponse: true, signal: controller.signal
       });
       if (response.ok && response.body) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         try {
+          refreshIdleDeadline();
           for (;;) {
-            const {
-              value,
-              done
-            } = await reader.read();
-            if (done) {
-              break;
-            }
-            run.rawLog += decoder.decode(value, {
-              stream: true
-            });
+            const { value, done } = await reader.read();
+            if (done) break;
+            run.rawLog += decoder.decode(value, { stream: true });
+            refreshIdleDeadline();
             paint(server);
           }
           run.rawLog += decoder.decode();
           run.status = "done";
         } finally {
+          clearTimeout(idleTimer);
           reader.releaseLock();
         }
         await refreshLastUpdate(server);
@@ -5414,8 +5617,12 @@ async function renderGravity(container, generation) {
       }
     } catch (error) {
       run.status = "error";
-      run.error = error.message;
+      // Before headers arrive this is a normal API deadline, not a stream timeout.
+      run.error = idleExpired || hardExpired ? msg("gravity.streamTimeout") : error.message;
+      if (error instanceof AuthError) refreshGravityAuth(server);
     } finally {
+      clearTimeout(idleTimer);
+      clearTimeout(absoluteDeadline);
       run.running = false;
       paint(server);
     }

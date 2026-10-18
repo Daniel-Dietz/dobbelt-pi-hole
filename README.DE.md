@@ -400,12 +400,24 @@ Dokumentationslinks erhalten.
   verlorenen Antwort muss der Zustand vor einer bewussten Wiederholung geprüft
   werden; es erfolgt keine automatische Wiederholung. Siehe
   [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8).
-- **Anfragen und Browserzustand:** Allgemeine Anfragefristen, der Schutz vor
-  überlappenden Query-Ladevorgängen und klarere Sitzungs-/Berechtigungszustände
-  bleiben in [#9](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/9) und
-  [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10) offen.
-  Theme-Wechsel können unfertige Formulare verwerfen; Entwurfserhalt,
-  Tastaturverbesserungen und zusätzliche Browser-/Mobilprüfungen stehen in
+- **Anfragen und Browserzustand:** Reguläre API-Aufrufe, Login und Logout
+  haben ein Browser-Zeitlimit von 15 Sekunden; die Prüfung gespeicherter
+  Sitzungen ist auf 10 Sekunden begrenzt. Für Gravity gilt zunächst die
+  reguläre Anfragefrist, anschließend ein Inaktivitätslimit von zwei Minuten
+  und ein absolutes Streamlimit von 30 Minuten. Gesunde Pi-hole-Instanzen
+  zeigen Status und Query-Zeilen unabhängig von langsamen Gegenstellen;
+  Gesamtsummen werden bei fehlenden Antworten als Teildaten gekennzeichnet.
+  Zeitraumwechsel und Navigation brechen überholte Query-/Cursor-Abfragen ab.
+  HTTP 401 verwirft nur die ursprüngliche Sitzung. Scheitert die Prüfung
+  einer wiederhergestellten SID an einem Verbindungsfehler, bleibt die Sitzung
+  als unbestätigt gespeichert und kann manuell erneut geprüft werden.
+  Transportfehler gewöhnlicher API-Aufrufe bewahren die SID, ändern aber
+  einen bereits bestehenden Verbindungsstatus nicht. Logout löscht sie sofort
+  lokal und unterscheidet bestätigten und unbestätigten Remote-Widerruf. Details stehen in der englischen
+  [Betriebsanleitung](docs/CONFIGURATION.md#browser-request-limits-and-session-state).
+  Weitergehende Pi-hole-Berechtigungen bleiben in
+  [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10),
+  Formularentwürfe, Tastaturbedienung und zusätzliche Browser-/Mobiltests in
   [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11).
 - **Konfigurationsänderungen:** Beim Start wird das JSON geprüft. Ein Neustart
   mit ungültiger Eingabe kann den Dienst jedoch unerreichbar lassen. Bewahre

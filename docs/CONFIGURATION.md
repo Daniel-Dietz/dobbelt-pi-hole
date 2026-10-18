@@ -55,6 +55,51 @@ A redirected login or API request fails without retrying at the redirect
 target. Correct `apiUrl`, apply the configuration using the instructions for
 your deployment below, and reload the dashboard before trying again.
 
+## Browser request limits and session state
+
+The dashboard runs in the browser; these limits apply to its API calls and
+do not claim to enforce an nginx or Pi-hole server-side deadline.
+
+| Request or operation | Browser deadline |
+| --- | --- |
+| Loading the public `config.json` | 10 seconds |
+| Checking an existing tab-local session | 10 seconds |
+| Normal Pi-hole API requests and their response bodies | 15 seconds |
+| Pi-hole login and server-side logout request | 15 seconds |
+| Gravity update request before the response stream starts | 15 seconds |
+| Gravity response stream without new data | 2 minutes (idle) |
+| Gravity response stream, including continuous output | 30 minutes (absolute) |
+
+A timeout or transport error is **not** proof that a valid Pi-hole session has
+expired. During a **restored-session probe**, the browser retains its
+route-bound SID, marks this connection unverified and offers a manual retry.
+During ordinary API requests, a timeout retains the SID and the previous
+connection indicator, but reports the individual operation as failed or
+unconfirmed; it does **not** automatically switch to the unverified state or
+show the session-retry control. An explicit HTTP 401 invalidates only
+the session that was actually used by that request; an older 401 cannot delete
+a subsequent successful login. Navigation and changed time ranges cancel
+obsolete dashboard or query-history reads and their paginated cursor requests.
+Read-only results from available Pi-hole instances appear independently of
+slow or unreachable peers. Pending, disconnected or failed peers are excluded
+from summed results and explicitly identified as incomplete; no missing result
+is silently equated with zero.
+
+Logout clears the local SID immediately, even when the target is offline.
+The resulting message distinguishes confirmed remote revocation from an
+unconfirmed one. When the latter occurs, the old Pi-hole SID may remain valid
+server-side until its own expiry. Do not treat that outcome as a verified
+remote logout. Writes are never automatically repeated after a timeout or
+an ambiguous response; inspect the actual target state before retrying.
+
+Gravity is a server-side change operation, not an ordinary read. It is never
+retried automatically. Its stream has separate idle and overall abort limits
+and HTTP 401 also invalidates the original SID when returned as a raw
+stream response. Closing the browser cannot prove the remote job was cancelled
+or completed. The browser does not provide persistent server-side monitoring
+after the tab closes. The fuller data-age and automatic-refresh functionality
+remains tracked in [#22](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/22).
+
 ## Pi-hole API permissions
 
 Local DNS writes use `/config/dns/hosts`. Pi-hole's
