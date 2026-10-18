@@ -2899,3 +2899,76 @@ test('Issue #9: older client-name refresh cannot overwrite a newer result',
     assert.deepEqual(result, { firstPublished: false, second: true, name: 'Current name' });
     await assertNoCorruption(fixture);
   });
+
+
+for (const language of ['da', 'en', 'de']) {
+  test('Issue #9: a timed-out HTTP 200 body cannot confirm an API read or write (' + language + ')',
+    /** Abort stalled JSON bodies after valid HTTP headers without inventing a successful read or mutation. */
+    async t => {
+      const fixture = await openDashboard(t, { language, fakeClock: true });
+      const { page } = fixture;
+      await page.evaluate(
+        /** Replace two JSON response bodies with never-ending streams that reject only when their deadline aborts. */
+        () => {
+          const originalFetch = window.fetch;
+          window.__issue9BodyOriginalFetch = originalFetch;
+          window.fetch = (url, init) => {
+            const uri = String(url);
+            if (uri.endsWith('/stats/summary') ||
+                (uri.endsWith('/dns/blocking') && init?.method === 'POST')) {
+              const stream = new ReadableStream({
+                /** Simulate the browser aborting a response body after headers have arrived. */
+                start(controller) {
+                  init.signal.addEventListener('abort',
+                    /** The fetch body reader must see the cancellation rather than an empty JSON document. */
+                    () => controller.error(new DOMException('body aborted', 'AbortError')),
+                    { once: true });
+                }
+              });
+              return Promise.resolve(new Response(stream, {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+              }));
+            }
+            return originalFetch(url, init);
+          };
+          const server = serverById('1');
+          window.__issue9BodyOutcomes = Promise.all([
+            apiCall(server, '/stats/summary').then(
+              /** An unread response body must not count as a confirmed read. */
+              () => ({ operation: 'read', confirmed: true }),
+              /** Retain the deadline category as well as its translated message. */
+              error => ({ operation: 'read', confirmed: false, timeout: error instanceof RequestTimeoutError, message: error.message })
+            ),
+            apiCall(server, '/dns/blocking', { method: 'POST', body: { blocking: false } }).then(
+              /** Successful HTTP headers alone must never confirm the remote write. */
+              () => ({ operation: 'write', confirmed: true }),
+              /** A lost write acknowledgement is not automatically repeated. */
+              error => ({ operation: 'write', confirmed: false, timeout: error instanceof RequestTimeoutError, message: error.message })
+            )
+          ]);
+        });
+      await page.clock.runFor(15001);
+      const result = await page.evaluate(
+        /** Read the completed deadline results and restore the original browser fetch. */
+        async () => {
+          const outcomes = await window.__issue9BodyOutcomes;
+          window.fetch = window.__issue9BodyOriginalFetch;
+          return {
+            outcomes,
+            expectedMessage: msg('common.requestTimeout'),
+            stillConnected: serverById('1').connected,
+            sid: serverById('1').sid
+          };
+        });
+      assert.deepEqual(result.outcomes.map(({ operation, confirmed, timeout }) =>
+        ({ operation, confirmed, timeout })), [
+        { operation: 'read', confirmed: false, timeout: true },
+        { operation: 'write', confirmed: false, timeout: true }
+      ]);
+      assert.ok(result.outcomes.every(outcome => outcome.message === result.expectedMessage));
+      assert.equal(result.stillConnected, true, 'A stalled body alone cannot invalidate the original SID');
+      assert.equal(result.sid, 'fixture-sid-1');
+      await assertNoCorruption(fixture);
+    });
+}
