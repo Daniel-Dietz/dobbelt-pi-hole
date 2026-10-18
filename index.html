@@ -2659,16 +2659,25 @@ const API_REQUEST_TIMEOUT_MS = 15000;
 const GRAVITY_STREAM_TIMEOUT_MS = 30 * 60 * 1000;
 const GRAVITY_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 /**
- * Combine a caller's cancellation with a request deadline.
- * The returned timeout signal remains alive while a response stream is consumed,
- * so a Gravity response cannot outlive its separate streaming deadline.
- * @param {AbortSignal|undefined} externalSignal Cancellation supplied by the owner of the view.
- * @param {number} timeoutMs Deadline in milliseconds.
- * @returns {{signal: AbortSignal, timeout: AbortSignal}} Combined and deadline-only signals.
+ * Combine an external AbortSignal with a finite, cancelable deadline.
+ * The caller disposes of this deadline after reading the response body. Gravity
+ * keeps its separate stream timer outside this per-request helper.
+ * @param {AbortSignal|undefined} externalSignal Cancellation owned by the view.
+ * @param {number} timeoutMs Limit for fetching and decoding a normal response.
+ * @returns {object} Signal, timedOut predicate and timer disposal function.
  */
 function requestSignals(externalSignal, timeoutMs) {
-  const timeout = AbortSignal.timeout(timeoutMs);
-  return { signal: externalSignal ? AbortSignal.any([externalSignal, timeout]) : timeout, timeout };
+  const deadlineController = new AbortController();
+  let expired = false;
+  const timer = setTimeout(/** Abort an overlong API or login response. */ () => {
+    expired = true;
+    deadlineController.abort();
+  }, timeoutMs);
+  return {
+    signal: externalSignal ? AbortSignal.any([externalSignal, deadlineController.signal]) : deadlineController.signal,
+    timedOut: /** Distinguish a deadline from a manual navigation cancellation. */ () => expired,
+    dispose: /** Release the browser timer when the response finishes. */ () => clearTimeout(timer)
+  };
 }
 /**
  * Send one target-bound API request, rejecting redirects and bounding the entire
@@ -2686,7 +2695,8 @@ async function apiCall(server, path, {
   signal: requestSignal,
   timeoutMs = API_REQUEST_TIMEOUT_MS
 } = {}) {
-  const { signal, timeout } = requestSignals(requestSignal, timeoutMs);
+  const deadline = requestSignals(requestSignal, timeoutMs);
+  const { signal } = deadline;
   const headers = { "Content-Type": "application/json" };
   if (server.sid) headers["X-FTL-SID"] = server.sid;
   try {
@@ -2720,8 +2730,10 @@ async function apiCall(server, path, {
     }
     return payload;
   } catch (error) {
-    if (timeout.aborted) throw new RequestTimeoutError(msg("common.requestTimeout"));
+    if (deadline.timedOut()) throw new RequestTimeoutError(msg("common.requestTimeout"));
     throw error;
+  } finally {
+    deadline.dispose();
   }
 }
 /**
@@ -2729,7 +2741,8 @@ async function apiCall(server, path, {
  * Only an authenticated response installs a new route-bound SID.
  */
 async function login(server, password) {
-  const { signal, timeout } = requestSignals(undefined, API_REQUEST_TIMEOUT_MS);
+  const deadline = requestSignals(undefined, API_REQUEST_TIMEOUT_MS);
+  const { signal } = deadline;
   try {
     const response = await fetch(server.base.replace(/\/$/, "") + "/auth", {
       method: "POST", redirect: "error",
@@ -2748,8 +2761,10 @@ async function login(server, password) {
     server.unverified = false;
     storeValue(sessionStorageKey(server), server.sid, "sessionStorage");
   } catch (error) {
-    if (timeout.aborted) throw new RequestTimeoutError(msg("common.requestTimeout"));
+    if (deadline.timedOut()) throw new RequestTimeoutError(msg("common.requestTimeout"));
     throw error;
+  } finally {
+    deadline.dispose();
   }
 }
 /**
@@ -5421,6 +5436,11 @@ async function renderGravity(container, generation) {
     const controller = new AbortController();
     let idleTimer = null;
     let idleExpired = false;
+    let hardExpired = false;
+    const absoluteDeadline = setTimeout(/** End even a verbose Gravity stream after its overall deadline. */ () => {
+      hardExpired = true;
+      controller.abort();
+    }, GRAVITY_STREAM_TIMEOUT_MS);
     /** Renew the inactivity deadline after each received Gravity output chunk. */
     function refreshIdleDeadline() {
       clearTimeout(idleTimer);
@@ -5431,8 +5451,7 @@ async function renderGravity(container, generation) {
     }
     try {
       const response = await apiCall(server, "/action/gravity?color=true", {
-        method: "POST", rawResponse: true, signal: controller.signal,
-        timeoutMs: GRAVITY_STREAM_TIMEOUT_MS
+        method: "POST", rawResponse: true, signal: controller.signal
       });
       if (response.ok && response.body) {
         const reader = response.body.getReader();
@@ -5459,10 +5478,11 @@ async function renderGravity(container, generation) {
       }
     } catch (error) {
       run.status = "error";
-      run.error = idleExpired || error instanceof RequestTimeoutError || error.name === "TimeoutError"
+      run.error = idleExpired || hardExpired || error instanceof RequestTimeoutError || error.name === "TimeoutError"
         ? msg("gravity.streamTimeout") : error.message;
     } finally {
       clearTimeout(idleTimer);
+      clearTimeout(absoluteDeadline);
       run.running = false;
       paint(server);
     }
