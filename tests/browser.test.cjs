@@ -2713,3 +2713,101 @@ test('Issue #9: HTTP 401 on a raw Gravity response invalidates only the original
   assert.deepEqual(result, { caught: true, connected: false, sid: null, stored: null, peerSid: 'fixture-sid-2' });
   await assertNoCorruption(fixture);
 });
+
+
+for (const language of ['da', 'en', 'de']) {
+  test('Issue #9: stale 401 cannot clear a replacement login (' + language + ')',
+    /** An obsolete authenticated request may fail without logging out a newer successful login. */
+    async t => {
+      const fixture = await openDashboard(t, { language });
+      const result = await fixture.page.evaluate(
+        /** Delay one request's HTTP 401 until the same instance has authenticated with a fresh SID. */
+        async () => {
+          const server = serverById('1');
+          const originalFetch = window.fetch;
+          let releaseOld;
+          const oldResponse = new Promise(resolve => { releaseOld = resolve; });
+          window.fetch = (url, options) => {
+            if (String(url).endsWith('/stats/summary') &&
+                options?.headers?.['X-FTL-SID'] === 'fixture-sid-1') return oldResponse;
+            if (String(url).endsWith('/auth') && options?.method === 'POST') {
+              return Promise.resolve(new Response(
+                JSON.stringify({ session: { sid: 'replacement-sid-1' } }),
+                { status: 200, headers: { 'Content-Type': 'application/json' } }
+              ));
+            }
+            return originalFetch(url, options);
+          };
+          try {
+            const staleCall = apiCall(server, '/stats/summary').then(
+              () => false, error => error instanceof AuthError
+            );
+            await login(server, 'replacement-password');
+            releaseOld(new Response(null, { status: 401 }));
+            const gotAuthError = await staleCall;
+            return {
+              gotAuthError,
+              connected: server.connected,
+              sid: server.sid,
+              saved: sessionStorage.getItem(sessionStorageKey(server)),
+              peerSid: serverById('2').sid
+            };
+          } finally {
+            window.fetch = originalFetch;
+          }
+        });
+      assert.deepEqual(result, {
+        gotAuthError: true,
+        connected: true,
+        sid: 'replacement-sid-1',
+        saved: 'replacement-sid-1',
+        peerSid: 'fixture-sid-2'
+      });
+      await assertNoCorruption(fixture);
+    });
+}
+
+test('Issue #9: late logout 401 cannot clear a new session',
+  /** A stale remote-revocation result must not mutate credentials created after local logout. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'da' });
+    const result = await fixture.page.evaluate(
+      /** Complete an old DELETE only after a replacement login succeeds. */
+      async () => {
+        const server = serverById('1');
+        const originalFetch = window.fetch;
+        let finishRevoke;
+        const heldRevoke = new Promise(resolve => { finishRevoke = resolve; });
+        window.fetch = (url, options) => {
+          if (String(url).endsWith('/auth') && options?.method === 'DELETE') return heldRevoke;
+          if (String(url).endsWith('/auth') && options?.method === 'POST') {
+            return Promise.resolve(new Response(
+              JSON.stringify({ session: { sid: 'after-logout-sid' } }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            ));
+          }
+          return originalFetch(url, options);
+        };
+        try {
+          const pendingLogout = logout(server);
+          await login(server, 'new-password');
+          finishRevoke(new Response(null, { status: 401 }));
+          const revoked = await pendingLogout;
+          return {
+            revoked,
+            connected: server.connected,
+            sid: server.sid,
+            saved: sessionStorage.getItem(sessionStorageKey(server))
+          };
+        } finally {
+          window.fetch = originalFetch;
+        }
+      });
+    assert.deepEqual(result, {
+      revoked: false,
+      connected: true,
+      sid: 'after-logout-sid',
+      saved: 'after-logout-sid'
+    });
+    await assertNoCorruption(fixture);
+  });
