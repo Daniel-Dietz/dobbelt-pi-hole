@@ -288,11 +288,15 @@ existing filenames remain available for documentation links.
 
 ## Current operational limits
 
-- **Actions across instances:** each Pi-hole receives its own requests. There
-  is no transaction or general rollback across all targets. Some failed writes
-  can still produce a success message, and failed reads can appear as missing
-  entries. After an error, check the actual state on each Pi-hole before
-  retrying; accurate outcomes and unknown states are tracked in
+- **Actions across instances:** requests are independent and there is no
+  cross-instance transaction or automatic rollback. Domain, local DNS, client
+  and list management now distinguish confirmed changes, rejected changes,
+  disconnected targets and unknown write outcomes. They check each target's
+  current state before sending a requested write; a failed read is never
+  treated as proof that an entry is missing. Keep the submitted values when
+  an outcome is incomplete. After a lost response, inspect the state before
+  explicitly retrying; no mutation is automatically replayed.
+  These safeguards are tracked in
   [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8).
 - **Requests and browser state:** general request deadlines, query-load race
   protection and clearer session/permission states remain in

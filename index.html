@@ -1040,7 +1040,16 @@ const I18N = {
     "queries.total.other": "{count} forespørgsler i alt for det valgte tidsrum.",
     "queries.truncated.one": "{count} forespørgsel hentet for det valgte tidsrum – der er muligvis flere end vist; indsnævr tidsrummet for et fuldstændigt resultat.",
     "queries.truncated.other": "{count} forespørgsler hentet for det valgte tidsrum – der er muligvis flere end vist; indsnævr tidsrummet for et fuldstændigt resultat.",
-    "domains.loading": "Indlæser…",
+    "multi.busy": "En anden ændring på disse Pi-hole-instanser er stadig i gang.",
+    "multi.invalidRead": "Ufuldstændigt svar fra Pi-hole.",
+    "multi.disconnected": "Ikke forbundet",
+    "multi.unavailable": "Data kunne ikke hentes fra: {servers}. Posterne regnes ikke som manglende.",
+    "multi.confirmed": "{server}: ændringen er bekræftet.",
+    "multi.failed": "{server}: ændringen eller kontrollen mislykkedes. {error}",
+    "multi.skipped": "{server}: sprunget over (ikke forbundet).",
+    "multi.unchanged": "{server}: allerede i ønsket tilstand; ingen ændring sendt.",
+    "multi.uncertain": "{server}: ændringens resultat er ukendt. Kontrollér tilstanden før nyt forsøg. {error}",
+"domains.loading": "Indlæser…",
     "domains.domain": "Domæne",
     "domains.type": "Type",
     "domains.kind": "Slags",
@@ -1197,7 +1206,18 @@ const I18N = {
     "config.invalidJson": "Konfigurationsfilen config.json indeholder ikke gyldig JSON.",
     "config.invalidValue": "Konfigurationsfeltet »{field}« mangler eller er ugyldigt.",
     "config.unsupportedVersion": "Konfigurationens version mangler eller understøttes ikke. Generer konfigurationen med værktøjerne fra denne version af kontrolpanelet.",
-    "config.changed": "Pi-hole-konfigurationen er ændret. Genindlæs denne side, før du fortsætter."
+    "config.changed": "Pi-hole-konfigurationen er ændret. Genindlæs denne side, før du fortsætter.",
+    "multi.unknown": "Status ukendt",
+    "multi.skippedLabel": "Sprunget over",
+    "multi.invalidResponse": "Pi-hole returnerede ufuldstændige data.",
+    "multi.readUnavailable": "Kunne ikke hente data fra: {servers}. Ukendte poster må ikke ændres.",
+    "multi.confirmedResult": "{server}: ændringen er bekræftet.",
+    "multi.failedResult": "{server}: ændringen mislykkedes ({error}).",
+    "multi.unknownResult": "{server}: resultatet er ukendt ({error}). Kontrollér den aktuelle tilstand før et nyt forsøg.",
+    "multi.skippedResult": "{server}: ingen ændring (ikke logget ind eller allerede opdateret).",
+    "multi.verifyRetry": "Kontrollér og prøv igen",
+    "multi.conflict": "Posten er ændret på serveren. Genindlæs den aktuelle tilstand.",
+    "multi.partialResponse": "Pi-hole rapporterede en fejl for den behandlede post."
   },
   "en": {
     "app.title": "Dobbelt-Pi-hole v{version} · Dashboard",
@@ -1303,7 +1323,16 @@ const I18N = {
     "queries.total.other": "{count} queries in total for the selected time range.",
     "queries.truncated.one": "{count} query loaded for the selected time range – more queries may be available. Narrow the time range for complete results.",
     "queries.truncated.other": "{count} queries loaded for the selected time range – more queries may be available. Narrow the time range for complete results.",
-    "domains.loading": "Loading…",
+    "multi.busy": "Another change to these Pi-hole instances is still running.",
+    "multi.invalidRead": "Incomplete response from Pi-hole.",
+    "multi.disconnected": "Not connected",
+    "multi.unavailable": "Data unavailable from: {servers}. These records are not considered missing.",
+    "multi.confirmed": "{server}: change confirmed.",
+    "multi.failed": "{server}: change or preflight failed. {error}",
+    "multi.skipped": "{server}: skipped (not connected).",
+    "multi.unchanged": "{server}: already in the requested state; no write sent.",
+    "multi.uncertain": "{server}: write outcome unknown. Check the current state before retrying. {error}",
+"domains.loading": "Loading…",
     "domains.domain": "Domain",
     "domains.type": "Type",
     "domains.kind": "Match type",
@@ -1460,7 +1489,18 @@ const I18N = {
     "config.invalidJson": "The configuration file config.json does not contain valid JSON.",
     "config.invalidValue": "The configuration field “{field}” is missing or invalid.",
     "config.unsupportedVersion": "The configuration version is missing or unsupported. Generate the configuration with the tools from this dashboard version.",
-    "config.changed": "The Pi-hole configuration has changed. Reload this page before continuing."
+    "config.changed": "The Pi-hole configuration has changed. Reload this page before continuing.",
+    "multi.unknown": "Unknown",
+    "multi.skippedLabel": "Skipped",
+    "multi.invalidResponse": "Pi-hole returned incomplete data.",
+    "multi.readUnavailable": "Could not read data from: {servers}. Unknown entries cannot be modified.",
+    "multi.confirmedResult": "{server}: change confirmed.",
+    "multi.failedResult": "{server}: change failed ({error}).",
+    "multi.unknownResult": "{server}: outcome unknown ({error}). Check the current state before retrying.",
+    "multi.skippedResult": "{server}: no change (not signed in or already up to date).",
+    "multi.verifyRetry": "Verify and retry",
+    "multi.conflict": "The entry changed on the server. Reload the current state.",
+    "multi.partialResponse": "Pi-hole reported an error for the processed entry."
   },
   "de": {
     "app.title": "Dobbelt-Pi-hole v{version} · Übersicht",
@@ -1566,7 +1606,16 @@ const I18N = {
     "queries.total.other": "Insgesamt {count} Anfragen im gewählten Zeitraum.",
     "queries.truncated.one": "{count} Anfrage wurde für den gewählten Zeitraum geladen – möglicherweise sind weitere Anfragen vorhanden. Grenzen Sie den Zeitraum für ein vollständiges Ergebnis ein.",
     "queries.truncated.other": "{count} Anfragen wurden für den gewählten Zeitraum geladen – möglicherweise sind weitere Anfragen vorhanden. Grenzen Sie den Zeitraum für ein vollständiges Ergebnis ein.",
-    "domains.loading": "Wird geladen…",
+    "multi.busy": "Eine weitere Änderung an diesen Pi-hole-Instanzen läuft noch.",
+    "multi.invalidRead": "Unvollständige Antwort von Pi-hole.",
+    "multi.disconnected": "Nicht verbunden",
+    "multi.unavailable": "Daten nicht verfügbar von: {servers}. Diese Einträge gelten nicht als fehlend.",
+    "multi.confirmed": "{server}: Änderung bestätigt.",
+    "multi.failed": "{server}: Änderung oder Vorprüfung fehlgeschlagen. {error}",
+    "multi.skipped": "{server}: übersprungen (nicht verbunden).",
+    "multi.unchanged": "{server}: gewünschter Zustand bereits vorhanden; keine Änderung gesendet.",
+    "multi.uncertain": "{server}: Ergebnis der Änderung unbekannt. Vor erneutem Versuch Zustand prüfen. {error}",
+"domains.loading": "Wird geladen…",
     "domains.domain": "Domain",
     "domains.type": "Typ",
     "domains.kind": "Abgleichart",
@@ -1723,7 +1772,18 @@ const I18N = {
     "config.invalidJson": "Die Konfigurationsdatei config.json enthält kein gültiges JSON.",
     "config.invalidValue": "Das Konfigurationsfeld „{field}“ fehlt oder ist ungültig.",
     "config.unsupportedVersion": "Die Konfigurationsversion fehlt oder wird nicht unterstützt. Erzeugen Sie die Konfiguration mit den Werkzeugen dieser Dashboard-Version.",
-    "config.changed": "Die Pi-hole-Konfiguration wurde geändert. Laden Sie diese Seite neu, bevor Sie fortfahren."
+    "config.changed": "Die Pi-hole-Konfiguration wurde geändert. Laden Sie diese Seite neu, bevor Sie fortfahren.",
+    "multi.unknown": "Unbekannt",
+    "multi.skippedLabel": "Übersprungen",
+    "multi.invalidResponse": "Pi-hole hat unvollständige Daten zurückgegeben.",
+    "multi.readUnavailable": "Daten konnten nicht geladen werden von: {servers}. Einträge mit unbekanntem Status dürfen nicht geändert werden.",
+    "multi.confirmedResult": "{server}: Änderung bestätigt.",
+    "multi.failedResult": "{server}: Änderung fehlgeschlagen ({error}).",
+    "multi.unknownResult": "{server}: Ergebnis unbekannt ({error}). Vor erneutem Versuch den aktuellen Zustand prüfen.",
+    "multi.skippedResult": "{server}: keine Änderung (nicht angemeldet oder bereits aktuell).",
+    "multi.verifyRetry": "Prüfen und erneut versuchen",
+    "multi.conflict": "Der Eintrag wurde auf dem Server geändert. Aktuellen Zustand neu laden.",
+    "multi.partialResponse": "Pi-hole hat für den bearbeiteten Eintrag einen Fehler gemeldet."
   }
 };
 
@@ -1813,6 +1873,10 @@ function resolveLanguage(saved, browserLanguages = [], configuredDefault = "auto
 }
 let currentLanguage = resolveLanguage(storedValue(LANGUAGE_KEY), [...(navigator.languages || []), navigator.language]);
 let pendingLanguageFormState = null;
+// A tab navigation creates a fresh draft identity; language-only rerenders preserve it.
+let formContextRevision = 0;
+const fieldEditRevisions = new Map();
+let formEditSerial = 0;
 let languageChosenThisPage = false;
 
 /** Return the locale used to format numbers, dates and sorting in the active language. */
@@ -1947,17 +2011,23 @@ function mergeFormState(previous, current) {
 }
 
 /**
- * Record edits made while a language render is still populating the active tab.
- * Ignore unrelated controls and events from an obsolete render generation.
+ * Track user input/change revisions for current form fields and update the pending
+ * language snapshot only when its tab and render generation are still current.
  */
 function recordPendingFormEdit(event) {
-  const pending = pendingLanguageFormState;
   const element = event.target;
-  if (!pending || pending.generation !== state.renderGen || pending.tab !== state.activeTab || !element.matches?.("input, select, textarea")) {
+  if (!element.matches?.("input, select, textarea")) {
     return;
   }
   const selector = formFieldSelector(element);
   if (!selector) {
+    return;
+  }
+  // Record actual user edits even when no language render is pending.
+  // Programmatic snapshot restoration does not emit input/change events.
+  fieldEditRevisions.set(selector, ++formEditSerial);
+  const pending = pendingLanguageFormState;
+  if (!pending || pending.generation !== state.renderGen || pending.tab !== state.activeTab) {
     return;
   }
   let field = pending.snapshot.fields.find(/** Find the pending draft for the edited field before updating or creating its snapshot. */ candidate => candidate.selector === selector);
@@ -2476,7 +2546,8 @@ function toast(message, tone) {
   notification.className = "toast" + (tone === "ok" ? " ok" : tone === "err" ? " err" : "");
   notification.textContent = message;
   area.append(notification);
-  setTimeout(/** Remove this notification when its display interval ends. */ () => notification.remove(), 5500);
+  setTimeout(/** Remove this notification when its display interval ends. */ () => notification.remove(), 9500);
+  return notification;
 }
 /** Find a configured server by its stable display ID, or return undefined. */
 function serverById(id) {
@@ -2593,7 +2664,11 @@ async function apiCall(server, path, {
     signal: requestSignal
   });
   if (response.status === 409 && (await response.clone().json().catch(/** Treat an unreadable conflict body as an ordinary response rather than inventing a configuration-change code. */ () => null))?.error?.code === "dashboard_config_changed") {
-    throw new Error(msg("config.changed"));
+    // The fingerprinted proxy rejects this request before forwarding to Pi-hole.
+    // Preserve HTTP 409 so an unexecuted mutation is classified as failed, not uncertain.
+    const failure = new Error(msg("config.changed"));
+    failure.httpStatus = 409;
+    throw failure;
   }
   if (rawResponse) {
     return response;
@@ -2612,7 +2687,9 @@ async function apiCall(server, path, {
   const payload = (response.headers.get("content-type") || "").includes("application/json") ? await response.json().catch(/** Represent an unreadable JSON response as null while retaining its HTTP status for error handling. */ () => null) : await response.text();
   if (!response.ok) {
     const message = payload && payload.error && payload.error.message || (typeof payload == "string" ? payload : "HTTP " + response.status);
-    throw new Error(message);
+    const failure = new Error(message);
+    failure.httpStatus = response.status;
+    throw failure;
   }
   return payload;
 }
@@ -2780,6 +2857,12 @@ async function switchTab(tabId, updateHash = true) {
   }
   if (state.activeTab === "dashboard" && tabId !== "dashboard") {
     destroyDashboardCharts();
+  }
+  // A user navigation, even back to the same tab, owns a new form. A
+  // translation-only rerender keeps the existing draft's provenance.
+  if (updateHash || tabId !== state.activeTab) {
+    formContextRevision++;
+    fieldEditRevisions.clear();
   }
   state.activeTab = tabId;
   if (updateHash) {
@@ -3736,6 +3819,237 @@ async function renderQueries(container, generation) {
   await reloadQueries();
 }
 
+
+/** Reject an incomplete Pi-hole collection response instead of treating it as empty. */
+function requireCollection(result, key) {
+  if (!result || !Array.isArray(result[key])) throw new Error(msg("multi.invalidRead"));
+  return result[key];
+}
+/** Require an explicit hosts array in the nested configuration response. */
+function requireHostRecords(result) {
+  const rows = result?.config?.dns?.hosts;
+  if (!Array.isArray(rows)) throw new Error(msg("multi.invalidRead"));
+  return rows;
+}
+/** Render a read failure or disconnected server without offering mutating controls. */
+function uncertainCell(states, server) {
+  const kind = states.get(server.id);
+  return kind === "confirmed" ? "" : `<td><span class="badge off">${htmlMsg(kind === "skipped" ? "multi.disconnected" : "multi.unknown")}</span></td>`;
+}
+/** Explain which instances have not supplied complete data for this table. */
+function collectionCoverageHtml(states) {
+  const names = state.servers.filter(server => states.get(server.id) !== "confirmed").map(server => server.label);
+  return names.length ? `<p class="sub" role="status">${htmlMsg("multi.unavailable", { servers: names.join(", ") })}</p>` : "";
+}
+/** Track each instance's in-flight mutation across changing DOM controls. */
+const activeInstanceWrites = new Set();
+/**
+ * Preflight each selected target, then send at most one mutation per target.
+ * An unsuccessful preflight prevents a write; transport/5xx write failures
+ * remain uncertain and are never automatically retried.
+ * @param {HTMLElement} button Button to disable against duplicate clicks.
+ * @param {object[]} targets Selected Pi-hole instances.
+ * @param {object} op Functions path(server), extract(result), isCurrent(server, rows), write(server, rows).
+ * @returns {Promise<Array|null>} Per-instance outcomes; null when already in flight.
+ */
+async function performCheckedWrites(button, targets, op) {
+  if (button?.dataset.multiBusy === "1" || targets.some(server => activeInstanceWrites.has(server.id))) {
+    toast(msg("multi.busy"), "err");
+    return null;
+  }
+  for (const server of targets) activeInstanceWrites.add(server.id);
+  if (button) { button.dataset.multiBusy = "1"; button.disabled = true; }
+  const outcomes = [];
+  try {
+    for (const server of targets) {
+      if (!server.connected) { outcomes.push({ server, status: "skipped" }); continue; }
+      let rows;
+      try { rows = op.extract(await apiCall(server, op.path(server))); }
+      catch (error) { outcomes.push({ server, status: "failed", error: error.message }); continue; }
+      let alreadyCurrent;
+      try { alreadyCurrent = op.isCurrent(server, rows); }
+      catch (error) { outcomes.push({ server, status: "failed", error: error.message }); continue; }
+      if (alreadyCurrent) { outcomes.push({ server, status: "unchanged" }); continue; }
+      try {
+        const result = await op.write(server, rows);
+        const errors = result?.processed?.errors || [];
+        outcomes.push(errors.length
+          ? { server, status: "failed", error: errors.map(item => item.error || item.item).join("; ") }
+          : { server, status: "confirmed" });
+      } catch (error) {
+        outcomes.push({ server,
+          status: !error.partialWrite && (error instanceof AuthError || (error.httpStatus >= 400 && error.httpStatus < 500)) ? "failed" : "uncertain",
+          error: error.message });
+      }
+    }
+  } finally {
+    for (const server of targets) activeInstanceWrites.delete(server.id);
+    if (button) { delete button.dataset.multiBusy; if (button.isConnected) button.disabled = false; }
+  }
+  for (const outcome of outcomes) {
+    toast(msg("multi." + outcome.status, { server: outcome.server.label, error: outcome.error || "" }),
+      outcome.status === "confirmed" ? "ok" : outcome.status === "unchanged" ? "" : "err");
+  }
+  return outcomes;
+}
+/**
+ * Verify that an existing item really matches its submitted comment and group
+ * assignments. Presence with conflicting metadata must not clear a draft.
+ * @param {object|undefined} record The current Pi-hole record.
+ * @param {string} comment Submitted description.
+ * @param {number[]} groups Submitted group identifiers.
+ * @returns {boolean} Whether no write is necessary.
+ */
+function matchingExistingEntry(record, comment, groups) {
+  if (!record) return false;
+  const currentGroups = record.groups;
+  if ((record.comment ?? "") !== (comment ?? "") || !Array.isArray(currentGroups) ||
+      currentGroups.length !== groups.length ||
+      [...currentGroups].sort().join(",") !== [...groups].sort().join(",")) {
+    throw new Error(msg("multi.conflict"));
+  }
+  return true;
+}
+/**
+ * Capture the active tab's draft identity and per-field edit revisions at submission.
+ * A language-only rerender preserves this identity; navigation or new typing does not.
+ * @param {Array<[string,string]>} fields Submitted text-field selectors and values.
+ * @param {string[]} controls Selectors for the target and type options that define the same draft.
+ * @returns {object} Submission provenance for safe, asynchronous clearing.
+ */
+function captureSubmissionContext(fields, controls = []) {
+  return {
+    tab: state.activeTab,
+    revision: formContextRevision,
+    edits: new Map([...fields.map(([selector]) => selector), ...controls]
+      .map(selector => [selector, fieldEditRevisions.get(selector) ?? 0]))
+  };
+}
+/**
+ * Clear a verified submission only when it still owns each unchanged field.
+ * A new form after tab navigation, or freshly typed text (even identical to
+ * submitted text) after a language rerender, must never be erased.
+ * @param {object[]|null} outcomes Confirmed, failed or uncertain per-server results.
+ * @param {HTMLFormElement} form Original form that submitted the request.
+ * @param {Array<[string,string]>} fields Submitted selectors and values.
+ * @param {object} submission Captured tab and field edit identity.
+ */
+function clearConfirmedDraft(outcomes, form, fields, submission) {
+  if (!outcomes?.length || !outcomes.every(outcome => ["confirmed", "unchanged"].includes(outcome.status))) return;
+  if (submission.revision !== formContextRevision || submission.tab !== state.activeTab) return;
+  // Changing the target, rule type, kind or any field prepares a *new* draft.
+  // Preserve the entire draft even when the original text happens to be identical.
+  for (const [selector, revision] of submission.edits) {
+    if ((fieldEditRevisions.get(selector) ?? 0) !== revision) return;
+  }
+  const activeForm = form.isConnected ? form : document.getElementById(form.id);
+  for (const [selector, previous] of fields) {
+    // Pending language renders may still restore the captured draft later.
+    // Clear only snapshots belonging to the same tab and render generation.
+    const pending = pendingLanguageFormState;
+    if (pending && pending.tab === submission.tab && pending.generation === state.renderGen) {
+      const field = pending.snapshot.fields.find(candidate => candidate.selector === selector);
+      if (field && typeof field.value === "string" && field.value.trim() === previous) field.value = "";
+    }
+    const input = activeForm?.querySelector(selector);
+    if (input && input.value.trim() === previous) input.value = "";
+  }
+}
+
+
+/** Reject malformed collection responses rather than interpreting failed or incomplete reads as empty. */
+function requireApiRecords(response, field) {
+  if (!response || !Array.isArray(response[field])) throw new Error(msg("multi.invalidResponse"));
+  return response[field];
+}
+
+/** Track successful reads separately from skipped and unknown instance data. */
+function initialReadStates() {
+  return new Map(state.servers.map(server => [server.id, server.connected ? "unknown" : "skipped"]));
+}
+
+/** Replace actionable absence with an unknown/skipped indicator when an instance was not read. */
+function unavailableCell(readStates, server) {
+  const status = readStates.get(server.id);
+  return status === "ok" ? null : '<td><span class="badge off">' + htmlMsg(status === "unknown" ? "multi.unknown" : "multi.skippedLabel") + "</span></td>";
+}
+
+/** Summarize failed instance reads without hiding partial data from healthy servers. */
+function incompleteReadHtml(readStates) {
+  const unknown = state.servers.filter(server => readStates.get(server.id) === "unknown");
+  return unknown.length ? '<p class="sub" role="alert">' + htmlMsg("multi.readUnavailable", { servers: unknown.map(server => server.label).join(", ") }) + "</p>" : "";
+}
+
+const activeMutations = new Set();
+
+/**
+ * Preflight the current state of each target before writing exactly once.
+ * Only an explicit user click can retry an unknown outcome, and only after another preflight.
+ */
+async function runInstanceMutation({ key, targets, preflight, write, button }) {
+  if (activeMutations.has(key)) return { busy: true, results: [], confirmed: 0 };
+  activeMutations.add(key);
+  if (button) button.disabled = true;
+  const results = [];
+  try {
+    for (const server of targets) {
+      if (!server.connected) {
+        results.push({ server, status: "skipped" });
+        continue;
+      }
+      try {
+        const decision = await preflight(server);
+        if (decision === false) {
+          results.push({ server, status: "skipped" });
+          continue;
+        }
+        const response = await write(server, decision);
+        if (response?.processed?.errors?.length) {
+          const failure = new Error(msg("multi.partialResponse"));
+          failure.httpStatus = 400;
+          throw failure;
+        }
+        results.push({ server, status: "confirmed" });
+      } catch (error) {
+        const status = error instanceof AuthError || (error.httpStatus >= 400 && error.httpStatus < 500) ? "failed" : "unknown";
+        results.push({ server, status, error: error.message || String(error) });
+      }
+    }
+    for (const result of results) {
+      const messageKey = result.status === "confirmed" ? "multi.confirmedResult" : result.status === "failed" ? "multi.failedResult" : result.status === "skipped" ? "multi.skippedResult" : "multi.unknownResult";
+      const notice = toast(msg(messageKey, { server: result.server.label, error: result.error || "" }), result.status === "confirmed" ? "ok" : result.status === "skipped" ? "" : "err");
+      if (result.status === "unknown" && notice) {
+        const retry = document.createElement("button");
+        retry.className = "btn xs";
+        retry.type = "button";
+        retry.textContent = msg("multi.verifyRetry");
+        retry.addEventListener("click", /** Retry only this instance after checking its latest state. */ () => {
+          notice.remove();
+          void runInstanceMutation({ key, targets: [result.server], preflight, write });
+        });
+        notice.append(" ", retry);
+      }
+    }
+    return { busy: false, results, confirmed: results.filter(result => result.status === "confirmed" || (result.status === "skipped" && result.server.connected)).length };
+  } finally {
+    activeMutations.delete(key);
+    if (button?.isConnected) button.disabled = false;
+  }
+}
+
+/** Clear only unchanged input values on full success, including pending language-switch snapshots. */
+function clearSubmittedFields(fields) {
+  for (const [id, value] of Object.entries(fields)) {
+    const element = document.getElementById(id);
+    if (element && element.value === value) element.value = "";
+    if (pendingLanguageFormState) {
+      for (const field of pendingLanguageFormState.snapshot.fields) {
+        if (field.selector === "#" + id && field.value === value) field.value = "";
+      }
+    }
+  }
+}
+
 /**
  * Render domain and regular-expression rules with per-instance controls and a new-rule form.
  * Reads and writes remain separate requests for each instance; this view does not
@@ -3744,24 +4058,28 @@ async function renderQueries(container, generation) {
  * @param {number} generation Render generation assigned by switchTab.
  */
 async function renderDomains(container, generation) {
+  // Only the newest collection read may publish rows after an overlapping reload.
+  let loadRevision = 0;
   /**
    * Read connected instances' rules and merge rows by domain, allow/deny type and exact/regex kind.
    * Keep the original per-instance records for updates and suppress contradictory add
    * buttons when that instance already has the same domain/kind under another rule type.
-   * Failed reads show a toast but currently contribute no records to the merged table.
+   * Failed reads remain unknown and never imply that the records are missing.
    */
   async function loadDomains() {
+    const loadId = ++loadRevision;
     const domainArea = document.getElementById("domArea");
     domainArea.innerHTML = `<p class="empty">${htmlMsg("domains.loading")}</p>`;
+    const readStates = new Map(state.servers.map(server => [server.id, "skipped"]));
     const rulesByKey = new Map();
     const existingKinds = new Set();
-    let hasConnectedServer = false;
     await Promise.all(state.servers.map(/** Merge one connected instance's domain rules while retaining its original record and group assignments. */ async server => {
       if (server.connected) {
-        hasConnectedServer = true;
         try {
           const response = await apiCall(server, "/domains");
-          for (const record of response.domains || []) {
+          const records = requireCollection(response, "domains");
+          readStates.set(server.id, "confirmed");
+          for (const record of records) {
             existingKinds.add([server.id, record.domain, record.kind].join("\0"));
             const key = [record.domain, record.type, record.kind].join("\0");
             if (!rulesByKey.has(key)) {
@@ -3780,6 +4098,7 @@ async function renderDomains(container, generation) {
             row.byServer[server.id] = record;
           }
         } catch (error) {
+          readStates.set(server.id, error instanceof AuthError ? "skipped" : "unknown");
           toast(msg("domains.requestError", {
             server: server.label,
             error: error.message
@@ -3787,10 +4106,10 @@ async function renderDomains(container, generation) {
         }
       }
     }));
-    if (generation !== state.renderGen) {
+    if (generation !== state.renderGen || loadId !== loadRevision) {
       return;
     }
-    if (!hasConnectedServer) {
+    if (!state.servers.some(server => server.connected)) {
       domainArea.innerHTML = `<div class="empty">${htmlMsg("domains.loginRequired")}<br><br>${state.servers.map(loginBoxHtml).join("<br>")}</div>`;
       bindLoginHandlers(domainArea, loadDomains);
       return;
@@ -3800,11 +4119,12 @@ async function renderDomains(container, generation) {
       sensitivity: "base"
     }) || left.type.localeCompare(right.type, localeCode()) || left.kind.localeCompare(right.kind, localeCode()));
     if (rows.length !== 0) {
-      domainArea.innerHTML = `<div class="table-wrap"><table class="datatable" style="min-width:950px;">
+      domainArea.innerHTML = collectionCoverageHtml(readStates) + `<div class="table-wrap"><table class="datatable" style="min-width:950px;">
 				<thead><tr><th>${htmlMsg("domains.domain")}</th>${state.servers.map(/** Render the configured instance's escaped label as a domain-table column heading. */ server => `<th>${escapeHtml(server.label)}</th>`).join("")}<th>${htmlMsg("domains.type")}</th><th>${htmlMsg("domains.kind")}</th><th>${htmlMsg("domains.comment")}</th><th></th></tr></thead>
 				<tbody>${rows.map(/** Render a merged domain rule with per-instance state and row-level deletion controls. */ (row, rowIndex) => `<tr>
 						<td class="mono">${escapeHtml(row.domain)}</td>
 						${state.servers.map(/** Render an instance's rule state, toggle action or eligible add action without offering a conflicting rule. */ server => {
+        if (readStates.get(server.id) !== "confirmed") return uncertainCell(readStates, server);
         const record = row.byServer[server.id];
         return record ? `<td><span class="badge ${record.enabled ? "on" : "off"}">${htmlMsg(record.enabled ? "domains.active" : "domains.disabled")}</span> <button class="btn xs" data-toggle-domain-server="${escapeHtml(server.id)}" data-domain-row="${rowIndex}">${htmlMsg(record.enabled ? "domains.deactivate" : "domains.activate")}</button></td>` : `<td><span class="badge off">${htmlMsg("domains.missing")}</span>${existingKinds.has([server.id, row.domain, row.kind].join("\0")) ? "" : ` <button class="btn xs" data-add-domain-server="${escapeHtml(server.id)}" data-domain-row="${rowIndex}">${htmlMsg("domains.add")}</button>`}</td>`;
       }).join("")}
@@ -3818,34 +4138,27 @@ async function renderDomains(container, generation) {
         button.addEventListener("click", /** Copy the selected domain rule to one connected instance, retaining the source group assignments. */ async () => {
           const server = serverById(button.dataset.addDomainServer);
           const row = rows[Number(button.dataset.domainRow)];
-          if (!server.connected) {
-            toast(msg("domains.notLoggedIn", {
-              server: server.label
-            }), "err");
+          const sourceRecord = Object.values(row.byServer)[0];
+          if (!sourceRecord || !Array.isArray(sourceRecord.groups) || !Object.hasOwn(sourceRecord, "comment")) {
+            toast(msg("multi.invalidRead"), "err");
             return;
           }
-          const sourceRecord = Object.values(row.byServer)[0] || {};
-          try {
-            await apiCall(server, "/domains/" + row.type + "/" + row.kind, {
-              method: "POST",
-              body: {
-                domain: [row.domain],
-                comment: row.comment || "",
-                type: row.type,
-                kind: row.kind,
-                groups: sourceRecord.groups || [0]
+          const outcomes = await performCheckedWrites(button, [server], {
+            path: () => "/domains",
+            extract: response => requireCollection(response, "domains"),
+            isCurrent: (target, records) => {
+              if (records.some(record => record.domain === row.domain && record.kind === row.kind && record.type !== row.type)) {
+                throw new Error(msg("multi.conflict"));
               }
-            });
-            toast(msg("domains.added", {
-              server: server.label
-            }), "ok");
-          } catch (error) {
-            toast(msg("domains.requestError", {
-              server: server.label,
-              error: error.message
-            }), "err");
-          }
-          loadDomains();
+              return matchingExistingEntry(records.find(record => record.domain === row.domain && record.kind === row.kind && record.type === row.type), sourceRecord.comment, sourceRecord.groups);
+            },
+            write: target => apiCall(target, "/domains/" + row.type + "/" + row.kind, {
+              method: "POST",
+              body: { domain: [row.domain], comment: sourceRecord.comment ?? "", type: row.type,
+                kind: row.kind, groups: sourceRecord.groups }
+            })
+          });
+          if (outcomes && state.activeTab === "domains") document.getElementById("domReload")?.click();
         });
       }
       for (const button of domainArea.querySelectorAll("[data-toggle-domain-server]")) {
@@ -3854,27 +4167,27 @@ async function renderDomains(container, generation) {
           const row = rows[Number(button.dataset.domainRow)];
           const record = row.byServer[server.id];
           if (record) {
-            try {
-              await apiCall(server, "/domains/" + row.type + "/" + encodeURIComponent(row.domain), {
-                method: "PUT",
-                body: {
-                  type: row.type,
-                  kind: row.kind,
-                  enabled: !record.enabled,
-                  comment: record.comment,
-                  groups: record.groups
+            const desiredEnabled = !record.enabled;
+            const outcomes = await performCheckedWrites(button, [server], {
+              path: () => "/domains",
+              extract: response => requireCollection(response, "domains"),
+              isCurrent: (target, records) => {
+                const current = records.find(item => item.domain === row.domain && item.type === row.type && item.kind === row.kind);
+                if (!current || !Array.isArray(current.groups) || !Object.hasOwn(current, "comment")) {
+                  throw new Error(msg("multi.invalidRead"));
                 }
-              });
-              toast(msg("domains.updated", {
-                server: server.label
-              }), "ok");
-            } catch (error) {
-              toast(msg("domains.requestError", {
-                server: server.label,
-                error: error.message
-              }), "err");
-            }
-            loadDomains();
+                return current.enabled === desiredEnabled;
+              },
+              write: (target, records) => {
+                const current = records.find(item => item.domain === row.domain && item.type === row.type && item.kind === row.kind);
+                return apiCall(target, "/domains/" + row.type + "/" + row.kind + "/" + encodeURIComponent(row.domain), {
+                  method: "PUT",
+                  body: { type: row.type, kind: row.kind, enabled: desiredEnabled,
+                    comment: current.comment, groups: current.groups }
+                });
+              }
+            });
+            if (outcomes && state.activeTab === "domains") document.getElementById("domReload")?.click();
           }
         });
       }
@@ -3882,7 +4195,7 @@ async function renderDomains(container, generation) {
         button.addEventListener("click",
         /**
          * Confirm and attempt deletion on every instance represented by this domain row, then reload it.
-         * The current final toast names attempted targets even when an individual request failed.
+         * Each target reports its confirmed, failed or uncertain result independently.
          */
         async () => {
           const row = rows[Number(button.dataset.delDomainRow)];
@@ -3895,27 +4208,19 @@ async function renderDomains(container, generation) {
             domain: row.domain,
             servers: targetNames
           }))) {
-            for (const server of targets) {
-              try {
-                await apiCall(server, "/domains/" + row.type + "/" + row.kind + "/" + encodeURIComponent(row.domain), {
-                  method: "DELETE"
-                });
-              } catch (error) {
-                toast(msg("domains.requestError", {
-                  server: server.label,
-                  error: error.message
-                }), "err");
-              }
-            }
-            toast(msg("domains.deleted", {
-              servers: targetNames
-            }), "ok");
-            loadDomains();
+            const outcomes = await performCheckedWrites(button, targets, {
+              path: () => "/domains",
+              extract: response => requireCollection(response, "domains"),
+              isCurrent: (server, records) => !records.some(record =>
+                record.domain === row.domain && record.kind === row.kind && record.type === row.type),
+              write: server => apiCall(server, "/domains/" + row.type + "/" + row.kind + "/" + encodeURIComponent(row.domain), { method: "DELETE" })
+            });
+            if (outcomes && state.activeTab === "domains") document.getElementById("domReload")?.click();
           }
         });
       }
     } else {
-      domainArea.innerHTML = `<p class="empty">${htmlMsg("domains.empty")}</p>`;
+      domainArea.innerHTML = collectionCoverageHtml(readStates) + `<p class="empty">${htmlMsg("domains.empty")}</p>`;
     }
   }
   container.innerHTML = `
@@ -3951,7 +4256,7 @@ async function renderDomains(container, generation) {
   document.getElementById("domainForm").addEventListener("submit",
   /**
    * Submit a new rule separately to each selected connected instance and report individual request results.
-   * The current form clears its domain and comment after all attempts, including partial failures.
+   * Submitted values are cleared only after every selected target is verified.
    */
   async event => {
     event.preventDefault();
@@ -3962,38 +4267,20 @@ async function renderDomains(container, generation) {
     if (!domain) {
       return;
     }
+    const form = event.currentTarget;
+    const submittedFields = [["#dDomain", domain], ["#dComment", comment]];
+    const submission = captureSubmissionContext(submittedFields, ["#dType", "#dKind", "#targetDomain"]);
     const targets = targetsFor(document.getElementById("targetDomain"));
-    for (const server of targets) {
-      if (server.connected) {
-        try {
-          await apiCall(server, "/domains/" + type + "/" + kind, {
-            method: "POST",
-            body: {
-              domain: [domain],
-              comment,
-              type,
-              kind,
-              groups: [0]
-            }
-          });
-          toast(msg("domains.added", {
-            server: server.label
-          }), "ok");
-        } catch (error) {
-          toast(msg("domains.requestError", {
-            server: server.label,
-            error: error.message
-          }), "err");
-        }
-      } else {
-        toast(msg("domains.notLoggedIn", {
-          server: server.label
-        }), "err");
-      }
-    }
-    document.getElementById("dDomain").value = "";
-    document.getElementById("dComment").value = "";
-    loadDomains();
+    const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targets, {
+      path: () => "/domains",
+      extract: response => requireCollection(response, "domains"),
+      isCurrent: (server, records) => matchingExistingEntry(records.find(record => record.domain === domain && record.type === type && record.kind === kind), comment, [0]),
+      write: server => apiCall(server, "/domains/" + type + "/" + kind, {
+        method: "POST", body: { domain: [domain], comment, type, kind, groups: [0] }
+      })
+    });
+    clearConfirmedDraft(outcomes, form, submittedFields, submission);
+    if (outcomes && state.activeTab === "domains") document.getElementById("domReload")?.click();
   });
   bindLoginHandlers(container, loadDomains);
   await loadDomains();
@@ -4005,6 +4292,8 @@ async function renderDomains(container, generation) {
  * @param {number} generation Render generation assigned by switchTab.
  */
 async function renderHosts(container, generation) {
+  // Only the newest collection read may publish rows after an overlapping reload.
+  let loadRevision = 0;
   container.innerHTML = `
 				<div class="card" style="margin-bottom:14px;">
 				<h2>${htmlMsg("hosts.addTitle")}</h2>
@@ -4035,20 +4324,21 @@ async function renderHosts(container, generation) {
   let sortDirection = hostUiState.sortDir;
   /**
    * Load connected instances' local DNS records and group them by their hostname text.
-   * Retain each original record string for exact delete/restore requests. Failed reads
-   * show a toast but currently leave that instance without records in the merged view.
+   * Retain original host records for exact writes; unavailable instances are
+   * explicitly unknown and cannot be written from an assumed empty state.
    */
   async function loadHosts() {
+    const loadId = ++loadRevision;
     const hostArea = document.getElementById("hostArea");
     hostArea.innerHTML = `<p class="empty">${htmlMsg("hosts.loading")}</p>`;
-    let hasConnectedServer = false;
+    const readStates = new Map(state.servers.map(server => [server.id, "skipped"]));
     const hostsByName = new Map();
     await Promise.all(state.servers.map(/** Read one instance's hosts array and split each record into its address and hostname text. */ async server => {
       if (server.connected) {
-        hasConnectedServer = true;
         try {
           const hostsResponse = await apiCall(server, "/config/dns/hosts");
-          const hostRecords = hostsResponse.config && hostsResponse.config.dns && hostsResponse.config.dns.hosts || [];
+          const hostRecords = requireHostRecords(hostsResponse);
+          readStates.set(server.id, "confirmed");
           for (const rawHostRecord of hostRecords) {
             const recordParts = rawHostRecord.split(/\s+/u);
             const ipAddress = recordParts[0];
@@ -4065,6 +4355,7 @@ async function renderHosts(container, generation) {
             };
           }
         } catch (error) {
+          readStates.set(server.id, error instanceof AuthError ? "skipped" : "unknown");
           toast(msg("hosts.requestError", {
             server: server.label,
             error: error.message
@@ -4072,10 +4363,10 @@ async function renderHosts(container, generation) {
         }
       }
     }));
-    if (generation !== state.renderGen) {
+    if (generation !== state.renderGen || loadId !== loadRevision) {
       return;
     }
-    if (!hasConnectedServer) {
+    if (!state.servers.some(server => server.connected)) {
       hostArea.innerHTML = `<div class="empty">${htmlMsg("hosts.loginRequired")}<br><br>${state.servers.map(loginBoxHtml).join("<br>")}</div>`;
       bindLoginHandlers(hostArea, loadHosts);
       return;
@@ -4118,15 +4409,16 @@ async function renderHosts(container, generation) {
         return sortDirection === "asc" ? comparison : -comparison;
       });
       if (sortedHosts.length === 0) {
-        hostArea.innerHTML = `<p class="empty">${htmlMsg("hosts.empty")}</p>`;
+        hostArea.innerHTML = collectionCoverageHtml(readStates) + `<p class="empty">${htmlMsg("hosts.empty")}</p>`;
         return;
       }
       const sortIndicator = sortDirection === "asc" ? " ▲" : " ▼";
       const hostSortHeadingHtml = /** Build a host-table sort heading from its internal key and already escaped label. */ (columnKey, headingHtml) => `<th data-host-sort="${escapeHtml(columnKey)}" style="cursor:pointer;user-select:none;">${headingHtml}${sortKey === columnKey ? sortIndicator : ""}</th>`;
-      hostArea.innerHTML = `<div class="table-wrap"><table class="datatable">
+      hostArea.innerHTML = collectionCoverageHtml(readStates) + `<div class="table-wrap"><table class="datatable">
 				<thead><tr>${hostSortHeadingHtml("name", htmlMsg("hosts.nameHeading"))}${state.servers.map(/** Build the address-sort heading for one configured instance. */ server => hostSortHeadingHtml(server.id, escapeHtml(server.label))).join("")}<th></th></tr></thead>
 				<tbody>${sortedHosts.map(/** Render a hostname row and highlight addresses that differ across its loaded instance records. */ (host, rowIndex) => {
         const serverCells = state.servers.map(/** Render this instance's address and eligible copy actions, or an add action for a missing record. */ server => {
+          if (readStates.get(server.id) !== "confirmed") return uncertainCell(readStates, server);
           const hostRecord = host.byServer[server.id];
           if (hostRecord) {
             const syncButtonsHtml = state.servers.filter(/** Offer source instances only when their loaded address differs from this target's address. */ sourceCandidate => sourceCandidate.id !== server.id && host.byServer[sourceCandidate.id] && host.byServer[sourceCandidate.id].ip !== hostRecord.ip).map(/** Build a copy-address button whose source and target IDs remain explicit in its data attributes. */ sourceServer => `<button class="btn xs" data-sync-host-row="${rowIndex}" data-sync-target="${escapeHtml(server.id)}" data-sync-source="${escapeHtml(sourceServer.id)}" title="${htmlMsg("hosts.useSource", {
@@ -4167,8 +4459,8 @@ async function renderHosts(container, generation) {
         syncButton.addEventListener("click",
         /**
          * Replace one target's host address with the selected source address after confirmation.
-         * Delete the exact old record, add the replacement, and attempt to restore the old
-         * record if the add fails after deletion succeeded. Report a failed restore separately.
+         * Add the replacement before deleting the old record; never blindly restore
+         * or replay a mutation after a lost response.
          */
         async () => {
           const host = sortedHosts[Number(syncButton.dataset.syncHostRow)];
@@ -4188,50 +4480,37 @@ async function renderHosts(container, generation) {
           }))) {
             return;
           }
-          syncButton.disabled = true;
           const replacementRawRecord = sourceRecord.ip + " " + host.name;
-          let originalRecordDeleted = false;
-          try {
-            await apiCall(targetServer, "/config/dns/hosts/" + encodeURIComponent(targetRecord.raw), {
-              method: "DELETE"
-            });
-            originalRecordDeleted = true;
-            await apiCall(targetServer, "/config/dns/hosts/" + encodeURIComponent(replacementRawRecord), {
-              method: "PUT"
-            });
-            toast(msg("hosts.updated", {
-              server: targetServer.label,
-              ip: sourceRecord.ip
-            }), "ok");
-          } catch (error) {
-            if (originalRecordDeleted) {
-              try {
-                await apiCall(targetServer, "/config/dns/hosts/" + encodeURIComponent(targetRecord.raw), {
-                  method: "PUT"
-                });
-                toast(msg("hosts.restoredAfterFailure", {
-                  server: targetServer.label
-                }), "err");
-              } catch {
-                toast(msg("hosts.restoreFailed", {
-                  server: targetServer.label
-                }), "err");
+          const outcomes = await performCheckedWrites(syncButton, [targetServer], {
+            path: () => "/config/dns/hosts",
+            extract: requireHostRecords,
+            isCurrent: (server, records) => {
+              if (records.includes(replacementRawRecord) && !records.includes(targetRecord.raw)) return true;
+              // A partially completed previous replacement must be resolved
+              // deliberately rather than replaying its PUT/DELETE sequence.
+              if (!records.includes(targetRecord.raw) || records.includes(replacementRawRecord)) {
+                throw new Error(msg("multi.conflict"));
               }
-            } else {
-              toast(msg("hosts.requestError", {
-                server: targetServer.label,
-                error: error.message
-              }), "err");
+              return false;
+            },
+            write: async server => {
+              await apiCall(server, "/config/dns/hosts/" + encodeURIComponent(replacementRawRecord), { method: "PUT" });
+              try {
+                await apiCall(server, "/config/dns/hosts/" + encodeURIComponent(targetRecord.raw), { method: "DELETE" });
+              } catch (error) {
+                error.partialWrite = true;
+                throw error;
+              }
             }
-          }
-          loadHosts();
+          });
+          if (outcomes && state.activeTab === "hosts") document.getElementById("hostReload")?.click();
         });
       }
       for (const deleteButton of hostArea.querySelectorAll("[data-del-row]")) {
         deleteButton.addEventListener("click",
         /**
          * Confirm and delete each loaded instance's exact original host record, then reload.
-         * The current final toast names attempted targets even when an individual deletion failed.
+         * Confirm results per instance and do not claim that unsuccessful deletions succeeded.
          */
         async () => {
           const host = sortedHosts[Number(deleteButton.dataset.delRow)];
@@ -4244,56 +4523,31 @@ async function renderHosts(container, generation) {
             name: host.name,
             servers: targetLabels
           }))) {
-            for (const targetServer of targetServers) {
-              try {
-                await apiCall(targetServer, "/config/dns/hosts/" + encodeURIComponent(host.byServer[targetServer.id].raw), {
-                  method: "DELETE"
-                });
-              } catch (error) {
-                toast(msg("hosts.requestError", {
-                  server: targetServer.label,
-                  error: error.message
-                }), "err");
-              }
-            }
-            toast(msg("hosts.deleted", {
-              servers: targetLabels
-            }), "ok");
-            loadHosts();
+            const outcomes = await performCheckedWrites(deleteButton, targetServers, {
+              path: () => "/config/dns/hosts",
+              extract: requireHostRecords,
+              isCurrent: (server, records) => !records.includes(host.byServer[server.id].raw),
+              write: server => apiCall(server, "/config/dns/hosts/" + encodeURIComponent(host.byServer[server.id].raw), { method: "DELETE" })
+            });
+            if (outcomes && state.activeTab === "hosts") document.getElementById("hostReload")?.click();
           }
         });
       }
       for (const addButton of hostArea.querySelectorAll("[data-add-host]")) {
         addButton.addEventListener("click", /** Add a missing host record to one instance, reusing an observed address or asking the user for one. */ async () => {
           const targetServer = serverById(addButton.dataset.addHost);
-          if (!targetServer.connected) {
-            toast(msg("hosts.notLoggedIn", {
-              server: targetServer.label
-            }), "err");
-            return;
-          }
           const ipAddress = addButton.dataset.ip || uiPrompt(msg("hosts.promptIp", {
-            name: addButton.dataset.name,
-            server: targetServer.label
+            name: addButton.dataset.name, server: targetServer.label
           }), "");
-          if (!ipAddress) {
-            return;
-          }
+          if (!ipAddress) return;
           const rawHostRecord = ipAddress + " " + addButton.dataset.name;
-          try {
-            await apiCall(targetServer, "/config/dns/hosts/" + encodeURIComponent(rawHostRecord), {
-              method: "PUT"
-            });
-            toast(msg("hosts.added", {
-              server: targetServer.label
-            }), "ok");
-          } catch (error) {
-            toast(msg("hosts.requestError", {
-              server: targetServer.label,
-              error: error.message
-            }), "err");
-          }
-          loadHosts();
+          const outcomes = await performCheckedWrites(addButton, [targetServer], {
+            path: () => "/config/dns/hosts",
+            extract: requireHostRecords,
+            isCurrent: (server, records) => records.includes(rawHostRecord),
+            write: server => apiCall(server, "/config/dns/hosts/" + encodeURIComponent(rawHostRecord), { method: "PUT" })
+          });
+          if (outcomes && state.activeTab === "hosts") document.getElementById("hostReload")?.click();
         });
       }
     }
@@ -4303,7 +4557,7 @@ async function renderHosts(container, generation) {
   document.getElementById("hostForm").addEventListener("submit",
   /**
    * Submit a new host record independently to selected connected instances and report request results.
-   * The current form clears its address and hostname after all attempts, including partial failures.
+   * Preserve the submitted address and hostname unless every target is confirmed.
    */
   async event => {
     event.preventDefault();
@@ -4312,32 +4566,19 @@ async function renderHosts(container, generation) {
     if (!ipAddress || !hostname) {
       return;
     }
+    const form = event.currentTarget;
+    const submittedFields = [["#hIp", ipAddress], ["#hName", hostname]];
+    const submission = captureSubmissionContext(submittedFields, ["#targetHost"]);
     const rawHostRecord = ipAddress + " " + hostname;
     const targetServers = targetsFor(document.getElementById("targetHost"));
-    for (const targetServer of targetServers) {
-      if (targetServer.connected) {
-        try {
-          await apiCall(targetServer, "/config/dns/hosts/" + encodeURIComponent(rawHostRecord), {
-            method: "PUT"
-          });
-          toast(msg("hosts.added", {
-            server: targetServer.label
-          }), "ok");
-        } catch (error) {
-          toast(msg("hosts.requestError", {
-            server: targetServer.label,
-            error: error.message
-          }), "err");
-        }
-      } else {
-        toast(msg("hosts.notLoggedIn", {
-          server: targetServer.label
-        }), "err");
-      }
-    }
-    document.getElementById("hIp").value = "";
-    document.getElementById("hName").value = "";
-    loadHosts();
+    const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targetServers, {
+      path: () => "/config/dns/hosts",
+      extract: requireHostRecords,
+      isCurrent: (server, records) => records.includes(rawHostRecord),
+      write: server => apiCall(server, "/config/dns/hosts/" + encodeURIComponent(rawHostRecord), { method: "PUT" })
+    });
+    clearConfirmedDraft(outcomes, form, submittedFields, submission);
+    if (outcomes && state.activeTab === "hosts") document.getElementById("hostReload")?.click();
   });
   bindLoginHandlers(container, loadHosts);
   await loadHosts();
@@ -4349,6 +4590,8 @@ async function renderHosts(container, generation) {
  * @param {number} generation Render generation assigned by switchTab.
  */
 async function renderClients(container, generation) {
+  // Only the newest collection read may publish rows after an overlapping reload.
+  let loadRevision = 0;
   container.innerHTML = `
 				<div class="card" style="margin-bottom:14px;">
 				<h2>${htmlMsg("clients.addTitle")}</h2>
@@ -4390,6 +4633,27 @@ async function renderClients(container, generation) {
 				</div>`;
   let clients = [];
   let suggestions = [];
+  let clientReadStates = new Map();
+  let suggestionReadStates = new Map();
+  const suggestionDrafts = new Map();
+  /**
+   * Remember each visible suggestion's description and chosen destination before
+   * its row is replaced by pagination or a refresh. This cache stays in memory.
+   */
+  function rememberSuggestionDrafts() {
+    const area = document.getElementById("suggArea");
+    if (!area) return;
+    for (const row of area.querySelectorAll("tr[data-sugg-row]")) {
+      const nameInput = row.querySelector(".sugg-name");
+      const targetSelect = row.querySelector("select.target-select");
+      if (nameInput && targetSelect) {
+        suggestionDrafts.set(nameInput.dataset.suggestionName, {
+          name: nameInput.value,
+          target: targetSelect.value
+        });
+      }
+    }
+  }
   const clientUiState = uiState.clients;
   let sortKey = clientUiState.sortKey;
 
@@ -4426,7 +4690,7 @@ async function renderClients(container, generation) {
       return sortDirection === "asc" ? comparison : -comparison;
     });
     if (sortedClients.length === 0) {
-      clientArea.innerHTML = `<p class="empty">${htmlMsg("clients.empty")}</p>`;
+      clientArea.innerHTML = collectionCoverageHtml(clientReadStates) + `<p class="empty">${htmlMsg("clients.empty")}</p>`;
       return;
     }
     const pageSize = pageSizeOf("clientPageSize");
@@ -4442,11 +4706,11 @@ async function renderClients(container, generation) {
     const visibleClients = Number.isFinite(pageSize) ? sortedClients.slice(pageStart, pageStart + pageSize) : sortedClients;
     const sortIndicator = sortDirection === "asc" ? " ▲" : " ▼";
     const clientSortHeadingHtml = /** Build a client-table sort heading from its internal key and already escaped label. */ (columnKey, headingHtml) => `<th data-client-sort="${escapeHtml(columnKey)}" style="cursor:pointer;user-select:none;">${headingHtml}${sortKey === columnKey ? sortIndicator : ""}</th>`;
-    clientArea.innerHTML = `<div class="table-wrap client-table-wrap"><table class="datatable">
+    clientArea.innerHTML = collectionCoverageHtml(clientReadStates) + `<div class="table-wrap client-table-wrap"><table class="datatable">
 					<thead><tr>${clientSortHeadingHtml("client", htmlMsg("clients.clientHeading"))}${clientSortHeadingHtml("comment", htmlMsg("clients.descriptionHeading"))}${state.servers.map(/** Build the client-presence sort heading for one configured instance. */ server => clientSortHeadingHtml(server.id, escapeHtml(server.label))).join("")}<th></th></tr></thead>
 					<tbody>${visibleClients.map(/** Render a client row using its original array index so actions still select the correct record after sorting. */ (client, visibleRowIndex) => {
       const clientIndex = clients.indexOf(client);
-      const serverCellsHtml = state.servers.map(/** Show an instance's loaded client membership or provide a button to add the missing client. */ server => client.byServer[server.id] ? `<td><span class="badge on">${htmlMsg("clients.active")}</span></td>` : `<td><span class="badge off">${htmlMsg("clients.missing")}</span> <button class="btn xs" data-add-client-server="${escapeHtml(server.id)}" data-client-row="${clientIndex}">${htmlMsg("clients.add")}</button></td>`).join("");
+      const serverCellsHtml = state.servers.map(/** Show an instance's loaded client membership or provide a button to add the missing client. */ server => clientReadStates.get(server.id) !== "confirmed" ? uncertainCell(clientReadStates, server) : client.byServer[server.id] ? `<td><span class="badge on">${htmlMsg("clients.active")}</span></td>` : `<td><span class="badge off">${htmlMsg("clients.missing")}</span> <button class="btn xs" data-add-client-server="${escapeHtml(server.id)}" data-client-row="${clientIndex}">${htmlMsg("clients.add")}</button></td>`).join("");
       return `<tr>
 							<td class="mono">${escapeHtml(client.client)}</td>
 							<td>${escapeHtml(client.comment || "")}</td>
@@ -4474,32 +4738,20 @@ async function renderClients(container, generation) {
       addButton.addEventListener("click", /** Copy a client to one connected instance, preserving a source record's group assignments. */ async () => {
         const targetServer = serverById(addButton.dataset.addClientServer);
         const client = clients[Number(addButton.dataset.clientRow)];
-        if (!targetServer.connected) {
-          toast(msg("clients.notLoggedIn", {
-            server: targetServer.label
-          }), "err");
+        const sourceRecord = Object.values(client.byServer)[0];
+        if (!sourceRecord || !Array.isArray(sourceRecord.groups) || !Object.hasOwn(sourceRecord, "comment")) {
+          toast(msg("multi.invalidRead"), "err");
           return;
         }
-        const sourceRecord = Object.values(client.byServer)[0] || {};
-        try {
-          await apiCall(targetServer, "/clients", {
-            method: "POST",
-            body: {
-              client: [client.client],
-              comment: client.comment,
-              groups: sourceRecord.groups || [0]
-            }
-          });
-          toast(msg("clients.added", {
-            server: targetServer.label
-          }), "ok");
-        } catch (error) {
-          toast(msg("clients.requestError", {
-            server: targetServer.label,
-            error: error.message
-          }), "err");
-        }
-        loadClientData();
+        const outcomes = await performCheckedWrites(addButton, [targetServer], {
+          path: () => "/clients",
+          extract: response => requireCollection(response, "clients"),
+          isCurrent: (server, records) => matchingExistingEntry(records.find(record => String(record.client).toUpperCase() === client.client.toUpperCase()), sourceRecord.comment, sourceRecord.groups),
+          write: server => apiCall(server, "/clients", {
+            method: "POST", body: { client: [client.client], comment: sourceRecord.comment, groups: sourceRecord.groups }
+          })
+        });
+        if (outcomes && state.activeTab === "clients") document.getElementById("clientReload")?.click();
       });
     }
     for (const deleteButton of clientArea.querySelectorAll("[data-del-client-row]")) {
@@ -4521,24 +4773,13 @@ async function renderClients(container, generation) {
         }))) {
           return;
         }
-        let successfulDeletes = 0;
-        for (const targetServer of targetServers) {
-          try {
-            await apiCall(targetServer, "/clients/" + encodeURIComponent(client.client), {
-              method: "DELETE"
-            });
-            successfulDeletes++;
-          } catch (error) {
-            toast(msg("clients.requestError", {
-              server: targetServer.label,
-              error: error.message
-            }), "err");
-          }
-        }
-        if (successfulDeletes > 0) {
-          toast(msgCount("clients.deleted", successfulDeletes), "ok");
-        }
-        loadClientData();
+        const outcomes = await performCheckedWrites(deleteButton, targetServers, {
+          path: () => "/clients",
+          extract: response => requireCollection(response, "clients"),
+          isCurrent: (server, records) => !records.some(record => String(record.client).toUpperCase() === client.client.toUpperCase()),
+          write: server => apiCall(server, "/clients/" + encodeURIComponent(client.client), { method: "DELETE" })
+        });
+        if (outcomes && state.activeTab === "clients") document.getElementById("clientReload")?.click();
       });
     }
     const previousPageButton = document.getElementById("clientPagePrev");
@@ -4562,8 +4803,9 @@ async function renderClients(container, generation) {
    */
   function renderSuggestionTable() {
     const suggestionArea = document.getElementById("suggArea");
+    rememberSuggestionDrafts();
     if (suggestions.length === 0) {
-      suggestionArea.innerHTML = `<p class="empty">${htmlMsg("clients.unknownEmpty")}</p>`;
+      suggestionArea.innerHTML = collectionCoverageHtml(suggestionReadStates) + `<p class="empty">${htmlMsg("clients.unknownEmpty")}</p>`;
       return;
     }
     const pageSize = pageSizeOf("suggPageSize");
@@ -4577,7 +4819,7 @@ async function renderClients(container, generation) {
     saveClientViewState();
     const pageStart = suggestionPage * pageSize;
     const visibleSuggestions = Number.isFinite(pageSize) ? suggestions.slice(pageStart, pageStart + pageSize) : suggestions;
-    suggestionArea.innerHTML = `<div class="table-wrap"><table class="datatable">
+    suggestionArea.innerHTML = collectionCoverageHtml(suggestionReadStates) + `<div class="table-wrap"><table class="datatable">
 				<thead><tr><th>${htmlMsg("clients.identifier")}</th><th>${htmlMsg("clients.knownNames")}</th><th>${htmlMsg("clients.vendor")}</th><th>${htmlMsg("clients.seenBy")}</th><th>${htmlMsg("clients.name")}</th><th>${htmlMsg("clients.addTo")}</th><th></th></tr></thead>
 				<tbody>${visibleSuggestions.map(/** Render one discovered device with a draft name field and instance selector for adding it as a client. */ (suggestion, rowIndex) => `<tr data-sugg-row="${pageStart + rowIndex}">
 						<td class="mono">${escapeHtml(suggestion.key)}</td>
@@ -4590,38 +4832,37 @@ async function renderClients(container, generation) {
 					</tr>`).join("")}</tbody>
 				</table></div>
 				${pagerHtml("suggPage", suggestionPage, pageCount, suggestions.length, visibleSuggestions.length)}`;
+    // Confirmed suggestions disappear naturally. Keep the original name and
+    // target when a rejected or uncertain attempt leaves the row available.
+    for (const row of suggestionArea.querySelectorAll("tr[data-sugg-row]")) {
+      const nameInput = row.querySelector(".sugg-name");
+      const targetSelect = row.querySelector("select.target-select");
+      const draft = suggestionDrafts.get(nameInput?.dataset.suggestionName);
+      if (!draft || !nameInput || !targetSelect) continue;
+      nameInput.value = draft.name;
+      if ([...targetSelect.options].some(/** Restore only a configured target still present in this selector. */ option => option.value === draft.target)) {
+        targetSelect.value = draft.target;
+      }
+    }
     for (const addButton of suggestionArea.querySelectorAll("[data-add-sugg]")) {
       addButton.addEventListener("click", /** Add the discovered identifier and entered name to each selected connected instance, then refresh both tables. */ async () => {
         const suggestionIndex = addButton.dataset.addSugg;
         const comment = addButton.closest("tr").querySelector(".sugg-name").value.trim();
         const targetServers = targetsFor(document.getElementById("targetSugg" + suggestionIndex));
-        for (const targetServer of targetServers) {
-          if (targetServer.connected) {
-            try {
-              await apiCall(targetServer, "/clients", {
-                method: "POST",
-                body: {
-                  client: [addButton.dataset.key],
-                  comment,
-                  groups: [0]
-                }
-              });
-              toast(msg("clients.added", {
-                server: targetServer.label
-              }), "ok");
-            } catch (error) {
-              toast(msg("clients.requestError", {
-                server: targetServer.label,
-                error: error.message
-              }), "err");
-            }
-          } else {
-            toast(msg("clients.notLoggedIn", {
-              server: targetServer.label
-            }), "err");
-          }
+        const outcomes = await performCheckedWrites(addButton, targetServers, {
+          path: () => "/clients",
+          extract: response => requireCollection(response, "clients"),
+          isCurrent: (server, records) => matchingExistingEntry(records.find(record => String(record.client).toUpperCase() === addButton.dataset.key.toUpperCase()), comment, [0]),
+          write: server => apiCall(server, "/clients", {
+            method: "POST",
+            body: { client: [addButton.dataset.key], comment, groups: [0] }
+          })
+        });
+        // A partial success still changes the merged client inventory. Refresh the
+        // current view, including after a language rerender replaces this handler.
+        if (outcomes && state.activeTab === "clients") {
+          document.getElementById("clientReload")?.click();
         }
-        loadClientData();
       });
     }
     const previousPageButton = document.getElementById("suggPagePrev");
@@ -4642,18 +4883,21 @@ async function renderClients(container, generation) {
   /**
    * Reload clients and suggestions from connected instances and merge identifiers without case sensitivity.
    * Update the friendly-name lookup, omit already configured device identifiers from
-   * suggestions, and ignore results from a superseded tab render. Failed reads can
-   * currently leave an instance absent from the merged data.
+   * suggestions, and ignore results from a superseded tab render. Failed reads
+   * remain explicitly unknown instead of implying that records are absent.
    */
   async function loadClientData() {
+    const loadId = ++loadRevision;
+    rememberSuggestionDrafts();
     const clientArea = document.getElementById("clientArea");
     const suggestionArea = document.getElementById("suggArea");
     clientArea.innerHTML = `<p class="empty">${htmlMsg("clients.loading")}</p>`;
     suggestionArea.innerHTML = `<p class="empty">${htmlMsg("clients.loading")}</p>`;
-    clients = [];
+    // An older request must not mutate the read-state maps of a newer reload.
+    const nextClientReadStates = new Map(state.servers.map(server => [server.id, "skipped"]));
+    const nextSuggestionReadStates = new Map(state.servers.map(server => [server.id, "skipped"]));
     const clientsByIdentifier = new Map();
     const suggestionsByServerId = {};
-    let hasConnectedServer = false;
     await Promise.all(state.servers.map(
     /**
      * Read and merge one instance's configured clients, then fetch its device suggestions separately.
@@ -4661,10 +4905,11 @@ async function renderClients(container, generation) {
      */
     async server => {
       if (server.connected) {
-        hasConnectedServer = true;
         try {
           const clientResponse = await apiCall(server, "/clients");
-          for (const serverClient of clientResponse.clients || []) {
+          const clientRecords = requireCollection(clientResponse, "clients");
+          nextClientReadStates.set(server.id, "confirmed");
+          for (const serverClient of clientRecords) {
             const identifier = String(serverClient.client || "").trim();
             if (!identifier) {
               continue;
@@ -4684,23 +4929,31 @@ async function renderClients(container, generation) {
             }
           }
         } catch (error) {
+          nextClientReadStates.set(server.id, error instanceof AuthError ? "skipped" : "unknown");
           toast(msg("clients.requestError", {
             server: server.label,
             error: error.message
           }), "err");
         }
+        // Do not issue another API request after the client read has expired this session.
+        if (!server.connected) return;
         try {
           const suggestionResponse = await apiCall(server, "/clients/_suggestions");
-          suggestionsByServerId[server.id] = suggestionResponse.clients || [];
-        } catch {
+          suggestionsByServerId[server.id] = requireCollection(suggestionResponse, "clients");
+          nextSuggestionReadStates.set(server.id, "confirmed");
+        } catch (error) {
+          nextSuggestionReadStates.set(server.id, error instanceof AuthError ? "skipped" : "unknown");
+          if (error instanceof AuthError) nextClientReadStates.set(server.id, "skipped");
           suggestionsByServerId[server.id] = [];
         }
       }
     }));
-    if (generation !== state.renderGen) {
+    if (generation !== state.renderGen || loadId !== loadRevision) {
       return;
     }
-    if (!hasConnectedServer) {
+    clientReadStates = nextClientReadStates;
+    suggestionReadStates = nextSuggestionReadStates;
+    if (!state.servers.some(server => server.connected)) {
       const loginHtml = `<div class="empty">${htmlMsg("clients.loginRequired")}<br><br>${state.servers.map(loginBoxHtml).join("<br>")}</div>`;
       clientArea.innerHTML = loginHtml;
       suggestionArea.innerHTML = "";
@@ -4772,7 +5025,7 @@ async function renderClients(container, generation) {
   document.getElementById("clientForm").addEventListener("submit",
   /**
    * Create the entered client independently on each selected connected instance with default group zero.
-   * Report individual results; the current form clears its identifier and comment after all attempts.
+   * Report individual results and preserve the draft after any unconfirmed request.
    */
   async event => {
     event.preventDefault();
@@ -4781,36 +5034,20 @@ async function renderClients(container, generation) {
     if (!identifier) {
       return;
     }
+    const form = event.currentTarget;
+    const submittedFields = [["#cClient", identifier], ["#cComment", comment]];
+    const submission = captureSubmissionContext(submittedFields, ["#targetClient"]);
     const targetServers = targetsFor(document.getElementById("targetClient"));
-    for (const targetServer of targetServers) {
-      if (targetServer.connected) {
-        try {
-          await apiCall(targetServer, "/clients", {
-            method: "POST",
-            body: {
-              client: [identifier],
-              comment,
-              groups: [0]
-            }
-          });
-          toast(msg("clients.added", {
-            server: targetServer.label
-          }), "ok");
-        } catch (error) {
-          toast(msg("clients.requestError", {
-            server: targetServer.label,
-            error: error.message
-          }), "err");
-        }
-      } else {
-        toast(msg("clients.notLoggedIn", {
-          server: targetServer.label
-        }), "err");
-      }
-    }
-    document.getElementById("cClient").value = "";
-    document.getElementById("cComment").value = "";
-    loadClientData();
+    const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targetServers, {
+      path: () => "/clients",
+      extract: response => requireCollection(response, "clients"),
+      isCurrent: (server, records) => matchingExistingEntry(records.find(record => String(record.client).toUpperCase() === identifier.toUpperCase()), comment, [0]),
+      write: server => apiCall(server, "/clients", {
+        method: "POST", body: { client: [identifier], comment, groups: [0] }
+      })
+    });
+    clearConfirmedDraft(outcomes, form, submittedFields, submission);
+    if (outcomes && state.activeTab === "clients") document.getElementById("clientReload")?.click();
   });
   bindLoginHandlers(container, loadClientData);
   await loadClientData();
@@ -4822,22 +5059,26 @@ async function renderClients(container, generation) {
  * @param {number} generation Render generation assigned by switchTab.
  */
 async function renderLists(container, generation) {
+  // Only the newest collection read may publish rows after an overlapping reload.
+  let loadRevision = 0;
   /**
    * Load connected instances' lists and merge them by address and list type.
    * Keep per-instance enabled/comment values and discard obsolete tab results.
-   * Failed reads show a toast but currently contribute no records to the merged table.
+   * Failed reads remain unknown and never imply that the records are missing.
    */
   async function loadLists() {
+    const loadId = ++loadRevision;
     const listArea = document.getElementById("listArea");
     listArea.innerHTML = `<p class="empty">${htmlMsg("lists.loading")}</p>`;
-    let hasConnectedServer = false;
+    const readStates = new Map(state.servers.map(server => [server.id, "skipped"]));
     const listsByAddressAndType = new Map();
     await Promise.all(state.servers.map(/** Merge one instance's list entries while retaining its enabled state and comment. */ async server => {
       if (server.connected) {
-        hasConnectedServer = true;
         try {
           const listsResponse = await apiCall(server, "/lists");
-          for (const serverList of listsResponse.lists || []) {
+          const listRecords = requireCollection(listsResponse, "lists");
+          readStates.set(server.id, "confirmed");
+          for (const serverList of listRecords) {
             const listKey = serverList.address + "|" + serverList.type;
             if (!listsByAddressAndType.has(listKey)) {
               listsByAddressAndType.set(listKey, {
@@ -4851,12 +5092,11 @@ async function renderLists(container, generation) {
             if (serverList.comment && !mergedList.comment) {
               mergedList.comment = serverList.comment;
             }
-            mergedList.byServer[server.id] = {
-              enabled: serverList.enabled,
-              comment: serverList.comment
-            };
+            // Keep original source group assignments for intentional cross-instance copies.
+            mergedList.byServer[server.id] = serverList;
           }
         } catch (error) {
+          readStates.set(server.id, error instanceof AuthError ? "skipped" : "unknown");
           toast(msg("lists.requestError", {
             server: server.label,
             error: error.message
@@ -4864,23 +5104,24 @@ async function renderLists(container, generation) {
         }
       }
     }));
-    if (generation !== state.renderGen) {
+    if (generation !== state.renderGen || loadId !== loadRevision) {
       return;
     }
-    if (!hasConnectedServer) {
+    if (!state.servers.some(server => server.connected)) {
       listArea.innerHTML = `<div class="empty">${htmlMsg("lists.loginRequired")}<br><br>${state.servers.map(loginBoxHtml).join("<br>")}</div>`;
       bindLoginHandlers(listArea, loadLists);
       return;
     }
     const sortedLists = [...listsByAddressAndType.values()].sort(/** Sort merged list addresses in the active locale. */ (leftList, rightList) => leftList.address.localeCompare(rightList.address, localeCode()));
     if (sortedLists.length !== 0) {
-      listArea.innerHTML = `<div class="table-wrap list-table-wrap"><table class="datatable">
+      listArea.innerHTML = collectionCoverageHtml(readStates) + `<div class="table-wrap list-table-wrap"><table class="datatable">
 				<thead><tr><th>${htmlMsg("lists.url")}</th><th>${htmlMsg("lists.type")}</th><th>${htmlMsg("lists.comment")}</th>${state.servers.map(/** Render one configured instance's escaped label as a list-table heading. */ server => `<th>${escapeHtml(server.label)}</th>`).join("")}<th></th></tr></thead>
 				<tbody>${sortedLists.map(/** Render a merged list with its type, comment, instance states and deletion action. */ (list, rowIndex) => {
         const serverCellsHtml = state.servers.map(/** Show a list's loaded enabled state on this instance or a button to add it there. */ server => {
+          if (readStates.get(server.id) !== "confirmed") return uncertainCell(readStates, server);
           const listRecord = list.byServer[server.id];
           return listRecord ? `<td><span class="badge ${listRecord.enabled ? "on" : "off"}">${htmlMsg(listRecord.enabled ? "lists.active" : "lists.disabled")}</span></td>` : `<td><span class="badge off">${htmlMsg("lists.missing")}</span>
-							<button class="btn xs" data-add-list="${escapeHtml(server.id)}" data-url="${escapeHtml(list.address)}" data-type="${escapeHtml(list.type)}" data-comment="${escapeHtml(list.comment || "")}">${htmlMsg("lists.add")}</button></td>`;
+							<button class="btn xs" data-add-list="${escapeHtml(server.id)}" data-url="${escapeHtml(list.address)}" data-type="${escapeHtml(list.type)}">${htmlMsg("lists.add")}</button></td>`;
         }).join("");
         return `<tr>
 						<td class="mono">${escapeHtml(list.address)}</td>
@@ -4895,7 +5136,7 @@ async function renderLists(container, generation) {
         deleteButton.addEventListener("click",
         /**
          * Confirm and attempt deletion of the selected address/type on every instance containing it.
-         * Reload afterward; the current final toast names attempted targets even if an individual request failed.
+         * Reload afterward and report confirmed, failed and unknown target outcomes.
          */
         async () => {
           const list = sortedLists[Number(deleteButton.dataset.delRow)];
@@ -4908,57 +5149,46 @@ async function renderLists(container, generation) {
             url: list.address,
             servers: targetLabels
           }))) {
-            for (const targetServer of targetServers) {
-              try {
-                await apiCall(targetServer, "/lists/" + encodeURIComponent(list.address) + "?type=" + encodeURIComponent(list.type), {
-                  method: "DELETE"
-                });
-              } catch (error) {
-                toast(msg("lists.requestError", {
-                  server: targetServer.label,
-                  error: error.message
-                }), "err");
-              }
-            }
-            toast(msg("lists.deleted", {
-              servers: targetLabels
-            }), "ok");
-            loadLists();
+            const outcomes = await performCheckedWrites(deleteButton, targetServers, {
+              path: () => "/lists",
+              extract: response => requireCollection(response, "lists"),
+              isCurrent: (server, records) => !records.some(record => record.address === list.address && record.type === list.type),
+              write: server => apiCall(server, "/lists/" + encodeURIComponent(list.address) + "?type=" + encodeURIComponent(list.type), { method: "DELETE" })
+            });
+            if (outcomes && state.activeTab === "lists") document.getElementById("listReload")?.click();
           }
         });
       }
       for (const addButton of listArea.querySelectorAll("[data-add-list]")) {
-        addButton.addEventListener("click", /** Add the selected list address, type and comment to one connected instance with default group zero. */ async () => {
+        addButton.addEventListener("click",
+        /** Copy a list's original comment and groups, rejecting incomplete source metadata. */
+        async () => {
           const targetServer = serverById(addButton.dataset.addList);
-          if (targetServer.connected) {
-            try {
-              await apiCall(targetServer, "/lists?type=" + encodeURIComponent(addButton.dataset.type), {
-                method: "POST",
-                body: {
-                  address: [addButton.dataset.url],
-                  comment: addButton.dataset.comment || "",
-                  groups: [0]
-                }
-              });
-              toast(msg("lists.added", {
-                server: targetServer.label
-              }), "ok");
-            } catch (error) {
-              toast(msg("lists.requestError", {
-                server: targetServer.label,
-                error: error.message
-              }), "err");
-            }
-            loadLists();
-          } else {
-            toast(msg("lists.notLoggedIn", {
-              server: targetServer.label
-            }), "err");
+          const listUrl = addButton.dataset.url;
+          const listType = addButton.dataset.type;
+          const list = sortedLists.find(record => record.address === listUrl && record.type === listType);
+          const source = list && Object.values(list.byServer)[0];
+          if (!source || !Array.isArray(source.groups) || !Object.hasOwn(source, "comment")) {
+            toast(msg("multi.invalidRead"), "err");
+            return;
           }
+          const comment = source.comment ?? "";
+          const groups = source.groups;
+          const outcomes = await performCheckedWrites(addButton, [targetServer], {
+            path: () => "/lists",
+            extract: response => requireCollection(response, "lists"),
+            isCurrent: (server, records) => matchingExistingEntry(
+              records.find(record => record.address === listUrl && record.type === listType), comment, groups),
+            write: server => apiCall(server, "/lists?type=" + encodeURIComponent(listType), {
+              method: "POST",
+              body: { address: [listUrl], comment, groups }
+            })
+          });
+          if (outcomes && state.activeTab === "lists") document.getElementById("listReload")?.click();
         });
       }
     } else {
-      listArea.innerHTML = `<p class="empty">${htmlMsg("lists.empty")}</p>`;
+      listArea.innerHTML = collectionCoverageHtml(readStates) + `<p class="empty">${htmlMsg("lists.empty")}</p>`;
     }
   }
   container.innerHTML = `
@@ -4991,7 +5221,7 @@ async function renderLists(container, generation) {
   document.getElementById("listForm").addEventListener("submit",
   /**
    * Create a list separately on each selected connected instance and report individual results.
-   * The current form clears its address and comment after all attempts, including partial failures.
+   * Clear input only after all selected targets are confirmed or already current.
    */
   async event => {
     event.preventDefault();
@@ -5001,36 +5231,20 @@ async function renderLists(container, generation) {
     if (!listUrl) {
       return;
     }
+    const form = event.currentTarget;
+    const submittedFields = [["#lUrl", listUrl], ["#lComment", comment]];
+    const submission = captureSubmissionContext(submittedFields, ["#lType", "#targetList"]);
     const targetServers = targetsFor(document.getElementById("targetList"));
-    for (const targetServer of targetServers) {
-      if (targetServer.connected) {
-        try {
-          await apiCall(targetServer, "/lists?type=" + encodeURIComponent(listType), {
-            method: "POST",
-            body: {
-              address: [listUrl],
-              comment,
-              groups: [0]
-            }
-          });
-          toast(msg("lists.added", {
-            server: targetServer.label
-          }), "ok");
-        } catch (error) {
-          toast(msg("lists.requestError", {
-            server: targetServer.label,
-            error: error.message
-          }), "err");
-        }
-      } else {
-        toast(msg("lists.notLoggedIn", {
-          server: targetServer.label
-        }), "err");
-      }
-    }
-    document.getElementById("lUrl").value = "";
-    document.getElementById("lComment").value = "";
-    loadLists();
+    const outcomes = await performCheckedWrites(form.querySelector('[type="submit"]'), targetServers, {
+      path: () => "/lists",
+      extract: response => requireCollection(response, "lists"),
+      isCurrent: (server, records) => matchingExistingEntry(records.find(record => record.address === listUrl && record.type === listType), comment, [0]),
+      write: server => apiCall(server, "/lists?type=" + encodeURIComponent(listType), {
+        method: "POST", body: { address: [listUrl], comment, groups: [0] }
+      })
+    });
+    clearConfirmedDraft(outcomes, form, submittedFields, submission);
+    if (outcomes && state.activeTab === "lists") document.getElementById("listReload")?.click();
   });
   bindLoginHandlers(container, loadLists);
   await loadLists();

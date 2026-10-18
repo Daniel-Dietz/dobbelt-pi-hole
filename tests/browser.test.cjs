@@ -95,7 +95,7 @@ const EXPECTED = {
     },
     placeholder: 'fx netflix.com eller 192.168...',
     delete: /^Slet domænet /u,
-    domainAdded: 'domæne tilføjet'
+    domainAdded: 'ændringen er bekræftet'
   },
   en: {
     locale: 'en-GB',
@@ -114,7 +114,7 @@ const EXPECTED = {
     },
     placeholder: 'e.g. netflix.com or 192.168...',
     delete: /^Delete the domain /u,
-    domainAdded: 'domain added'
+    domainAdded: 'change confirmed'
   },
   de: {
     locale: 'de-DE',
@@ -133,7 +133,7 @@ const EXPECTED = {
     },
     placeholder: 'z. B. netflix.com oder 192.168...',
     delete: /^Die Domain /u,
-    domainAdded: 'Domain hinzugefügt'
+    domainAdded: 'Änderung bestätigt'
   }
 };
 
@@ -1910,22 +1910,36 @@ for (const scenario of SUBMISSION_DURING_LANGUAGE_RENDER) for (const overlap of 
       } = fixture;
     for (const [selector, value] of Object.entries(scenario.fields)) await page.locator(selector).fill(value);
     await page.locator(scenario.target).selectOption('1');
+    // Hold both pending language-render reads and the mutation's mandatory
+    // preflight. No write is permitted until the preflight is released.
     const gate = fixture.pauseReads(scenario.endpoint);
     await page.locator('#languageSelect').selectOption('en');
     for (const [selector, value] of Object.entries(scenario.fields)) {
       assert.equal(await page.locator(selector).inputValue(), value, 'The synchronous language render must restore the draft before submission');
     }
+    const preflightRequest = page.waitForRequest(
+      /** Recognize the form submission's fresh GET, separately from the earlier language-render read. */
+      request => request.method() === 'GET' &&
+        new URL(request.url()).pathname.endsWith(scenario.endpoint)
+    );
     await page.locator(`${scenario.form} button[type="submit"]`).click();
-    await page.waitForFunction(/** Wait for every submitted input to be cleared before releasing delayed table reads. */ selectors => selectors.every(/** Check the current value of one submitted control rather than an earlier draft snapshot. */ selector => document.querySelector(selector)?.value === ''), Object.keys(scenario.fields));
-    assert.ok(gate.arrived > 0, 'The language-render GET must still be pending when submission clears the form');
-    assert.equal(fixture.requests.filter(/** Count the intended mutation before releasing reads to establish that submission wrote exactly once. */ request => request.method === scenario.method && request.path === scenario.mutation).length, 1);
+    await preflightRequest;
+    assert.ok(gate.arrived > 0, 'A pending language-render GET must not be mistaken for a verified empty collection');
+    assert.equal(fixture.requests.filter(
+      /** Confirm that no mutation bypassed the held safety preflight. */
+      request => request.method === scenario.method && request.path === scenario.mutation).length, 0,
+      'A mutation must wait until its fresh preflight can read the current state');
     if (overlap) {
-      // A second language switch must carry the cleared form, even while the
-      // first language render and the submission's table reload are pending.
+      // A second language render may replace the form while the preflight is held;
+      // both renders must preserve the pending draft without starting a write.
       await page.locator('#languageSelect').selectOption('de');
-      for (const selector of Object.keys(scenario.fields)) assert.equal(await page.locator(selector).inputValue(), '');
+      for (const [selector, value] of Object.entries(scenario.fields))
+        assert.equal(await page.locator(selector).inputValue(), value);
     }
     gate.release();
+    await page.waitForFunction(/** After the preflight resumes, require all successfully submitted fields to clear. */
+      selectors => selectors.every(/** Inspect the current form rather than a detached earlier DOM node. */
+        selector => document.querySelector(selector)?.value === ''), Object.keys(scenario.fields));
     await waitTab(page, scenario.tab);
     await page.waitForLoadState('networkidle');
     for (const selector of Object.keys(scenario.fields)) {
@@ -1935,3 +1949,671 @@ for (const scenario of SUBMISSION_DURING_LANGUAGE_RENDER) for (const overlap of 
     await assertNoCorruption(fixture);
   });
 }
+
+
+test('Issue #8: failed domain reads remain unknown and cannot offer an add action', /** A failed GET must not become an empty collection or permit a write based on absence. */ async t => {
+  const fixture = await openDashboard(t, { language: 'en' });
+  const { page } = fixture;
+  await page.route('**/*', /** Fail the second instance's domain GET while preserving every other fixture route. */ async route => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === 'GET' && url.pathname.includes('/api2/') && url.pathname.endsWith('/domains')) {
+      return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { message: 'upstream unavailable' } }) });
+    }
+    return route.fallback();
+  });
+  await visit(page, 'domains');
+  await page.waitForFunction(/** Wait until the affected instance explicitly displays its unreadable state. */ () => document.querySelector('#domArea')?.textContent.includes('Unknown'));
+  assert.equal(await page.locator('[data-add-domain-server="2"]').count(), 0);
+  assert.ok((await page.locator('#domArea').textContent()).includes('Data unavailable'));
+  await assertNoCorruption(fixture);
+});
+
+test('Issue #8: all rejected domain deletes never report a successful deletion', /** Prove HTTP 403 on every target does not produce a success toast or remove the row. */ async t => {
+  const fixture = await openDashboard(t, { language: 'en' });
+  const { page, serverData } = fixture;
+  await visit(page, 'domains');
+  await page.route('**/*', /** Reject only destructive domain requests, leaving fresh reads available. */ async route => {
+    if (route.request().method() === 'DELETE' && new URL(route.request().url()).pathname.includes('/domains/')) {
+      return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { message: 'permission denied' } }) });
+    }
+    return route.fallback();
+  });
+  page.once('dialog', /** Confirm the deliberately rejected deletion request. */ dialog => dialog.accept());
+  await page.locator('[data-del-domain-row]').first().click();
+  await page.waitForFunction(/** Require explicit failed outcomes for both instances before checking state. */ () => (document.querySelector('#toastArea')?.textContent.match(/change or preflight failed/g) || []).length >= 2);
+  assert.equal(serverData['1'].domains.length, 1);
+  assert.equal(serverData['2'].domains.length, 1);
+  assert.ok(!(await page.locator('#toastArea').textContent()).includes('change confirmed'));
+  await assertNoCorruption(fixture);
+});
+
+test('Issue #8: partial domain deletion identifies the confirmed and failed target', /** A successful first delete and a rejected second delete must retain distinct outcomes. */ async t => {
+  const fixture = await openDashboard(t, { language: 'en' });
+  const { page, serverData } = fixture;
+  await visit(page, 'domains');
+  await page.route('**/*', /** Reject DELETE only at instance two and pass instance one through to its fixture. */ async route => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === 'DELETE' && url.pathname.includes('/api2/') && url.pathname.includes('/domains/')) {
+      return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { message: 'denied' } }) });
+    }
+    return route.fallback();
+  });
+  page.once('dialog', /** Accept the two-target operation. */ dialog => dialog.accept());
+  await page.locator('[data-del-domain-row]').first().click();
+  await page.waitForFunction(/** Require both the confirmed and failed outcome messages. */ () => {
+    const output = document.querySelector('#toastArea')?.textContent || '';
+    return output.includes('change confirmed') && output.includes('change or preflight failed');
+  });
+  assert.equal(serverData['1'].domains.length, 0);
+  assert.equal(serverData['2'].domains.length, 1);
+  await assertNoCorruption(fixture);
+});
+
+test('Issue #8: a lost successful write is unknown and a manual retry rechecks it', /** Simulate a server committing a domain before its reply is lost; no second POST is allowed. */ async t => {
+  const fixture = await openDashboard(t, { language: 'en' });
+  const { page, serverData } = fixture;
+  let posts = 0;
+  await visit(page, 'domains');
+  await page.route('**/*', /** Commit the first POST into the fixture state but make its response disappear. */ async route => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === 'POST' && url.pathname.includes('/domains/allow/exact')) {
+      posts++;
+      serverData['1'].domains.push({ domain: 'lostreply.example', type: 'allow', kind: 'exact', enabled: true, comment: 'pending', groups: [0] });
+      return route.abort('failed');
+    }
+    return route.fallback();
+  });
+  await page.locator('#dDomain').fill('lostreply.example');
+  await page.locator('#dComment').fill('pending');
+  await page.locator('#dType').selectOption('allow');
+  await page.locator('#targetDomain').selectOption('1');
+  await page.locator('#domainForm button[type="submit"]').click();
+  await page.waitForFunction(/** Wait for an uncertain outcome rather than a false success. */ () => (document.querySelector('#toastArea')?.textContent || '').includes('write outcome unknown'));
+  assert.equal(await page.locator('#dDomain').inputValue(), 'lostreply.example');
+  assert.equal(posts, 1);
+  await page.locator('#domainForm button[type="submit"]').click();
+  await page.waitForFunction(/** Fresh preflight should prove the desired state is present and clear the original draft. */ () => document.querySelector('#dDomain')?.value === '');
+  assert.equal(posts, 1, 'A manual retry must not write again when fresh data shows the desired state');
+  await assertNoCorruption(fixture);
+});
+
+for (const scenario of [
+  { tab: 'hosts', method: 'PUT', endpoint: '/config/dns/hosts/', fields: [['#hIp','192.168.1.96'], ['#hName','pending.example']], submit: '#hostForm button[type="submit"]', target: '#targetHost' },
+  { tab: 'clients', method: 'POST', endpoint: '/clients', fields: [['#cClient','192.168.1.96'], ['#cComment','pending']], submit: '#clientForm button[type="submit"]', target: '#targetClient' },
+  { tab: 'lists', method: 'POST', endpoint: '/lists', fields: [['#lUrl','https://pending.example/hosts'], ['#lComment','pending']], submit: '#listForm button[type="submit"]', target: '#targetList' }
+]) test('Issue #8: rejected ' + scenario.tab + ' writes preserve form input', /** Verify each management screen retains its draft and reports explicit failure. */ async t => {
+  const fixture = await openDashboard(t, { language: 'en' });
+  const { page } = fixture;
+  await visit(page, scenario.tab);
+  await page.route('**/*', /** Reject the requested mutation but allow its safety preflight GET. */ async route => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === scenario.method && url.pathname.includes(scenario.endpoint)) {
+      return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { message: 'permission denied' } }) });
+    }
+    return route.fallback();
+  });
+  for (const [selector, value] of scenario.fields) await page.locator(selector).fill(value);
+  await page.locator(scenario.target).selectOption('1');
+  await page.locator(scenario.submit).click();
+  await page.waitForFunction(/** Wait for a verified rejection rather than relying on the button's initial enabled state. */ () => (document.querySelector('#toastArea')?.textContent || '').includes('change or preflight failed'));
+  for (const [selector, value] of scenario.fields) assert.equal(await page.locator(selector).inputValue(), value);
+  await assertNoCorruption(fixture);
+});
+
+
+for (const scenario of [
+  { tab: 'hosts', endpoint: '/config/dns/hosts', area: '#hostArea', add: '[data-add-host="2"]' },
+  { tab: 'clients', endpoint: '/clients', area: '#clientArea', add: '[data-add-client-server="2"]' },
+  { tab: 'lists', endpoint: '/lists', area: '#listArea', add: '[data-add-list="2"]' },
+  { tab: 'clients', endpoint: '/clients/_suggestions', area: '#suggArea', add: '[data-add-sugg]' }
+]) test(`Issue #8: failed ${scenario.endpoint} read stays unknown instead of missing`,
+  /** Check one failed instance read without suppressing confirmed records from a healthy peer. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page } = fixture;
+    await page.route('**/*',
+      /** Return a server error from only the selected instance and read path. */
+      async route => {
+        const url = new URL(route.request().url());
+        if (route.request().method() === 'GET' && url.pathname.includes('/api2/') &&
+            url.pathname.endsWith(scenario.endpoint)) {
+          return route.fulfill({
+            status: 503, contentType: 'application/json',
+            body: JSON.stringify({ error: { message: 'read failed' } })
+          });
+        }
+        return route.fallback();
+      });
+    await visit(page, scenario.tab);
+    await page.waitForFunction(/** Wait for the incomplete-data banner in the affected management view. */
+      area => (document.querySelector(area)?.textContent || '').includes('Data unavailable'), scenario.area);
+    const view = await page.locator(scenario.area).textContent();
+    assert.ok(view.includes('Unknown') || view.includes('unknown') ||
+      view.includes('Data unavailable'), 'An unavailable instance must not be reported as missing');
+    if (scenario.endpoint !== '/clients/_suggestions') {
+      assert.equal(await page.locator(scenario.add).count(), 0,
+        'A failed instance read must not enable an inferred add action');
+    }
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #8: a language rerender cannot start a second write while the first is pending',
+  /** Hold a successful POST, replace the form through translation, and attempt a duplicate submission. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page, requests } = fixture;
+    await visit(page, 'domains');
+    const writeBlocked = deferred(t);
+    const writeSeen = deferred(t);
+    let seen = false;
+    await page.route('**/*',
+      /** Pause the first domain mutation after its preflight, leaving the page interactive. */
+      async route => {
+        const url = new URL(route.request().url());
+        if (route.request().method() === 'POST' && url.pathname.endsWith('/domains/deny/exact')) {
+          if (!seen) { seen = true; writeSeen.release(); }
+          await writeBlocked.promise;
+        }
+        return route.fallback();
+      });
+    await page.locator('#dDomain').fill('locked.example');
+    await page.locator('#targetDomain').selectOption('1');
+    await page.locator('#domainForm button[type="submit"]').click();
+    await writeSeen.promise;
+    await page.locator('#languageSelect').selectOption('de');
+    assert.equal(await page.locator('#dDomain').inputValue(), 'locked.example');
+    await page.locator('#domainForm button[type="submit"]').click();
+    await page.waitForFunction(/** Confirm that the second click was blocked while the original request is pending. */
+      () => (document.querySelector('#toastArea')?.textContent || '').includes('läuft noch'));
+    writeBlocked.release();
+    await page.waitForFunction(/** Await the result from the original request, now translated into German. */
+      () => (document.querySelector('#toastArea')?.textContent || '').includes('Änderung bestätigt'));
+    assert.equal(await page.locator('#dDomain').inputValue(), '',
+      'The successfully submitted unchanged draft must clear even after a language rerender');
+    assert.equal(requests.filter(/** Count actual writes instead of button clicks. */
+      request => request.method === 'POST' && request.path === '/domains/deny/exact').length, 1);
+    await assertNoCorruption(fixture);
+  });
+
+
+test('Issue #8 Codex: copied list preserves its original comment and group IDs',
+  /** Copy one list across instances and verify its exact source metadata is sent. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page, serverData, requests } = fixture;
+    serverData['1'].lists[0].comment = 'group-preserving source';
+    serverData['1'].lists[0].groups = [3, 7];
+    serverData['2'].lists = [];
+    await visit(page, 'lists');
+    await page.locator('[data-add-list="2"]').click();
+    await page.waitForFunction(/** Require a verified remote copy, not merely the first click. */
+      () => (document.querySelector('#toastArea')?.textContent || '').includes('change confirmed'));
+    const copied = requests.find(/** Locate only the intended copy to Pi-hole two. */
+      request => request.id === '2' && request.method === 'POST' && request.path === '/lists?type=block');
+    assert.deepEqual(copied?.body, {
+      address: [LIST_URL],
+      comment: 'group-preserving source',
+      groups: [3, 7]
+    });
+    assert.deepEqual(serverData['2'].lists[0].groups, [3, 7]);
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #8 Codex: an unavailable connected client stays unknown, not disconnected',
+  /** Reject the second server's configured-client read and inspect the exact table cell. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page } = fixture;
+    await page.route('**/*',
+      /** Simulate a live but temporarily unreadable client collection. */
+      async route => {
+        const url = new URL(route.request().url());
+        if (route.request().method() === 'GET' &&
+            url.pathname.includes('/api2/') && url.pathname.endsWith('/clients')) {
+          return route.fulfill({
+            status: 503, contentType: 'application/json',
+            body: JSON.stringify({ error: { message: 'backend unavailable' } })
+          });
+        }
+        return route.fallback();
+      });
+    await visit(page, 'clients');
+    await page.waitForFunction(/** Wait for both known and unreadable data states to appear. */
+      () => (document.querySelector('#clientArea')?.textContent || '').includes('Data unavailable'));
+    const unavailableCell = page.locator('#clientArea tbody tr').first().locator('td').nth(3);
+    assert.equal((await unavailableCell.textContent()).trim(), 'Unknown');
+    assert.equal(await unavailableCell.locator('button').count(), 0);
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #8 Codex: a source list missing its groups cannot be copied as group zero',
+  /** Avoid silent list metadata corruption when source group membership is absent. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page, serverData, requests } = fixture;
+    delete serverData['1'].lists[0].groups;
+    serverData['2'].lists = [];
+    await visit(page, 'lists');
+    await page.locator('[data-add-list="2"]').click();
+    await page.waitForFunction(/** Require the source validation error without a copy mutation. */
+      () => (document.querySelector('#toastArea')?.textContent || '').includes('Incomplete response'));
+    assert.equal(requests.filter(/** No POST is safe without source group metadata. */
+      request => request.id === '2' && request.method === 'POST' && request.path.startsWith('/lists')).length, 0);
+    await assertNoCorruption(fixture);
+  });
+
+
+for (const scenario of [
+  { tab: 'domains', endpoint: '/domains', area: '#domArea' },
+  { tab: 'hosts', endpoint: '/config/dns/hosts', area: '#hostArea' },
+  { tab: 'clients', endpoint: '/clients', area: '#clientArea' },
+  { tab: 'lists', endpoint: '/lists', area: '#listArea' }
+]) test('Issue #8 Codex: expired sessions show login on ' + scenario.tab,
+  /** A 401 must invalidate both sessions and render login fields rather than an unavailable-only table. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page } = fixture;
+    await page.route('**/*',
+      /** Return a genuine authentication rejection only from the requested collection. */
+      async route => {
+        const url = new URL(route.request().url());
+        if (route.request().method() === 'GET' &&
+            /\/api[12]\//u.test(url.pathname) && url.pathname.endsWith(scenario.endpoint)) {
+          return route.fulfill({ status: 401, contentType: 'application/json',
+            body: JSON.stringify({ error: { message: 'expired session' } }) });
+        }
+        return route.fallback();
+      });
+    // The usual visit() helper requires a table body, which correctly does not
+    // exist after HTTP 401: wait for the login forms instead.
+    await page.locator(`[data-tab="${scenario.tab}"]`).click();
+    await page.waitForFunction(/** Require two usable login forms when all sessions have expired. */
+      area => document.querySelector(area)?.querySelectorAll('[data-loginform]').length === 2, scenario.area);
+    assert.equal(await page.locator(scenario.area + ' [data-loginpw]').count(), 2);
+    assert.equal(await page.locator(scenario.area + ' [data-add-domain-server], ' + scenario.area + ' [data-add-host], ' + scenario.area + ' [data-add-list]').count(), 0);
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #8 Codex: a stale-route 409 cannot be presented as an uncertain write',
+  /** A fingerprint conflict never reaches Pi-hole and must be a definite rejection, not a lost response. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page, requests } = fixture;
+    await visit(page, 'domains');
+    await page.route('**/*', /** Reject only the mutation using the documented old-route conflict. */
+      async route => {
+        if (route.request().method() === 'POST' &&
+            new URL(route.request().url()).pathname.endsWith('/domains/deny/exact')) {
+          return route.fulfill({ status: 409, contentType: 'application/json',
+            body: JSON.stringify({ error: { code: 'dashboard_config_changed' } }) });
+        }
+        return route.fallback();
+      });
+    await page.locator('#dDomain').fill('stale-route.example');
+    await page.locator('#targetDomain').selectOption('1');
+    await page.locator('#domainForm button[type="submit"]').click();
+    await page.waitForFunction(/** A definite rejection is reported without an uncertainty retry action. */
+      () => (document.querySelector('#toastArea')?.textContent || '').includes('change or preflight failed'));
+    const message = await page.locator('#toastArea').textContent();
+    assert.ok(!message.includes('write outcome unknown'));
+    assert.equal(await page.locator('#dDomain').inputValue(), 'stale-route.example');
+    assert.equal(requests.filter(request => request.method === 'POST' && request.path.endsWith('/domains/deny/exact')).length, 0,
+      'The intercepted 409 must not modify the Pi-hole fixture');
+    await assertNoCorruption(fixture);
+  });
+
+for (const mode of ['navigation', 'language']) {
+  test('Issue #8 Codex: an older successful submission cannot erase an identical newer draft after ' + mode,
+    /** Hold a valid write while a new user edit reuses the exact submitted values. */
+    async t => {
+      const fixture = await openDashboard(t, { language: 'en' });
+      const { page } = fixture;
+      await visit(page, 'domains');
+      const pendingWrite = deferred(t);
+      const seenWrite = deferred(t);
+      let intercepted = false;
+      await page.route('**/*',
+        /** Pause the first mutation after its fresh preflight without losing it. */
+        async route => {
+          if (route.request().method() === 'POST' &&
+              new URL(route.request().url()).pathname.endsWith('/domains/deny/exact')) {
+            if (!intercepted) { intercepted = true; seenWrite.release(); }
+            await pendingWrite.promise;
+          }
+          return route.fallback();
+        });
+      await page.locator('#dDomain').fill('new-draft.example');
+      await page.locator('#dComment').fill('identical but newly typed');
+      await page.locator('#targetDomain').selectOption('1');
+      await page.locator('#domainForm button[type="submit"]').click();
+      await seenWrite.promise;
+      if (mode === 'navigation') {
+        await visit(page, 'hosts');
+        await visit(page, 'domains');
+      } else {
+        await page.locator('#languageSelect').selectOption('de');
+      }
+      // A newly typed field, even with the same bytes, is not the submitted draft.
+      await page.locator('#dDomain').fill('');
+      await page.locator('#dDomain').fill('new-draft.example');
+      await page.locator('#dComment').fill('');
+      await page.locator('#dComment').fill('identical but newly typed');
+      pendingWrite.release();
+      await page.waitForFunction(/** Await the original mutation result before checking the new draft. */
+        () => (document.querySelector('#toastArea')?.textContent || '').includes('change confirmed') ||
+          (document.querySelector('#toastArea')?.textContent || '').includes('Änderung bestätigt'));
+      assert.equal(await page.locator('#dDomain').inputValue(), 'new-draft.example');
+      assert.equal(await page.locator('#dComment').inputValue(), 'identical but newly typed');
+      await assertNoCorruption(fixture);
+    });
+}
+
+
+const SELECTOR_EDIT_DURING_WRITE = [
+  { tab: 'domains', method: 'POST', path: '/domains/deny/exact',
+    fields: [['#dDomain', 'draft-target.example'], ['#dComment', 'fresh destination']],
+    target: '#targetDomain', control: '#targetDomain', value: '2', submit: '#domainForm button[type="submit"]' },
+  { tab: 'domains', method: 'POST', path: '/domains/deny/exact',
+    fields: [['#dDomain', 'draft-type.example'], ['#dComment', 'fresh kind']],
+    target: '#targetDomain', control: '#dType', value: 'allow', submit: '#domainForm button[type="submit"]' },
+  { tab: 'domains', method: 'POST', path: '/domains/deny/exact',
+    fields: [['#dDomain', 'draft-kind.example'], ['#dComment', 'fresh regex']],
+    target: '#targetDomain', control: '#dKind', value: 'regex', submit: '#domainForm button[type="submit"]' },
+  { tab: 'hosts', method: 'PUT', path: '/config/dns/hosts/',
+    fields: [['#hIp', '192.168.1.97'], ['#hName', 'draft-host.example']],
+    target: '#targetHost', control: '#targetHost', value: '2', submit: '#hostForm button[type="submit"]' },
+  { tab: 'clients', method: 'POST', path: '/clients',
+    fields: [['#cClient', '192.168.1.97'], ['#cComment', 'draft client']],
+    target: '#targetClient', control: '#targetClient', value: '2', submit: '#clientForm button[type="submit"]' },
+  { tab: 'lists', method: 'POST', path: '/lists',
+    fields: [['#lUrl', 'https://draft.example/blocklist.txt'], ['#lComment', 'draft list']],
+    target: '#targetList', control: '#targetList', value: '2', submit: '#listForm button[type="submit"]' },
+  { tab: 'lists', method: 'POST', path: '/lists',
+    fields: [['#lUrl', 'https://draft.example/allowlist.txt'], ['#lComment', 'draft allowlist']],
+    target: '#targetList', control: '#lType', value: 'allow', submit: '#listForm button[type="submit"]' }
+];
+for (const scenario of SELECTOR_EDIT_DURING_WRITE) {
+  test('Issue #8 Codex: changing ' + scenario.control + ' retains the entire newer draft',
+    /** A pending successful write cannot discard a draft newly targeted or retyped by a selector change. */
+    async t => {
+      const fixture = await openDashboard(t, { language: 'en' });
+      const { page } = fixture;
+      await visit(page, scenario.tab);
+      const held = deferred(t);
+      const seen = deferred(t);
+      let observed = false;
+      await page.route('**/*',
+        /** Hold the original server-one mutation after its safety preflight and before applying it. */
+        async route => {
+          const url = new URL(route.request().url());
+          if (route.request().method() === scenario.method && url.pathname.includes(scenario.path)) {
+            if (!observed) { observed = true; seen.release(); }
+            await held.promise;
+          }
+          return route.fallback();
+        });
+      for (const [selector, value] of scenario.fields) await page.locator(selector).fill(value);
+      await page.locator(scenario.target).selectOption('1');
+      await page.locator(scenario.submit).click();
+      await seen.promise;
+      await page.locator(scenario.control).selectOption(scenario.value);
+      held.release();
+      await page.waitForFunction(/** Require acknowledgement of the original write before inspecting the new draft. */
+        () => (document.querySelector('#toastArea')?.textContent || '').includes('change confirmed'));
+      for (const [selector, value] of scenario.fields) {
+        assert.equal(await page.locator(selector).inputValue(), value,
+          'Newly selected target/type must preserve all draft inputs');
+      }
+      assert.equal(await page.locator(scenario.control).inputValue(), scenario.value);
+      await assertNoCorruption(fixture);
+    });
+}
+
+for (const scenario of [
+  { tab: 'domains', method: 'POST', path: '/domains/deny/exact',
+    fields: [['#dDomain', 'refresh-late.example'], ['#dComment', 'late result']],
+    target: '#targetDomain', submit: '#domainForm button[type="submit"]',
+    area: '#domArea', marker: 'refresh-late.example', mode: 'language' },
+  { tab: 'hosts', method: 'PUT', path: '/config/dns/hosts/',
+    fields: [['#hIp', '192.168.1.98'], ['#hName', 'refresh-host.example']],
+    target: '#targetHost', submit: '#hostForm button[type="submit"]',
+    area: '#hostArea', marker: 'refresh-host.example', mode: 'language' },
+  { tab: 'clients', method: 'POST', path: '/clients',
+    fields: [['#cClient', '192.168.1.98'], ['#cComment', 'refresh client']],
+    target: '#targetClient', submit: '#clientForm button[type="submit"]',
+    area: '#clientArea', marker: '192.168.1.98', mode: 'language' },
+  { tab: 'lists', method: 'POST', path: '/lists',
+    fields: [['#lUrl', 'https://refresh.example/new.txt'], ['#lComment', 'refresh list']],
+    target: '#targetList', submit: '#listForm button[type="submit"]',
+    area: '#listArea', marker: 'https://refresh.example/new.txt', mode: 'language' },
+  { tab: 'domains', method: 'POST', path: '/domains/deny/exact',
+    fields: [['#dDomain', 'refresh-after-return.example'], ['#dComment', 'after navigation']],
+    target: '#targetDomain', submit: '#domainForm button[type="submit"]',
+    area: '#domArea', marker: 'refresh-after-return.example', mode: 'navigation' }
+]) {
+  test('Issue #8 Codex: late ' + scenario.tab + ' write refreshes the current table after ' + scenario.mode,
+    /** The active tab's newest loader must refresh after an older detached submission commits. */
+    async t => {
+      const fixture = await openDashboard(t, { language: 'en' });
+      const { page } = fixture;
+      await visit(page, scenario.tab);
+      const held = deferred(t);
+      const seen = deferred(t);
+      let observed = false;
+      await page.route('**/*',
+        /** Delay applying the mutation until the newer tab rendering has finished its initial GET. */
+        async route => {
+          const url = new URL(route.request().url());
+          if (route.request().method() === scenario.method && url.pathname.includes(scenario.path)) {
+            if (!observed) { observed = true; seen.release(); }
+            await held.promise;
+          }
+          return route.fallback();
+        });
+      for (const [selector, value] of scenario.fields) await page.locator(selector).fill(value);
+      await page.locator(scenario.target).selectOption('1');
+      await page.locator(scenario.submit).click();
+      await seen.promise;
+      if (scenario.mode === 'language') {
+        await language(page, 'de', scenario.tab);
+      } else {
+        await visit(page, 'hosts');
+        await visit(page, scenario.tab);
+      }
+      assert.ok(!(await page.locator(scenario.area).textContent()).includes(scenario.marker),
+        'The replacement render must have loaded before the original write completes');
+      held.release();
+      await page.waitForFunction(/** The write-completion refresh must update the currently displayed table. */
+        scenario => (document.querySelector(scenario.area)?.textContent || '').includes(scenario.marker),
+        { area: scenario.area, marker: scenario.marker });
+      await assertNoCorruption(fixture);
+    });
+}
+
+for (const rejectedReply of [false, true]) {
+  test('Issue #8 Codex: partially successful suggestions refresh clients when the other target ' +
+    (rejectedReply ? 'rejects the write' : 'drops the response'),
+    /**
+     * A successful suggestion add must appear in the client inventory even if a
+     * second target is rejected or its mutation reply is lost. The suggestion
+     * must stop offering an add action once it is known on a healthy instance.
+     */
+    async t => {
+      const fixture = await openDashboard(t, { language: 'en' });
+      const { page, serverData, requests } = fixture;
+      await visit(page, 'clients');
+      const suggestionId = 'AA:BB:CC:DD:EE:01';
+      let failedTargetAttempts = 0;
+      await page.route('**/*',
+        /** Reject or interrupt the second instance's POST without affecting instance one. */
+        async route => {
+          const request = route.request();
+          const url = new URL(request.url());
+          if (request.method() === 'POST' && url.pathname.includes('/api2/') &&
+              url.pathname.endsWith('/clients')) {
+            failedTargetAttempts++;
+            if (rejectedReply) {
+              return route.fulfill({
+                status: 403,
+                contentType: 'application/json',
+                body: JSON.stringify({ error: { message: 'synthetic forbidden' } })
+              });
+            }
+            return route.abort('failed');
+          }
+          return route.fallback();
+        });
+      await page.locator('[data-add-sugg]').first().click();
+      await page.waitForFunction(
+        /** Wait for the confirmed first-server client to appear in the reloaded table. */
+        id => (document.querySelector('#clientArea')?.textContent || '').includes(id),
+        suggestionId
+      );
+      assert.ok(serverData['1'].clients.some(
+        /** Only the healthy instance must contain the successful added record. */
+        record => record.client === suggestionId
+      ));
+      assert.equal(serverData['2'].clients.some(
+        /** The failed target must not be silently counted as a success. */
+        record => record.client === suggestionId
+      ), false);
+      assert.equal(await page.locator('[data-add-sugg][data-key="' + suggestionId + '"]').count(), 0,
+        'A confirmed client must disappear from the suggested-add controls');
+      const actualWrites = requests.filter(
+        /** Count real HTTP writes, not the number of displayed toast messages. */
+        request => request.path === '/clients' && request.method === 'POST'
+      );
+      assert.equal(actualWrites.length, 1, 'The original fixture receives exactly one healthy-target write');
+      assert.equal(failedTargetAttempts, 1, 'The separate rejected-target interceptor sees exactly one write');
+      assert.ok((await page.locator('#toastArea').textContent()).includes('change confirmed'));
+      await assertNoCorruption(fixture);
+    });
+}
+
+
+for (const failurePoint of ['preflight', 'write']) {
+  test('Issue #8 Codex: rejected suggestion ' + failurePoint + ' retains its name and exact target after reload',
+    /**
+     * Failed suggestion attempts refresh the joined inventory without discarding
+     * the surviving device draft or silently broadening its selected destination.
+     */
+    async t => {
+      const fixture = await openDashboard(t, { language: 'en' });
+      const { page, serverData } = fixture;
+      await visit(page, 'clients');
+      const identifier = 'AA:BB:CC:DD:EE:01';
+      const nameSelector = '[data-suggestion-name="' + identifier + '"]';
+      const targetSelector = '[data-form-state-key="suggestion-target:' + identifier + '"]';
+      const draftName = 'Draft after ' + failurePoint + ' rejection';
+      await page.locator(nameSelector).fill(draftName);
+      await page.locator(targetSelector).selectOption('2');
+      let rejected = 0;
+      await page.route('**/*',
+        /** Reject one target preflight or POST while leaving the subsequent read refresh functional. */
+        async route => {
+          const request = route.request();
+          const path = new URL(request.url()).pathname;
+          if (path.includes('/api2/') && path.endsWith('/clients') &&
+              request.method() === (failurePoint === 'preflight' ? 'GET' : 'POST') &&
+              rejected === 0) {
+            rejected++;
+            return route.fulfill({
+              status: 403,
+              contentType: 'application/json',
+              body: JSON.stringify({ error: { message: 'synthetic rejection' } })
+            });
+          }
+          return route.fallback();
+        });
+      const refreshed = page.waitForResponse(
+        /** Observe the live suggestion refresh after the rejected operation. */
+        response => response.request().method() === 'GET' &&
+          new URL(response.url()).pathname.includes('/api1/') &&
+          new URL(response.url()).pathname.endsWith('/clients/_suggestions')
+      );
+      await page.locator('[data-add-sugg][data-key="' + identifier + '"]').click();
+      await refreshed;
+      await page.waitForFunction(
+        /** Both data tables must be rebuilt before asserting field state on live rows. */
+        () => !!document.querySelector('#clientArea .datatable') &&
+          !!document.querySelector('#suggArea [data-suggestion-name="AA:BB:CC:DD:EE:01"]')
+      );
+      assert.equal(await page.locator(nameSelector).inputValue(), draftName,
+        'A rejected suggestion must preserve the typed name after reload');
+      assert.equal(await page.locator(targetSelector).inputValue(), '2',
+        'A rejected suggestion must not reset its destination to all instances');
+      assert.ok((await page.locator('#toastArea').textContent()).includes('change or preflight failed'));
+      assert.equal(rejected, 1);
+      assert.ok(!serverData['2'].clients.some(
+        /** Rejecting one selected target must not silently create a configured client. */
+        client => client.client === identifier
+      ));
+      await assertNoCorruption(fixture);
+    });
+}
+
+test('Issue #8 Codex: an obsolete client read cannot change the latest unavailable instance state',
+  /**
+   * Resolve an old confirmed GET after a new GET has failed. A later pagination
+   * redraw must not treat the newer unknown instance as an actionable absence.
+   */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page, serverData } = fixture;
+    serverData['2'].clients = [];
+    await visit(page, 'clients');
+    const oldReadSeen = deferred(t);
+    const releaseOldRead = deferred(t);
+    let reads = 0;
+    await page.route('**/*',
+      /** Hold the first server-two collection read and reject the second concurrent read. */
+      async route => {
+        const request = route.request();
+        const url = new URL(request.url());
+        if (request.method() === 'GET' && url.pathname.includes('/api2/') &&
+            url.pathname.endsWith('/clients')) {
+          reads++;
+          if (reads === 1) {
+            oldReadSeen.release();
+            await releaseOldRead.promise;
+            return route.fallback();
+          }
+          if (reads === 2) {
+            return route.fulfill({
+              status: 503,
+              contentType: 'application/json',
+              body: JSON.stringify({ error: { message: 'synthetic newer read failure' } })
+            });
+          }
+        }
+        return route.fallback();
+      });
+    await page.locator('#clientReload').click();
+    await oldReadSeen.promise;
+    await page.locator('#clientReload').click();
+    await page.waitForFunction(
+      /** The latest failed server-two read must publish while the old read remains held. */
+      () => !!document.querySelector('#clientArea .datatable') &&
+        (document.querySelector('#clientArea')?.textContent || '').includes('Data unavailable')
+    );
+    const oldResponse = page.waitForResponse(
+      /** Detect the delayed response so its obsolete continuation can settle. */
+      response => response.request().method() === 'GET' &&
+        new URL(response.url()).pathname.includes('/api2/') &&
+        new URL(response.url()).pathname.endsWith('/clients') &&
+        response.status() === 200
+    );
+    releaseOldRead.release();
+    await oldResponse;
+    await page.evaluate(
+      /** Wait two rendering frames so an obsolete response can no longer alter the current table. */
+      () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    );
+    await page.locator('#clientPageSize').selectOption('25');
+    assert.ok((await page.locator('#clientArea').textContent()).includes('Data unavailable'),
+      'An older success cannot remove an unavailable-data warning');
+    assert.equal(await page.locator('[data-add-client-server="2"]').count(), 0,
+      'A client absent only from unknown data must never be offered as an Add action');
+    assert.equal(reads, 2);
+    await assertNoCorruption(fixture);
+  });
