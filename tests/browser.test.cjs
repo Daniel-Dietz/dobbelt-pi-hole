@@ -804,7 +804,7 @@ async function openRedirectDashboard(t, {
       end = html.indexOf('async function logout(');
     assert.ok(start >= 0 && end > start);
     const guarded = html.slice(start, end),
-      guard = /^[ \t]*redirect: "error",\r?\n/gm;
+      guard = /redirect: "error",?[ \t\r\n]*/gm;
     assert.equal([...guarded.matchAll(guard)].length, 2, 'Remove exactly the API and login guards');
     html = html.slice(0, start) + guarded.replace(guard, '') + html.slice(end);
     const hash = /** Recompute the inline application's CSP hash after an in-memory guard removal, preserving a realistic negative control. */ source => {
@@ -1115,7 +1115,7 @@ test('initial session checks finish before forms become interactive and preserve
   assert.equal(fixture.requests.filter(/** Select writes to prove startup and language changes did not submit any form. */ request => request.method !== 'GET').length, 0);
   await assertNoCorruption(fixture);
 });
-test('a stalled initial session times out while a healthy peer loads and cannot reconnect late', /** Time out one initial session with a controlled clock while a healthy peer loads, then reject the late response. */ async t => {
+test('a stalled initial session stays unverified and retains its SID for a later retry', /** Preserve saved credentials on network failure while keeping late responses from reconnecting automatically. */ async t => {
   const fixture = await openDashboard(t, {
       language: 'de',
       holdInitialSessions: '2',
@@ -1138,13 +1138,17 @@ test('a stalled initial session times out while a healthy peer loads and cannot 
   assert.deepEqual(await page.locator('#serverPills .pill.on b').allTextContents(), [RAW_TEXT + ' 1']);
   assert.equal(await page.locator('#dashGrid .big-num').first().textContent(), 12345 .toLocaleString('de-DE'));
   const timedOutBase = fixture.configuration.body.servers[1].base;
-  assert.equal(await page.evaluate(/** Read the timed-out route's saved SID immediately after the startup timeout. */ key => sessionStorage.getItem(key), SESSION_PREFIX + timedOutBase), null);
+  assert.equal(await page.evaluate(/** Keep the potentially valid SID when the instance is temporarily unavailable. */ key => sessionStorage.getItem(key), SESSION_PREFIX + timedOutBase), 'fixture-sid-2');
+  assert.equal(await page.locator('[data-session-retry="2"]').count(), 1);
   assert.equal(fixture.requests.filter(/** Count requests to the stalled peer to ensure it never receives ordinary tab reads. */ request => request.id === '2').length, 1, 'The timed-out peer must not receive operational reads');
   initialSessionGate.release();
   await page.waitForLoadState('networkidle');
   assert.deepEqual(await page.locator('#serverPills .pill.on b').allTextContents(), [RAW_TEXT + ' 1'], 'A late session response must not reconnect the timed-out peer');
   assert.equal(await page.locator('[data-loginform="2"]').count(), 1);
-  assert.equal(await page.evaluate(/** Read the timed-out route's SID again after its late response to detect unintended reconnection. */ key => sessionStorage.getItem(key), SESSION_PREFIX + timedOutBase), null);
+  assert.equal(await page.evaluate(/** A late, obsolete response must not clear the saved SID. */ key => sessionStorage.getItem(key), SESSION_PREFIX + timedOutBase), 'fixture-sid-2');
+  await page.locator('[data-session-retry="2"]').click();
+  await page.waitForFunction(/** Verify the retained SID before reporting the instance connected. */ () => state.servers.find(server => server.id === '2')?.connected === true);
+  assert.equal(await page.locator('#serverPills .pill.on').count(), 2);
   await assertNoCorruption(fixture);
 });
 for (const scenario of [{
