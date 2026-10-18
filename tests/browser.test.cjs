@@ -3469,3 +3469,123 @@ test('Issue #10 Codex: an unrelated empty 201 is not accepted as a valid JSON AP
     assert.equal(result, 'incompatible');
     await assertNoCorruption(fixture);
   });
+
+
+for (const language of ['da', 'en', 'de']) {
+  test('Issue #11 smoke: theme keeps a multilingual domain draft, selection and pointer focus (' + language + ')',
+    /** Verify that visual theme changes cannot discard unsaved fields or change the target instance. */
+    async t => {
+      const fixture = await openDashboard(t, { language });
+      const { page, requests } = fixture;
+      await visit(page, 'domains');
+      const originalDomain = 'theme-draft.example';
+      const originalComment = 'Unsaved Äöø comment for {server} and focus';
+      await page.locator('#dDomain').fill(originalDomain);
+      await page.locator('#dComment').fill(originalComment);
+      await page.locator('#dType').selectOption('allow');
+      await page.locator('#dKind').selectOption('regex');
+      await page.locator('#targetDomain').selectOption('2');
+      await page.locator('#dComment').focus();
+      await page.evaluate(
+        /** Select a substring so a theme refresh must restore both focus and selection. */
+        () => document.getElementById('dComment').setSelectionRange(4, 13)
+      );
+      const beforeWrites = requests.filter(
+        /** Exclude session checks; no configuration mutation should occur while toggling appearance. */
+        request => request.method !== 'GET').length;
+      await page.locator('#themeToggle').click();
+      await page.waitForFunction(
+        /** Wait for the new form to regain its selection and for the theme to settle. */
+        comment => document.documentElement.getAttribute('data-theme') === 'light' &&
+          document.querySelector('#dComment')?.value === comment &&
+          document.activeElement?.id === 'dComment' &&
+          document.querySelector('#dComment')?.selectionStart === 4,
+        originalComment
+      );
+      assert.equal(await page.locator('#dDomain').inputValue(), originalDomain);
+      assert.equal(await page.locator('#dComment').inputValue(), originalComment);
+      assert.equal(await page.locator('#dType').inputValue(), 'allow');
+      assert.equal(await page.locator('#dKind').inputValue(), 'regex');
+      assert.equal(await page.locator('#targetDomain').inputValue(), '2');
+      assert.deepEqual(await page.evaluate(
+        /** Read actual browser selection boundaries after the asynchronous theme render. */
+        () => {
+          const field = document.getElementById('dComment');
+          return [field.selectionStart, field.selectionEnd];
+        }), [4, 13]);
+      const afterWrites = requests.filter(
+        /** A theme or language rerender must not trigger any write endpoint. */
+        request => request.method !== 'GET').length;
+      assert.equal(afterWrites, beforeWrites);
+      await assertNoCorruption(fixture);
+    });
+}
+
+test('Issue #11 smoke: sort controls use native keyboard buttons and expose aria-sort',
+  /** Exercise keyboard sorting and focus recovery on queries, hosts and clients. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'de', hash: 'queries' });
+    const { page } = fixture;
+    const scenarios = [
+      { tab: 'queries', root: '#qArea', attr: 'data-sort', column: 'domain' },
+      { tab: 'hosts', root: '#hostArea', attr: 'data-host-sort', column: '1' },
+      { tab: 'clients', root: '#clientArea', attr: 'data-client-sort', column: 'comment' }
+    ];
+    for (const scenario of scenarios) {
+      if (scenario.tab !== 'queries') await visit(page, scenario.tab);
+      const selector = scenario.root + ' button[' + scenario.attr + '="' + scenario.column + '"]';
+      const button = page.locator(selector);
+      await button.waitFor();
+      assert.match(await button.getAttribute('aria-label'), /sortieren/u);
+      await button.focus();
+      await page.keyboard.press('Enter');
+      const expectedAscending = scenario.root + ' th[aria-sort="ascending"] button[' +
+        scenario.attr + '="' + scenario.column + '"]';
+      await page.locator(expectedAscending).waitFor();
+      assert.equal(await page.evaluate(
+        /** The replacement button receives keyboard focus after its table is rebuilt. */
+        attribute => document.activeElement?.getAttribute(attribute), scenario.attr), scenario.column);
+      await page.keyboard.press('Space');
+      const expectedDescending = scenario.root + ' th[aria-sort="descending"] button[' +
+        scenario.attr + '="' + scenario.column + '"]';
+      await page.locator(expectedDescending).waitFor();
+      assert.equal(await page.evaluate(
+        /** Space is native button activation and must retain the sorting control's focus. */
+        attribute => document.activeElement?.getAttribute(attribute), scenario.attr), scenario.column);
+      assert.equal(await page.locator(scenario.root + ' th[aria-sort]').count(), 1,
+        'Only the currently active sorting column may own aria-sort');
+    }
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #11 smoke: login, navigation and real chart palette survive a theme change',
+  /** Preserve authenticated navigation while recreating a chart in the chosen theme. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en', connected: false });
+    const { page, requests } = fixture;
+    await page.locator('[data-loginpw="1"]').fill('fixture-app-password');
+    await page.locator('[data-loginform="1"] button').click();
+    await page.locator('#qtChart1').waitFor();
+    await page.waitForFunction(
+      /** Wait for the dark-theme Chart.js instance instead of a canvas placeholder. */
+      () => Object.values(Chart.instances).some(
+        /** Require the actual chart configuration to contain its theme-specific x-axis color. */
+        chart => chart?.config?.type === 'bar' && chart?.options?.scales?.x?.ticks?.color === '#8b98a5')
+    );
+    await page.locator('#themeToggle').click();
+    await page.waitForFunction(
+      /** A new chart instance must use the light-theme palette after the rerender. */
+      () => document.documentElement.getAttribute('data-theme') === 'light' &&
+        Object.values(Chart.instances).some(
+          /** Accept a confirmed light-theme bar chart rather than just a theme attribute. */
+          chart => chart?.config?.type === 'bar' && chart?.options?.scales?.x?.ticks?.color === '#5b6673')
+    );
+    await visit(page, 'hosts');
+    await page.locator('#hostForm').waitFor();
+    await visit(page, 'clients');
+    await page.locator('#clientForm').waitFor();
+    assert.deepEqual(requests.filter(
+      /** A login POST is expected, but navigation and the theme refresh must not perform writes. */
+      request => request.method !== 'GET' && request.path !== '/auth'), []);
+    await assertNoCorruption(fixture);
+  });
