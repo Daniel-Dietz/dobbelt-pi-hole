@@ -967,6 +967,12 @@ const I18N = {
     "auth.loginFailed": "Login fejlede",
     "auth.loggedIn": "Logget ind på {server}",
     "auth.loggedOut": "Logget ud af {server}",
+    "auth.localLogoutOnly": "Logget ud lokalt af {server}; fjernsessionen kunne ikke bekræftes afsluttet.",
+    "auth.sessionUnverified": "Forbindelsen kunne ikke bekræftes; sessionen er gemt.",
+    "auth.sessionUnverifiedOn": "{server}: Forbindelsen kunne ikke bekræftes. Prøv igen.",
+    "auth.retrySession": "Prøv forbindelsen igen",
+    "common.requestTimeout": "Anmodningen overskred tidsgrænsen.",
+    "gravity.streamTimeout": "Gravity-opdateringen overskred strømningens tidsgrænse.",
     "pagination.showing": "Viser {shown} af {total}",
     "pagination.previous": "‹ Forrige",
     "pagination.next": "Næste ›",
@@ -1250,6 +1256,12 @@ const I18N = {
     "auth.loginFailed": "Login failed",
     "auth.loggedIn": "Logged in to {server}",
     "auth.loggedOut": "Logged out of {server}",
+    "auth.localLogoutOnly": "Logged out locally from {server}; remote session revocation was not confirmed.",
+    "auth.sessionUnverified": "Connection not verified; saved session retained.",
+    "auth.sessionUnverifiedOn": "{server}: Could not verify the connection. Retry.",
+    "auth.retrySession": "Retry connection",
+    "common.requestTimeout": "The request timed out.",
+    "gravity.streamTimeout": "The Gravity stream exceeded its deadline.",
     "pagination.showing": "Showing {shown} of {total}",
     "pagination.previous": "‹ Previous",
     "pagination.next": "Next ›",
@@ -1533,6 +1545,12 @@ const I18N = {
     "auth.loginFailed": "Anmeldung fehlgeschlagen",
     "auth.loggedIn": "Bei {server} angemeldet",
     "auth.loggedOut": "Von {server} abgemeldet",
+    "auth.localLogoutOnly": "Lokal von {server} abgemeldet; die Abmeldung auf dem Server konnte nicht bestätigt werden.",
+    "auth.sessionUnverified": "Verbindung nicht bestätigt; gespeicherte Sitzung bleibt erhalten.",
+    "auth.sessionUnverifiedOn": "{server}: Verbindung konnte nicht bestätigt werden. Erneut versuchen.",
+    "auth.retrySession": "Verbindung erneut prüfen",
+    "common.requestTimeout": "Zeitlimit für die Anfrage überschritten.",
+    "gravity.streamTimeout": "Zeitlimit für den Gravity-Stream überschritten.",
     "pagination.showing": "{shown} von {total} werden angezeigt",
     "pagination.previous": "‹ Zurück",
     "pagination.next": "Weiter ›",
@@ -2418,6 +2436,7 @@ async function loadRuntimeConfiguration() {
     label: overrides[server.base] || server.label,
     sid: storedValue(sessionStorageKey(server), "sessionStorage") || null,
     connected: false,
+    unverified: false,
     checking: true
   }));
   for (const id of ["1", "2", "3", "4"]) {
@@ -2631,139 +2650,153 @@ function pageSizeOf(selectId) {
   const selection = document.getElementById(selectId).value;
   return selection === "all" ? Infinity : Number(selection);
 }
-/** Identify HTTP 401 failures that have already cleared the affected instance's local session. */
+/** Identify HTTP 401 failures that invalidate only the affected Pi-hole session. */
 class AuthError extends Error {}
+/** Identify a request that reached its deadline, rather than a user-initiated cancellation. */
+class RequestTimeoutError extends Error {}
+// Normal requests are bounded independently from the longer Gravity streaming operation.
+const API_REQUEST_TIMEOUT_MS = 15000;
+const GRAVITY_STREAM_TIMEOUT_MS = 30 * 60 * 1000;
+const GRAVITY_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 /**
- * Send a request through one server's fingerprinted same-origin route, without following redirects.
- * Attach that server's SID and serialize an optional JSON body. A stale route raises
- * a configuration error. Normal responses clear the session on HTTP 401, return null
- * for HTTP 204, and otherwise decode JSON or text and reject unsuccessful status codes.
- * @param {Object} server Configured server whose session and route own this request.
- * @param {string} path API suffix beginning with /; encode user-controlled path segments before calling.
- * @param {Object} options Request method, body, rawResponse flag and optional AbortSignal.
- * @returns {Promise<*>} Decoded data, or the Response when rawResponse is true.
- * Raw callers own status and body handling. This helper has no default request timeout.
+ * Combine a caller's cancellation with a request deadline.
+ * The returned timeout signal remains alive while a response stream is consumed,
+ * so a Gravity response cannot outlive its separate streaming deadline.
+ * @param {AbortSignal|undefined} externalSignal Cancellation supplied by the owner of the view.
+ * @param {number} timeoutMs Deadline in milliseconds.
+ * @returns {{signal: AbortSignal, timeout: AbortSignal}} Combined and deadline-only signals.
+ */
+function requestSignals(externalSignal, timeoutMs) {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return { signal: externalSignal ? AbortSignal.any([externalSignal, timeout]) : timeout, timeout };
+}
+/**
+ * Send one target-bound API request, rejecting redirects and bounding the entire
+ * response lifetime. HTTP 401 clears only this instance's SID, including streaming
+ * requests; a transport failure retains session credentials for a later probe.
+ * @param {object} server Configured instance and currently stored SID.
+ * @param {string} path Encoded API suffix.
+ * @param {object} options Method, body, rawResponse flag, optional AbortSignal and deadline.
+ * @returns {Promise<*>} Decoded JSON/text, null for 204, or a stream Response.
  */
 async function apiCall(server, path, {
   method = "GET",
   body,
   rawResponse = false,
-  signal: requestSignal
+  signal: requestSignal,
+  timeoutMs = API_REQUEST_TIMEOUT_MS
 } = {}) {
-  const headers = {
-    "Content-Type": "application/json"
-  };
-  if (server.sid) {
-    headers["X-FTL-SID"] = server.sid;
+  const { signal, timeout } = requestSignals(requestSignal, timeoutMs);
+  const headers = { "Content-Type": "application/json" };
+  if (server.sid) headers["X-FTL-SID"] = server.sid;
+  try {
+    const response = await fetch(server.base.replace(/\/$/, "") + path, {
+      method, redirect: "error", headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal
+    });
+    if (response.status === 409 &&
+      (await response.clone().json().catch(/** A malformed 409 body cannot prove a configuration change. */ () => null))?.error?.code === "dashboard_config_changed") {
+      const failure = new Error(msg("config.changed"));
+      failure.httpStatus = 409;
+      throw failure;
+    }
+    if (response.status === 401) {
+      server.connected = false;
+      server.unverified = false;
+      server.sid = null;
+      storeValue(sessionStorageKey(server), null, "sessionStorage");
+      throw new AuthError(msg("auth.notConnectedOn", { server: server.label }));
+    }
+    if (rawResponse) return response;
+    if (response.status === 204) return null;
+    const payload = (response.headers.get("content-type") || "").includes("application/json")
+      ? await response.json().catch(/** Invalid JSON must not be treated as a successful collection. */ () => null)
+      : await response.text();
+    if (!response.ok) {
+      const failure = new Error(payload?.error?.message || (typeof payload === "string" ? payload : "HTTP " + response.status));
+      failure.httpStatus = response.status;
+      throw failure;
+    }
+    return payload;
+  } catch (error) {
+    if (timeout.aborted) throw new RequestTimeoutError(msg("common.requestTimeout"));
+    throw error;
   }
-  const response = await fetch(server.base.replace(/\/$/, "") + path, {
-    method,
-    redirect: "error",
-    headers,
-    body: undefined !== body ? JSON.stringify(body) : undefined,
-    signal: requestSignal
-  });
-  if (response.status === 409 && (await response.clone().json().catch(/** Treat an unreadable conflict body as an ordinary response rather than inventing a configuration-change code. */ () => null))?.error?.code === "dashboard_config_changed") {
-    // The fingerprinted proxy rejects this request before forwarding to Pi-hole.
-    // Preserve HTTP 409 so an unexecuted mutation is classified as failed, not uncertain.
-    const failure = new Error(msg("config.changed"));
-    failure.httpStatus = 409;
-    throw failure;
-  }
-  if (rawResponse) {
-    return response;
-  }
-  if (response.status === 401) {
-    server.connected = false;
-    server.sid = null;
-    storeValue(sessionStorageKey(server), null, "sessionStorage");
-    throw new AuthError(msg("auth.notConnectedOn", {
-      server: server.label
-    }));
-  }
-  if (response.status === 204) {
-    return null;
-  }
-  const payload = (response.headers.get("content-type") || "").includes("application/json") ? await response.json().catch(/** Represent an unreadable JSON response as null while retaining its HTTP status for error handling. */ () => null) : await response.text();
-  if (!response.ok) {
-    const message = payload && payload.error && payload.error.message || (typeof payload == "string" ? payload : "HTTP " + response.status);
-    const failure = new Error(message);
-    failure.httpStatus = response.status;
-    throw failure;
-  }
-  return payload;
 }
 /**
- * Authenticate one configured instance and store its returned SID for this browser tab.
- * Reject redirects, changed routes and failed login responses. The password is sent
- * only in this request body and is never persisted by the dashboard.
- * @param {Object} server Server receiving the login request.
- * @param {string} password Password or Pi-hole app password entered by the user.
+ * Login to one Pi-hole with a 15-second deadline and no redirect following.
+ * Only an authenticated response installs a new route-bound SID.
  */
 async function login(server, password) {
-  const response = await fetch(server.base.replace(/\/$/, "") + "/auth", {
-    method: "POST",
-    redirect: "error",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      password
-    })
-  });
-  const payload = await response.json().catch(/** Let a malformed login response follow the existing login-failure path. */ () => null);
-  if (response.status === 409 && payload?.error?.code === "dashboard_config_changed") {
-    throw new Error(msg("config.changed"));
+  const { signal, timeout } = requestSignals(undefined, API_REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(server.base.replace(/\/$/, "") + "/auth", {
+      method: "POST", redirect: "error",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }), signal
+    });
+    const payload = await response.json().catch(/** An invalid login payload is a failed authentication. */ () => null);
+    if (response.status === 409 && payload?.error?.code === "dashboard_config_changed") {
+      throw new Error(msg("config.changed"));
+    }
+    if (!response.ok || !payload?.session?.sid) {
+      throw new Error(payload?.error?.message || msg("auth.loginFailed"));
+    }
+    server.sid = payload.session.sid;
+    server.connected = true;
+    server.unverified = false;
+    storeValue(sessionStorageKey(server), server.sid, "sessionStorage");
+  } catch (error) {
+    if (timeout.aborted) throw new RequestTimeoutError(msg("common.requestTimeout"));
+    throw error;
   }
-  if (!response.ok || !payload || !payload.session) {
-    const message = payload && payload.error && payload.error.message || msg("auth.loginFailed");
-    throw new Error(message);
-  }
-  server.sid = payload.session.sid;
-  server.connected = true;
-  storeValue(sessionStorageKey(server), server.sid, "sessionStorage");
 }
 /**
- * Try to revoke the server session, then always clear the local SID and connected state.
- * A failed revocation request does not prove that the remote session was invalidated.
+ * Clear the browser SID immediately, then attempt a bounded server-side revoke.
+ * Revocation uses an isolated snapshot so its late HTTP status cannot revive or
+ * clear a subsequent login to the same instance.
+ * @returns {Promise<boolean>} True only for a confirmed remote revocation.
  */
 async function logout(server) {
-  try {
-    await apiCall(server, "/auth", {
-      method: "DELETE"
-    });
-  } catch {}
+  const previousSid = server.sid;
   server.sid = null;
   server.connected = false;
+  server.unverified = false;
   storeValue(sessionStorageKey(server), null, "sessionStorage");
+  if (!previousSid) return false;
+  try {
+    await apiCall({ ...server, sid: previousSid }, "/auth", { method: "DELETE" });
+    return true;
+  } catch {
+    return false;
+  }
 }
 /**
- * Check a restored SID with a bounded read of the blocking endpoint.
- * Missing or failed sessions become disconnected; failures also clear the stored SID.
- * Always finish the checking state so configuration startup can complete.
+ * Verify a restored tab-local SID without discarding it on transport errors.
+ * Only an explicit HTTP 401 proves invalid authentication; an unreachable server
+ * remains unverified and may be retried without requiring the password again.
  */
 async function checkSession(server) {
   if (!server.sid) {
     server.connected = false;
+    server.unverified = false;
     server.checking = false;
     return;
   }
-  const controller = new AbortController();
-  const timeout = setTimeout(/** Abort the restored-session probe when its deadline expires. */ () => controller.abort(), SESSION_CHECK_TIMEOUT_MS);
+  const probedSid = server.sid;
   try {
-    await apiCall(server, "/dns/blocking", {
-      signal: controller.signal
-    });
-    if (controller.signal.aborted) {
-      throw controller.signal.reason;
+    await apiCall(server, "/dns/blocking", { timeoutMs: SESSION_CHECK_TIMEOUT_MS });
+    if (server.sid === probedSid) {
+      server.connected = true;
+      server.unverified = false;
     }
-    server.connected = true;
-  } catch {
-    server.connected = false;
-    server.sid = null;
-    storeValue(sessionStorageKey(server), null, "sessionStorage");
+  } catch (error) {
+    if (server.sid === probedSid) {
+      server.connected = false;
+      server.unverified = !(error instanceof AuthError);
+    }
   } finally {
-    clearTimeout(timeout);
     server.checking = false;
   }
 }
@@ -2839,8 +2872,8 @@ function renderPills() {
     return;
   }
   document.getElementById("serverPills").innerHTML = state.servers.map(/** Render one instance's session indicator with an escaped display name. */ server => {
-    const statusClass = server.checking ? "" : server.connected ? "on" : "off";
-    const statusLabel = htmlMsg(server.checking ? "auth.checking" : server.connected ? "auth.connected" : "auth.notConnected");
+    const statusClass = server.checking ? "" : server.connected ? "on" : server.unverified ? "" : "off";
+    const statusLabel = htmlMsg(server.checking ? "auth.checking" : server.connected ? "auth.connected" : server.unverified ? "auth.sessionUnverified" : "auth.notConnected");
     return `<span class="pill ${statusClass}"><span class="dot"></span><b>${escapeHtml(server.label)}</b> · ${statusLabel}</span>`;
   }).join("");
 }
@@ -2928,7 +2961,7 @@ function loginBoxHtml(server) {
   return server.connected ? `<div class="row-inline">
     <span class="badge on">${htmlMsg("auth.connected")}</span>
     <button class="btn xs" data-logout="${server.id}">${htmlMsg("auth.logout")}</button>
-  </div>` : `<form class="row-inline" data-loginform="${server.id}">
+  </div>` : `${server.unverified && server.sid ? `<div class="row-inline"><span class="sub">${htmlMsg("auth.sessionUnverified")}</span><button class="btn xs" data-session-retry="${server.id}">${htmlMsg("auth.retrySession")}</button></div>` : ""}<form class="row-inline" data-loginform="${server.id}">
     <input type="password" placeholder="${htmlMsg("auth.password")}" aria-label="${htmlMsg("auth.passwordFor", {
     server: server.label
   })}" autocomplete="current-password" data-loginpw="${server.id}" style="flex:1;min-width:140px;">
@@ -2964,17 +2997,27 @@ function bindLoginHandlers(container, onSessionChange) {
       }
     });
   }
-  for (const button of container.querySelectorAll("[data-logout]")) {
-    button.addEventListener("click", /** Clear the selected instance's session and refresh indicators and the owning view. */ async () => {
-      const server = serverById(button.dataset.logout);
-      await logout(server);
-      toast(msg("auth.loggedOut", {
-        server: server.label
-      }), "ok");
+  for (const button of container.querySelectorAll("[data-session-retry]")) {
+    button.addEventListener("click", /** Re-probe the retained SID without resending a password. */ async () => {
+      const server = serverById(button.dataset.sessionRetry);
+      if (!server?.sid || server.checking) return;
+      server.checking = true;
+      button.disabled = true;
       renderPills();
-      if (onSessionChange) {
-        onSessionChange();
-      }
+      await checkSession(server);
+      renderPills();
+      if (server.unverified) toast(msg("auth.sessionUnverifiedOn", { server: server.label }), "err");
+      if (onSessionChange) onSessionChange();
+    });
+  }
+  for (const button of container.querySelectorAll("[data-logout]")) {
+    button.addEventListener("click", /** Clear local credentials immediately and report remote-revocation success separately. */ async () => {
+      const server = serverById(button.dataset.logout);
+      const remoteRevocation = logout(server);
+      renderPills();
+      if (onSessionChange) onSessionChange();
+      const confirmed = await remoteRevocation;
+      toast(msg(confirmed ? "auth.loggedOut" : "auth.localLogoutOnly", { server: server.label }), confirmed ? "ok" : "err");
     });
   }
 }
