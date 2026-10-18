@@ -3366,10 +3366,16 @@ async function renderDashboard(container, generation) {
     const blockingEnabled = mode === "enabled";
     const blockingDisabled = mode === "disabled";
     const actionable = (blockingEnabled || blockingDisabled) && summaryServer.apiVersionState !== "unsupported";
+    const blockingLabelKey = {
+      enabled: "dashboard.blockingEnabled",
+      disabled: "dashboard.blockingDisabled",
+      failed: "dashboard.blockingFailed",
+      unknown: "dashboard.blockingUnknown"
+    }[mode];
     return `<div class="card">
 					<h2 class="flex-between">
 						<span><span class="tag tag-${summaryServer.chip.slice(1)}">${escapeHtml(summaryServer.label)}</span></span>
-						<span class="badge ${blockingEnabled ? "on" : blockingDisabled ? "off" : ""}" data-blocking-state="${mode}">${htmlMsg("dashboard.blocking" + mode[0].toUpperCase() + mode.slice(1))}</span>
+						<span class="badge ${blockingEnabled ? "on" : blockingDisabled ? "off" : ""}" data-blocking-state="${mode}">${htmlMsg(blockingLabelKey)}</span>
 					</h2>
 					<div class="big-num">${fmtNum(queryStats.total)}</div>
 					<div class="sub">${escapeHtml(msgCount("dashboard.queriesToday", queryStats.total))}</div>
@@ -5853,7 +5859,13 @@ async function renderSettings(container, generation) {
       /** Render only escaped target labels and the read-only version string. */
       server => {
         const status = !server.connected ? "offline" : server.apiVersionState || "unknown";
-        const key = "settings.apiVersion" + status[0].toUpperCase() + status.slice(1);
+        const labels = {
+          supported: "settings.apiVersionSupported",
+          unsupported: "settings.apiVersionUnsupported",
+          unknown: "settings.apiVersionUnknown",
+          offline: "settings.apiVersionOffline"
+        };
+        const key = labels[status] || labels.unknown;
         return `<p class="sub" data-api-support="${escapeHtml(status)}" data-api-server="${escapeHtml(server.id)}"><b>${escapeHtml(server.label)}</b>: ${htmlMsg(key)}${server.apiVersion ? ` — ${escapeHtml(server.apiVersion)}` : ""}</p>`;
       }).join("");
   }
