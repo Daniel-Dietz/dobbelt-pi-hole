@@ -3589,3 +3589,93 @@ test('Issue #11 smoke: login, navigation and real chart palette survive a theme 
       request => request.method !== 'GET' && request.path !== '/auth'), []);
     await assertNoCorruption(fixture);
   });
+
+
+test('Issue #11 smoke: narrow German view keeps horizontal table navigation and long labels',
+  /** Exercise a phone-width dashboard with a long configured label and German form text. */
+  async t => {
+    const config = publicConfig(2);
+    config.servers[0].label = 'Außergewöhnlich langer deutscher Standortname – Zentrale und besonders lange Pi-hole-Instanz';
+    const fixture = await openDashboard(t, {
+      language: 'de',
+      browserLanguages: ['de-DE'],
+      viewport: { width: 390, height: 844 },
+      runtimeConfig: config,
+      labelOverrides: null,
+      hash: 'queries'
+    });
+    const { page } = fixture;
+    assert.equal(await page.locator('html').getAttribute('lang'), 'de');
+    const metrics = await page.locator('#qArea .table-wrap').evaluate(
+      /** Read the native horizontal scroll container rather than relying on body overflow. */
+      element => {
+        const width = element.clientWidth;
+        element.scrollLeft = element.scrollWidth;
+        return {
+          width,
+          content: element.scrollWidth,
+          scrollLeft: element.scrollLeft,
+          overflow: getComputedStyle(element).overflowX
+        };
+      });
+    assert.ok(metrics.width <= 390, 'The table viewport must not be wider than the phone');
+    assert.ok(metrics.content > metrics.width && metrics.scrollLeft > 0,
+      'Users must be able to scroll wide query columns horizontally');
+    assert.match(metrics.overflow, /auto|scroll/u);
+    await page.locator('#qArea button[data-sort="server"]').click();
+    assert.equal(await page.locator('#qArea th[aria-sort="ascending"] button[data-sort="server"]').count(), 1);
+    await visit(page, 'domains');
+    const text = 'Sehr lange deutsche Beschreibung: Datenschutz und sichere Einstellungen ohne Schreibzugriff auf Pi-hole.';
+    await page.locator('#dDomain').fill('mobile-layout.example');
+    await page.locator('#dComment').fill(text);
+    await page.locator('#targetDomain').selectOption('2');
+    await page.locator('#dComment').focus();
+    await page.locator('#themeToggle').click();
+    await page.waitForFunction(
+      /** Require actual mobile draft restoration after the asynchronous themed render. */
+      comment => document.querySelector('#dComment')?.value === comment &&
+        document.activeElement?.id === 'dComment', text);
+    assert.equal(await page.locator('#dDomain').inputValue(), 'mobile-layout.example');
+    assert.equal(await page.locator('#targetDomain').inputValue(), '2');
+    assert.ok(await page.locator('#domainForm button[type="submit"]').isVisible());
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #11: theme and language changes never repeat an in-flight domain mutation',
+  /** Protect exactly-once remote writes while visual refreshes replace the original form. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page, requests } = fixture;
+    await visit(page, 'domains');
+    const gate = deferred(t);
+    const arrival = deferred(t);
+    await page.route('**/*',
+      /** Delay only the chosen write; all prior preflight and subsequent GETs continue. */
+      async route => {
+        const request = route.request();
+        if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/domains/allow/exact')) {
+          arrival.release();
+          await gate.promise;
+        }
+        return route.fallback();
+      });
+    await page.locator('#dDomain').fill('theme-inflight.example');
+    await page.locator('#dComment').fill('in-flight draft');
+    await page.locator('#dType').selectOption('allow');
+    await page.locator('#targetDomain').selectOption('1');
+    await page.locator('#domainForm button[type="submit"]').click();
+    await arrival.promise;
+    await page.locator('#themeToggle').click();
+    await page.locator('#dDomain').waitFor();
+    assert.equal(await page.locator('#dDomain').inputValue(), 'theme-inflight.example');
+    await page.locator('#domainForm button[type="submit"]').click();
+    await language(page, 'de', 'domains');
+    gate.release();
+    await page.waitForFunction(
+      /** Confirm the legitimate original write appears in the refreshed view, not a duplicate. */
+      () => (document.querySelector('#domArea')?.textContent || '').includes('theme-inflight.example'));
+    assert.equal(requests.filter(
+      /** Count only target writes, ignoring authentication and safe preflight reads. */
+      request => request.method === 'POST' && request.path === '/domains/allow/exact').length, 1);
+    await assertNoCorruption(fixture);
+  });
