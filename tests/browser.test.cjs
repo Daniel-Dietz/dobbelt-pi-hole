@@ -1,9 +1,10 @@
 'use strict';
 
-// Run with `node --test tests/browser.test.cjs` after installing Playwright and
-// Chromium. An existing compatible browser can be selected with
-// PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH. Requests use intercepted fixtures or a
-// loopback-only HTTP fixture; no real Pi-hole or external service is contacted.
+// Run with `node --test tests/browser.test.cjs` after installing Playwright.
+// PLAYWRIGHT_BROWSER selects chromium, firefox or webkit; the full regression
+// suite defaults to Chromium. PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH optionally
+// selects a compatible Chromium binary. All Pi-hole data uses intercepted fixtures
+// or a loopback-only redirect server; no real Pi-hole is ever contacted.
 const assert = require('node:assert/strict');
 const {
   execFileSync
@@ -26,8 +27,15 @@ const {
   after
 } = require('node:test');
 const {
-  chromium
+  chromium,
+  firefox,
+  webkit
 } = require('playwright');
+const BROWSER_TYPES = { chromium, firefox, webkit };
+const BROWSER_NAME = process.env.PLAYWRIGHT_BROWSER || 'chromium';
+if (!Object.hasOwn(BROWSER_TYPES, BROWSER_NAME)) {
+  throw new Error('Unsupported PLAYWRIGHT_BROWSER: ' + BROWSER_NAME);
+}
 const HTML_PATH = join(__dirname, '..', 'index.html');
 const ORIGIN = 'https://dashboard.test';
 // The embedded onerror handler would flip the browser sentinel if literal fixture text became executable HTML.
@@ -157,10 +165,10 @@ const CHART_FIXTURE = `window.Chart = class Chart {
   destroy() { delete Chart.instances[this.id]; }
 };`;
 let browser;
-before(/** Launch the shared headless Chromium process, honoring an explicitly selected browser executable. */ async () => {
-  browser = await chromium.launch({
+before(/** Launch the selected headless browser, with an optional custom Chromium binary. */ async () => {
+  browser = await BROWSER_TYPES[BROWSER_NAME].launch({
     headless: true,
-    ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? {
+    ...(BROWSER_NAME === 'chromium' && process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? {
       executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
     } : {})
   });
@@ -194,6 +202,7 @@ async function openDashboard(t, options = {}) {
     configText = null,
     configResponseGate = null,
     waitForReady = true,
+    viewport = { width: 1600, height: 1100 },
     fakeClock = false,
     holdInitialSessions = false,
     holdSummaryServer = null,
@@ -209,10 +218,7 @@ async function openDashboard(t, options = {}) {
   const context = await browser.newContext({
     locale: browserLanguages[0],
     timezoneId: 'UTC',
-    viewport: {
-      width: 1600,
-      height: 1100
-    }
+    viewport
   });
   t.after(/** Dispose of this scenario's browser context and storage even if the test fails. */ () => context.close());
   const requests = [],
