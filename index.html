@@ -429,6 +429,26 @@ main {
   font-size: 12px
 }
 
+/* Native sort controls: keyboard navigation and visible focus. */
+.datatable th.sortable-header { padding: 0; }
+.datatable .sort-column {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  gap: 5px;
+  padding: 9px 11px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.datatable .sort-column:hover { background: var(--panel2); }
+.datatable .sort-column:focus-visible { outline: 2px solid var(--blue); outline-offset: -3px; }
+.datatable .sort-indicator { flex: none; }
+
 /* Form fields and action buttons shared by the management views. */
 button.btn {
   background: var(--panel2);
@@ -941,6 +961,7 @@ const I18N = {
     "app.description": "Et samlet kontrolpanel til to, tre eller fire Pi-hole v6-instanser.",
     "app.headingSuffix": "· kontrolpanel",
     "app.language": "Sprog",
+    "sort.byColumn": "Sortér efter {column}",
     "app.themeToggle": "Skift mellem lys og mørk tilstand",
     "tabs.dashboard": "Dashboard",
     "tabs.queries": "Forespørgsler",
@@ -1252,6 +1273,7 @@ const I18N = {
     "app.description": "A combined dashboard for two, three or four Pi-hole v6 instances.",
     "app.headingSuffix": "· dashboard",
     "app.language": "Language",
+    "sort.byColumn": "Sort by {column}",
     "app.themeToggle": "Switch between light and dark mode",
     "tabs.dashboard": "Dashboard",
     "tabs.queries": "Queries",
@@ -1563,6 +1585,7 @@ const I18N = {
     "app.description": "Ein gemeinsames Kontrollzentrum für zwei, drei oder vier Pi-hole-v6-Instanzen.",
     "app.headingSuffix": "· Kontrollzentrum",
     "app.language": "Sprache",
+    "sort.byColumn": "Nach {column} sortieren",
     "app.themeToggle": "Zwischen hellem und dunklem Design wechseln",
     "tabs.dashboard": "Übersicht",
     "tabs.queries": "Anfragen",
@@ -2744,6 +2767,29 @@ function pagerHtml(idPrefix, pageIndex, pageCount, totalRows, visibleRows) {
     </div>
   </div>`;
 }
+
+/**
+ * Build a semantic sortable table header with a native keyboard-activated button.
+ * aria-sort appears only on the active column; the visible arrow is decorative.
+ * @param {string} columnKey Stable column identifier.
+ * @param {string} headingText Plain heading text, including user-assigned server names.
+ * @param {string} selectedKey Currently sorted column.
+ * @param {string} direction asc or desc.
+ * @param {string} attributeName Internal sort button data attribute.
+ * @returns {string} Escaped HTML header and button.
+ */
+function sortableColumnHeading(columnKey, headingText, selectedKey, direction, attributeName) {
+  const selected = selectedKey === columnKey;
+  const ariaSort = selected ? ` aria-sort="${direction === "asc" ? "ascending" : "descending"}"` : "";
+  const glyph = selected ? direction === "asc" ? " ▲" : " ▼" : "";
+  return `<th scope="col" class="sortable-header"${ariaSort}>
+    <button type="button" class="sort-column" ${attributeName}="${escapeHtml(columnKey)}"
+      aria-label="${htmlMsg("sort.byColumn", { column: headingText })}">
+      ${escapeHtml(headingText)}<span class="sort-indicator" aria-hidden="true">${glyph}</span>
+    </button>
+  </th>`;
+}
+
 /** Read a page-size selector by ID, representing its all option as Infinity. */
 function pageSizeOf(selectId) {
   const selection = document.getElementById(selectId).value;
