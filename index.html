@@ -3074,10 +3074,14 @@ function bindLoginHandlers(container, onSessionChange) {
   for (const button of container.querySelectorAll("[data-logout]")) {
     button.addEventListener("click", /** Clear local credentials immediately and report remote-revocation success separately. */ async () => {
       const server = serverById(button.dataset.logout);
+      const noticeRevision = (server.logoutNoticeRevision || 0) + 1;
+      server.logoutNoticeRevision = noticeRevision;
       const remoteRevocation = logout(server);
       renderPills();
       if (onSessionChange) onSessionChange();
       const confirmed = await remoteRevocation;
+      // Do not announce an old logout after another login or a newer logout.
+      if (server.logoutNoticeRevision !== noticeRevision || server.sid || server.connected) return;
       toast(msg(confirmed ? "auth.loggedOut" : "auth.localLogoutOnly", { server: server.label }), confirmed ? "ok" : "err");
     });
   }
@@ -3142,9 +3146,20 @@ async function renderDashboard(container, generation) {
       };
     }
     try {
+      const [summaryResponse, blockingResponse] = await Promise.all([
+        apiCall(requestedServer, "/stats/summary", { signal: controller.signal }),
+        apiCall(requestedServer, "/dns/blocking", { signal: controller.signal })
+      ]);
+      // Optional charts must not delay an already confirmed summary card.
+      if (ownsView()) {
+        earlyResults.set(requestedServer.id, {
+          server: requestedServer,
+          summary: summaryResponse,
+          blocking: blockingResponse
+        });
+        paintEarlySummary();
+      }
       const [
-        summaryResponse,
-        blockingResponse,
         topDomainsResponse,
         topBlockedResponse,
         topClientsResponse,
@@ -3153,8 +3168,6 @@ async function renderDashboard(container, generation) {
         clientHistoryResponse,
         upstreamsResponse
       ] = await Promise.all([
-        apiCall(requestedServer, "/stats/summary", { signal: controller.signal }),
-        apiCall(requestedServer, "/dns/blocking", { signal: controller.signal }),
         apiCall(requestedServer, "/stats/top_domains", { signal: controller.signal }).catch(/** Allow the summary to render when the top allowed-domain request fails. */ () => null),
         apiCall(requestedServer, "/stats/top_domains?blocked=true", { signal: controller.signal }).catch(/** Allow the summary to render when the top blocked-domain request fails. */ () => null),
         apiCall(requestedServer, "/stats/top_clients", { signal: controller.signal }).catch(/** Allow the summary to render when the top-client request fails. */ () => null),
@@ -3903,16 +3916,20 @@ async function renderQueries(container, generation) {
       const finished = snapshots.filter(
         /** Count both successes and failures for honest progress reporting. */ item => item.complete).length;
       const succeeded = snapshots.filter(
-        /** Count a peer only when its cursor chain completed successfully. */ item => item.complete && !item.error).length;
+        /** Exclude failed and cursor-capped responses from the complete-success count. */ item =>
+          item.complete && !item.error && !item.truncated).length;
       const truncated = snapshots.some(
         /** Carry forward any known cursor cap across partial updates. */ item => item.truncated);
-      if (finished < connectedServers.length) {
-        queryStatus.textContent = msg("queries.partialProgress", { ready: finished, total: connectedServers.length });
-      } else if (succeeded < state.servers.length) {
-        queryStatus.textContent = msg("queries.partialResults", { ready: succeeded, total: state.servers.length });
-      } else {
-        queryStatus.textContent = msgCount(truncated ? "queries.truncated" : "queries.total", queryRows.length);
-      }
+      const partial = finished < connectedServers.length || succeeded < state.servers.length;
+      const status = finished < connectedServers.length
+        ? msg("queries.partialProgress", { ready: finished, total: connectedServers.length })
+        : succeeded < state.servers.length
+          ? msg("queries.partialResults", { ready: succeeded, total: state.servers.length })
+          : msgCount("queries.total", queryRows.length);
+      // A partial result can *also* exceed the cursor limit; always explain both.
+      queryStatus.textContent = status + (truncated
+        ? (partial ? " " : "") + msgCount("queries.truncated", queryRows.length)
+        : "");
     }
     try {
       await Promise.all(connectedServers.map(
@@ -5507,6 +5524,23 @@ async function renderGravity(container, generation) {
   }
 
   /**
+   * Refresh the currently mounted login controls after authentication expires.
+   * Preserve the retained Gravity output; never write into a different tab's DOM.
+   * @param {object} server Instance whose credentials changed.
+   */
+  function refreshGravityAuth(server) {
+    if (state.activeTab !== "gravity" || !state.servers.includes(server)) return;
+    renderPills();
+    const loginContainer = document.getElementById("gravLogin" + server.id);
+    if (!loginContainer) return;
+    loginContainer.innerHTML = server.connected ? "" : loginBoxHtml(server);
+    if (!server.connected) {
+      bindLoginHandlers(loginContainer,
+        /** Re-render Gravity with its retained output after a successful re-login. */ () => switchTab("gravity"));
+    }
+  }
+
+  /**
    * Refresh the instance's reported last Gravity update time and repaint its status.
    * A disconnected or failed read produces a distinct display status instead of a new timestamp.
    */
@@ -5523,6 +5557,7 @@ async function renderGravity(container, generation) {
       run.lastStatus = "loaded";
     } catch {
       run.lastStatus = server.connected ? "statusError" : "notLoggedIn";
+      if (!server.connected) refreshGravityAuth(server);
     }
     paint(server);
   }
@@ -5582,8 +5617,9 @@ async function renderGravity(container, generation) {
       }
     } catch (error) {
       run.status = "error";
-      run.error = idleExpired || hardExpired || error instanceof RequestTimeoutError || error.name === "TimeoutError"
-        ? msg("gravity.streamTimeout") : error.message;
+      // Before headers arrive this is a normal API deadline, not a stream timeout.
+      run.error = idleExpired || hardExpired ? msg("gravity.streamTimeout") : error.message;
+      if (error instanceof AuthError) refreshGravityAuth(server);
     } finally {
       clearTimeout(idleTimer);
       clearTimeout(absoluteDeadline);
