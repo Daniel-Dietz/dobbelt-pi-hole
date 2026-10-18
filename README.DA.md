@@ -312,9 +312,11 @@ eksisterende filnavne bevares af hensyn til dokumentationslinks.
   Sunde Pi-hole-instanser viser status og forespørgsler, selv om andre svar
   mangler; summer markeres som delvise. Skift af tidsrum eller fane afbryder
   forældede forespørgsler og markører. HTTP 401 ophæver kun den oprindelige
-  session. Ved midlertidige forbindelsesfejl bevares SID som ubekræftet til
-  manuel kontrol. Logout sletter SID lokalt straks og oplyser, om fjernsessionen
-  faktisk blev afsluttet. Se den engelske
+  session. Hvis kontrollen af en gemt session mislykkes på grund af en
+  midlertidig forbindelsesfejl, beholdes SID som ubekræftet med mulighed for
+  manuel kontrol. Almindelige API-netværksfejl bevarer SID uden at ændre en
+  allerede etableret forbindelsestilstand. Logout sletter SID lokalt straks
+  og oplyser, om fjernsessionen faktisk blev afsluttet. Se den engelske
   [driftsvejledning](docs/CONFIGURATION.md#browser-request-limits-and-session-state).
   Yderligere rettighedshåndtering findes i
   [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10);
