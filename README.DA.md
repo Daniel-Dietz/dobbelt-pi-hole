@@ -305,13 +305,20 @@ eksisterende filnavne bevares af hensyn til dokumentationslinks.
   aktuelle tilstand kontrolleres før et bevidst nyt forsøg; handlinger
   gentages aldrig automatisk. Se
   [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8).
-- **Forespørgsler og browsertilstand:** generelle tidsgrænser for forespørgsler,
-  beskyttelse mod kapløb ved indlæsning af forespørgselsloggen og tydeligere
-  sessions- og rettighedstilstande er fortsat planlagt i
-  [#9](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/9) og
-  [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10). Temaskift kan
-  kassere ufærdige formularer; bevarelse af kladder, bedre tastaturbetjening
-  og bredere browser- og mobiltests er beskrevet i
+- **Forespørgsler og browsertilstand:** almindelige API-kald samt login og
+  logout har en browsergrænse på 15 sekunder; kontrol af gemte sessioner har
+  10 sekunder. Gravity bruger først den almindelige frist, derefter to
+  minutters inaktivitetstimeout og maksimalt 30 minutters samlet streaming.
+  Sunde Pi-hole-instanser viser status og forespørgsler, selv om andre svar
+  mangler; summer markeres som delvise. Skift af tidsrum eller fane afbryder
+  forældede forespørgsler og markører. HTTP 401 ophæver kun den oprindelige
+  session. Ved midlertidige forbindelsesfejl bevares SID som ubekræftet til
+  manuel kontrol. Logout sletter SID lokalt straks og oplyser, om fjernsessionen
+  faktisk blev afsluttet. Se den engelske
+  [driftsvejledning](docs/CONFIGURATION.md#browser-request-limits-and-session-state).
+  Yderligere rettighedshåndtering findes i
+  [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10);
+  kladder, tastaturbetjening og flere browser-/mobiltests i
   [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11).
 - **Konfigurationsændringer:** JSON valideres ved opstart, men en genstart med
   ugyldigt indhold kan gøre tjenesten utilgængelig. Behold en fungerende kopi
