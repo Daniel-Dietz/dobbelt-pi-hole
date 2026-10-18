@@ -3705,7 +3705,7 @@ test('Issue #11 smoke: canceled pointer gestures cannot steal subsequent keyboar
       /** Wait for the completed rerender rather than a transient theme attribute. */
       () => document.documentElement.getAttribute('data-theme') === 'light' &&
         document.querySelector('#dComment')?.value === 'Unsaved draft after a canceled gesture');
-    assert.equal(await page.evaluate(() => document.activeElement?.id), 'themeToggle');
+    assert.equal(await page.evaluate(/** Return keyboard focus after the theme rerender. */ () => document.activeElement?.id), 'themeToggle');
 
     await page.locator('#dComment').focus();
     await page.evaluate(
@@ -3725,7 +3725,31 @@ test('Issue #11 smoke: canceled pointer gestures cannot steal subsequent keyboar
       /** Confirm the second theme change and the preserved user draft. */
       () => document.documentElement.getAttribute('data-theme') === 'dark' &&
         document.querySelector('#dComment')?.value === 'Unsaved draft after a canceled gesture');
-    assert.equal(await page.evaluate(() => document.activeElement?.id), 'themeToggle');
+    assert.equal(await page.evaluate(/** Return keyboard focus after the theme rerender. */ () => document.activeElement?.id), 'themeToggle');
+    await page.locator('#dComment').focus();
+    await page.evaluate(
+      /** Release a pointer on the toggle without dispatching its matching click. */
+      () => {
+        const toggle = document.getElementById('themeToggle');
+        toggle.dispatchEvent(new PointerEvent('pointerdown', {
+          pointerId: 92, pointerType: 'mouse', bubbles: true
+        }));
+        toggle.dispatchEvent(new PointerEvent('pointerup', {
+          pointerId: 92, pointerType: 'mouse', bubbles: true
+        }));
+      });
+    await page.evaluate(
+      /** Allow the abandoned pointerup cleanup to run before keyboard activation. */
+      () => new Promise(/** Resolve on the next event-loop tick. */ resolve => setTimeout(resolve, 0)));
+    await page.locator('#themeToggle').focus();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(
+      /** Check that the draft survives while keyboard focus stays on the toggle. */
+      () => document.documentElement.getAttribute('data-theme') === 'light' &&
+        document.querySelector('#dComment')?.value === 'Unsaved draft after a canceled gesture');
+    assert.equal(await page.evaluate(
+      /** Report focus after the third appearance change. */
+      () => document.activeElement?.id), 'themeToggle');
     assert.equal(requests.filter(
       /** Neither abandoned pointer gestures nor keyboard theme toggles may write Pi-hole data. */
       request => request.method !== 'GET').length, 0);
