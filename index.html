@@ -2861,7 +2861,10 @@ async function apiCall(server, path, {
       throw new AuthError(msg("auth.notConnectedOn", { server: server.label }));
     }
     if (rawResponse) return response;
-    if (response.status === 204) return null;
+    // Pi-hole v6 config-array PUT explicitly returns HTTP 201 with no content.
+    // Accept only this documented empty-body success alongside HTTP 204.
+    if (response.status === 204 ||
+        (response.status === 201 && method === "PUT" && path.startsWith("/config/"))) return null;
     const isJson = (response.headers.get("content-type") || "").toLowerCase().includes("application/json");
     const payload = isJson
       ? await response.json().catch(/** Preserve aborts and deadlines; only malformed complete JSON may fall back to null. */ error => {
