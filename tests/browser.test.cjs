@@ -448,6 +448,7 @@ async function openDashboard(t, options = {}) {
         if (authResponseGate) await authResponseGate;
         return json({
           session: {
+            valid: true,
             sid: 'fixture-login-' + id
           }
         });
@@ -783,6 +784,7 @@ async function openRedirectDashboard(t, {
       });
       return response.end(JSON.stringify(loginRequest ? {
         session: {
+          valid: true,
           sid: 'fixture-redirected-sid-2'
         }
       } : {}));
@@ -2741,7 +2743,7 @@ for (const language of ['da', 'en', 'de']) {
                 options?.headers?.['X-FTL-SID'] === 'fixture-sid-1') return oldResponse;
             if (String(url).endsWith('/auth') && options?.method === 'POST') {
               return Promise.resolve(new Response(
-                JSON.stringify({ session: { sid: 'replacement-sid-1' } }),
+                JSON.stringify({ session: { valid: true, sid: 'replacement-sid-1' } }),
                 { status: 200, headers: { 'Content-Type': 'application/json' } }
               ));
             }
@@ -2791,7 +2793,7 @@ test('Issue #9: late logout 401 cannot clear a new session',
           if (String(url).endsWith('/auth') && options?.method === 'DELETE') return heldRevoke;
           if (String(url).endsWith('/auth') && options?.method === 'POST') {
             return Promise.resolve(new Response(
-              JSON.stringify({ session: { sid: 'after-logout-sid' } }),
+              JSON.stringify({ session: { valid: true, sid: 'after-logout-sid' } }),
               { status: 200, headers: { 'Content-Type': 'application/json' } }
             ));
           }
