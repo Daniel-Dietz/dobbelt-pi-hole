@@ -3679,3 +3679,55 @@ test('Issue #11: theme and language changes never repeat an in-flight domain mut
       request => request.method === 'POST' && request.path === '/domains/allow/exact').length, 1);
     await assertNoCorruption(fixture);
   });
+
+test('Issue #11 smoke: canceled pointer gestures cannot steal subsequent keyboard focus',
+  /** Reproduce a canceled or off-button release before activating the theme with the keyboard. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page, requests } = fixture;
+    await visit(page, 'domains');
+    await page.locator('#dComment').fill('Unsaved draft after a canceled gesture');
+    await page.locator('#dComment').focus();
+    await page.evaluate(
+      /** Simulate an aborted pointer interaction while the text draft still has focus. */
+      () => {
+        const toggle = document.getElementById('themeToggle');
+        toggle.dispatchEvent(new PointerEvent('pointerdown', {
+          pointerId: 90, pointerType: 'mouse', bubbles: true
+        }));
+        document.dispatchEvent(new PointerEvent('pointercancel', {
+          pointerId: 90, pointerType: 'mouse', bubbles: true
+        }));
+      });
+    await page.locator('#themeToggle').focus();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(
+      /** Wait for the completed rerender rather than a transient theme attribute. */
+      () => document.documentElement.getAttribute('data-theme') === 'light' &&
+        document.querySelector('#dComment')?.value === 'Unsaved draft after a canceled gesture');
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'themeToggle');
+
+    await page.locator('#dComment').focus();
+    await page.evaluate(
+      /** Release a subsequent pointer away from the toggle so it produces no toggle click. */
+      () => {
+        const toggle = document.getElementById('themeToggle');
+        toggle.dispatchEvent(new PointerEvent('pointerdown', {
+          pointerId: 91, pointerType: 'mouse', bubbles: true
+        }));
+        document.body.dispatchEvent(new PointerEvent('pointerup', {
+          pointerId: 91, pointerType: 'mouse', bubbles: true
+        }));
+      });
+    await page.locator('#themeToggle').focus();
+    await page.keyboard.press('Space');
+    await page.waitForFunction(
+      /** Confirm the second theme change and the preserved user draft. */
+      () => document.documentElement.getAttribute('data-theme') === 'dark' &&
+        document.querySelector('#dComment')?.value === 'Unsaved draft after a canceled gesture');
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'themeToggle');
+    assert.equal(requests.filter(
+      /** Neither abandoned pointer gestures nor keyboard theme toggles may write Pi-hole data. */
+      request => request.method !== 'GET').length, 0);
+    await assertNoCorruption(fixture);
+  });

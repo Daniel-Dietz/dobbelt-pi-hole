@@ -6007,28 +6007,52 @@ function initThemeToggle() {
   const toggle = document.getElementById("themeToggle");
   let pointerFocus = null;
   toggle.addEventListener("pointerdown",
-    /** Capture the focused draft before a pointer activation moves focus to the theme button. */
-    () => {
+    /** Capture a matching pointer gesture before it transfers focus away from a draft. */
+    event => {
       const root = document.getElementById("tabContent");
       const active = document.activeElement;
       const selector = root.contains(active) && active.matches?.("input, select, textarea")
         ? formFieldSelector(active) : null;
-      pointerFocus = selector ? { selector, start: active.selectionStart, end: active.selectionEnd } : null;
+      pointerFocus = selector ? {
+        selector, start: active.selectionStart, end: active.selectionEnd, pointerId: event.pointerId
+      } : null;
+    });
+  document.addEventListener("pointercancel",
+    /** Discard a canceled gesture so a later keyboard click cannot restore stale focus. */
+    event => {
+      if (pointerFocus?.pointerId === event.pointerId) pointerFocus = null;
+    });
+  document.addEventListener("pointerup",
+    /** Expire a released gesture if no matching button click is dispatched. */
+    event => {
+      const gesture = pointerFocus;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      if (!toggle.contains(event.target)) {
+        pointerFocus = null;
+        return;
+      }
+      // A normal click follows pointerup; defer cleanup until it has dispatched.
+      setTimeout(/** Drop a gesture not consumed by its expected click. */ () => {
+        if (pointerFocus === gesture) pointerFocus = null;
+      }, 0);
     });
   toggle.addEventListener("click",
-    /** Repaint while retaining the most recently edited form and its keyboard focus. */
-    () => {
+    /** Repaint without transferring focus from a keyboard activation to an old draft. */
+    event => {
+      const matchingPointerFocus = event.detail > 0 && pointerFocus &&
+        (!("pointerId" in event) || pointerFocus.pointerId === event.pointerId)
+        ? pointerFocus : null;
+      pointerFocus = null;
       const snapshot = configurationStatus === "ready" ? activeViewDraftSnapshot() : null;
-      if (snapshot && pointerFocus) {
+      if (snapshot && matchingPointerFocus) {
         for (const field of snapshot.fields) {
-          if (field.selector === pointerFocus.selector) {
+          if (field.selector === matchingPointerFocus.selector) {
             field.focused = true;
-            field.start = pointerFocus.start;
-            field.end = pointerFocus.end;
+            field.start = matchingPointerFocus.start;
+            field.end = matchingPointerFocus.end;
           }
         }
       }
-      pointerFocus = null;
       const theme = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
       applyTheme(theme);
       storeValue(THEME_KEY, theme);
