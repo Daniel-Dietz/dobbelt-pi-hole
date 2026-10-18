@@ -318,9 +318,11 @@ existing filenames remain available for documentation links.
   [request and session guide](docs/CONFIGURATION.md#browser-request-limits-and-session-state).
   Pi-hole v6 permission errors, unknown blocking states and read-only version
   checks are implemented in [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10).
-  Unavailable API details are not treated as empty or successful. Draft
-  preservation, keyboard improvements and broader browser/mobile checks
-  remain in [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11).
+  Unavailable API details are not treated as empty or successful. The [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11)
+  interface improvement preserves unfinished forms, selections and edit focus
+  when switching themes or languages, makes sortable tables keyboard-operable
+  with `aria-sort`, and adds targeted Firefox, WebKit and narrow-screen smoke
+  checks. Re-rendering does not repeat a pending Pi-hole write.
 - **Configuration changes:** startup validates the JSON, but a restart with
   invalid input can leave the service unavailable. Keep a working copy of the
   private configuration. Staged validation, coordinated activation and
@@ -443,10 +445,10 @@ or provide failover.
 ## Verification
 
 The [i18n workflow](.github/workflows/i18n.yml) covers translation behavior,
-Chromium browser fixtures, generated configuration and Docker integration,
+full Chromium browser regressions, targeted Firefox and WebKit smoke cases,
+narrow-screen German layouts, generated configuration and Docker integration,
 plus Proxmox CLI fixtures and installation in a Debian 13 systemd test container.
 These checks do not establish real Proxmox installation or restore acceptance.
-Firefox, WebKit and a targeted mobile smoke matrix remain in #11.
 
 From the repository root, the dependency-free checks use Node.js 24 and Python:
 
