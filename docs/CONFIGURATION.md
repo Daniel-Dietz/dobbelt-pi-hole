@@ -70,6 +70,14 @@ do not claim to enforce an nginx or Pi-hole server-side deadline.
 | Gravity response stream without new data | 2 minutes (idle) |
 | Gravity response stream, including continuous output | 30 minutes (absolute) |
 
+Pi-hole's [configuration API schema](https://github.com/pi-hole/FTL/blob/master/src/api/docs/content/specs/config.yaml)
+explicitly returns HTTP 201 **without any body** when adding an array item
+with `PUT /config/{element}/{value}`, and HTTP 204 without a body for DELETE.
+A missing JSON body on these exact documented success statuses is accepted;
+other endpoint responses do not inherit the same exception. For a host
+replacement, an acknowledged PUT must be followed by the requested DELETE
+of the old record; an ambiguous result stops the sequence for operator review.
+
 A timeout or transport error is **not** proof that a valid Pi-hole session has
 expired. During a **restored-session probe**, the browser retains its
 route-bound SID, marks this connection unverified and offers a manual retry.
@@ -122,7 +130,7 @@ fields or permissions exist.
 | `GET /dns/blocking` | Explicit `enabled`, `disabled`, `failed`, `unknown` (legacy booleans are also interpreted) | Failed and unknown are distinct from disabled; neither can offer a blocking toggle |
 | `POST /dns/blocking` | A new state is confirmed only when the response explicitly matches the requested enabled/disabled mode | An unknown, failed, invalid or mismatched response is not a successful change; verify the real state before retrying |
 | `GET /stats/summary` | A response with valid, finite and nonnegative total/blocked query counts | Incomplete totals make the instance unavailable, not silently zero; other instances remain visible |
-| `GET/PUT/DELETE /config/dns/hosts` | Complete readable hosts collection and an explicitly acknowledged write result | A forbidden config write leaves the readable session valid and prevents repeated config writes to that target until the next login |
+| `GET/PUT/DELETE /config/dns/hosts` | Complete readable hosts collection, documented empty HTTP **201** for a successful config-array PUT, and HTTP **204** for a successful DELETE | A forbidden config write leaves the readable session valid and prevents repeated config writes to that target until the next login |
 
 **HTTP 401** means the SID used for that particular operation is invalid;
 it does not invalidate a replacement login that occurred while the request
