@@ -96,10 +96,13 @@ oplyst.
   enkelte Pi-holes eget webinterface.
 
 Et vellykket login med app password giver ikke tilladelse til alle ændringer.
-Ændringer af lokale DNS-poster afhænger af Pi-holes indstilling
-`webserver.api.app_sudo`; læs om
-[API-rettigheder](docs/CONFIGURATION.md#pi-hole-api-permissions), før du ændrer
-rettighederne.
+Lokale DNS-poster bruger beskyttede konfigurationskald og kan afvises med HTTP
+403, selv om læsning fortsat virker. `webserver.api.app_sudo` er deaktiveret
+som standard; aktivering giver app-adgangskoden omfattende rettigheder,
+herunder ændring af upstream-DNS, DHCP og adgangskoder. Læs om
+[API-rettigheder](docs/CONFIGURATION.md#pi-hole-api-permissions), og brug om
+muligt Pi-holes egen administration i stedet for at udvide rettighederne.
+Kontrolpanelet ændrer ikke selv Pi-hole-rettigheder.
 
 ## Opsætning med Docker
 
@@ -318,9 +321,11 @@ eksisterende filnavne bevares af hensyn til dokumentationslinks.
   allerede etableret forbindelsestilstand. Logout sletter SID lokalt straks
   og oplyser, om fjernsessionen faktisk blev afsluttet. Se den engelske
   [driftsvejledning](docs/CONFIGURATION.md#browser-request-limits-and-session-state).
-  Yderligere rettighedshåndtering findes i
-  [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10);
-  kladder, tastaturbetjening og flere browser-/mobiltests i
+  Fejl om Pi-hole v6-rettigheder, ukendte blokeringsstatusser og læsende
+  versionskontrol er implementeret i
+  [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10).
+  Utilgængelige API-data vises ikke som tomme eller vellykkede svar.
+  Kladder, tastaturbetjening og flere browser-/mobiltests er fortsat i
   [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11).
 - **Konfigurationsændringer:** JSON valideres ved opstart, men en genstart med
   ugyldigt indhold kan gøre tjenesten utilgængelig. Behold en fungerende kopi
