@@ -30,7 +30,7 @@ the relevant settings consistently from a single dashboard.
 
 ## Current status and documentation
 
-**Reviewed on 2026-10-17:** the current application version is **1.5.009**.
+**Reviewed on 2026-10-18:** the current application version is **1.5.009**.
 External configuration, Docker deployment, the native LXC installer and
 API/login redirect protection are implemented on `main`. The
 [development tracker #6](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/6)
@@ -370,12 +370,13 @@ published release artifacts.
 - **v1.4.008:** External JSON configuration, generated API routes and a locally buildable Docker image — [PR #3](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/3)
 - **v1.5.009:** Automated native Proxmox LXC installation and stronger nginx isolation and CSP — [PR #5](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/5)
 - **Subsequent fix on `main`:** API and login redirects rejected — [#7](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/7), merged in [PR #25](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/25)
+- **Per-instance reliability on `main`:** Verified per-Pi-hole read/write outcomes, safe retry behavior and client-suggestion drafts — [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8), merged in [PR #29](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/29).
 
 ## Roadmap
 
 [Tracker #6](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/6) is the
-authoritative progress record. **Snapshot: 2026-10-17 — 1 of 19 work packages
-completed; 18 open. Next: #8.** The table follows its recommended working order.
+authoritative progress record. **Snapshot: 2026-10-18 — 2 of 19 work packages
+completed; 17 open. Next: #9.** The table follows its recommended working order.
 Only the prerequisites column expresses technical dependencies within this
 roadmap; an earlier row is not automatically a prerequisite. The issues define
 scope and acceptance criteria. Future version numbers and delivery dates have
@@ -388,8 +389,8 @@ for #23 or #24.
 | Order | Issue and scope | Status | Prerequisites |
 | --- | --- | --- | --- |
 | 01 | [#7](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/7) — Reject API/login redirects to other instance routes | Completed | None |
-| 02 | [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8) — Per-instance read/write outcomes, partial failures and unknown data states | Open — next | #7 |
-| 03 | [#9](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/9) — Request limits, query-load race protection and distinct session/connection states | Open | #7, #8 |
+| 02 | [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8) — Per-instance read/write outcomes, partial failures and unknown data states | Completed | #7 |
+| 03 | [#9](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/9) — Request limits, query-load race protection and distinct session/connection states | Open — next | #7, #8 |
 | 04 | [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10) — API compatibility, permissions and failed/unknown blocking states | Open | #9 |
 | 05 | [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11) — Preserve drafts; improve keyboard, browser and mobile coverage | Open | #8, #9 |
 | 06 | [#12](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/12) — Configuration preflight, coordinated activation and rollback | Open | None |

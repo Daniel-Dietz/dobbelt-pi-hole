@@ -33,7 +33,7 @@ einheitlich zu verwalten.
 
 ## Aktueller Stand und Dokumentation
 
-**Geprüft am 17.10.2026:** Die aktuelle Anwendungsversion ist **1.5.009**.
+**Geprüft am 18.10.2026:** Die aktuelle Anwendungsversion ist **1.5.009**.
 Externe Konfiguration, Docker-Betrieb, der native LXC-Installer und der Schutz
 vor API-/Login-Weiterleitungen sind auf `main` umgesetzt. Das
 [Roadmap-Issue #6](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/6)
@@ -478,12 +478,13 @@ Verzeichnis veröffentlichter Release-Artefakte.
 - **v1.4.008:** Externe JSON-Konfiguration, erzeugte API-Routen und lokal baubares Docker-Image — [PR #3](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/3)
 - **v1.5.009:** Automatische native Proxmox-LXC-Installation, stärkere nginx-Isolierung und CSP — [PR #5](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/5)
 - **Nachfolgende Korrektur auf `main`:** API- und Login-Weiterleitungen werden abgelehnt — [#7](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/7), gemergt mit [PR #25](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/25)
+- **Mehrinstanz-Zuverlässigkeit auf `main`:** Korrekte Lese-/Schreibergebnisse je Pi-hole, sichere Wiederholungen und erhaltene Client-Entwürfe — [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8), gemergt mit [PR #29](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/29).
 
 ## Roadmap
 
 [Roadmap-Issue #6](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/6) ist
-die maßgebliche Fortschrittsübersicht. **Stand: 17.10.2026 — 1 von 19
-Arbeitspaketen abgeschlossen; 18 offen. Als Nächstes: #8.** Die Tabelle folgt
+die maßgebliche Fortschrittsübersicht. **Stand: 18.10.2026 — 2 von 19
+Arbeitspaketen abgeschlossen; 17 offen. Als Nächstes: #9.** Die Tabelle folgt
 der empfohlenen Bearbeitungsreihenfolge. Nur die Spalte „Voraussetzungen“ nennt
 technische Abhängigkeiten innerhalb dieser Roadmap; eine vorherige Zeile ist
 nicht automatisch eine Voraussetzung. Umfang und Abnahmekriterien stehen in
@@ -496,8 +497,8 @@ keine zusätzliche Voraussetzung für #23 oder #24.
 | Reihenfolge | Issue und Umfang | Status | Voraussetzungen |
 | --- | --- | --- | --- |
 | 01 | [#7](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/7) — API-/Login-Weiterleitungen auf andere Instanzrouten verhindern | Abgeschlossen | Keine |
-| 02 | [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8) — Lese-/Schreibergebnisse je Instanz, Teilerfolge und unbekannte Datenstände | Offen — als Nächstes | #7 |
-| 03 | [#9](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/9) — Anfragefristen, sichere Query-Ladevorgänge und getrennte Sitzungs-/Verbindungszustände | Offen | #7, #8 |
+| 02 | [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8) — Lese-/Schreibergebnisse je Instanz, Teilerfolge und unbekannte Datenstände | Abgeschlossen | #7 |
+| 03 | [#9](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/9) — Anfragefristen, sichere Query-Ladevorgänge und getrennte Sitzungs-/Verbindungszustände | Offen — als Nächstes | #7, #8 |
 | 04 | [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10) — API-Kompatibilität, Berechtigungen sowie fehlgeschlagener/unbekannter Blocking-Status | Offen | #9 |
 | 05 | [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11) — Entwürfe erhalten; Tastatur-, Browser- und Mobilabdeckung verbessern | Offen | #8, #9 |
 | 06 | [#12](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/12) — Konfiguration vorab prüfen, koordiniert aktivieren und zurücksetzen | Offen | Keine |
