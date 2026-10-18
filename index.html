@@ -2677,6 +2677,49 @@ function pageSizeOf(selectId) {
 }
 /** Identify HTTP 401 failures that invalidate only the affected Pi-hole session. */
 class AuthError extends Error {}
+/** Identify a denied API operation without invalidating an otherwise valid session. */
+class PermissionError extends Error {}
+/** Identify responses that are incompatible with the documented Pi-hole v6 API. */
+class ApiCompatibilityError extends Error {}
+/**
+ * Normalize documented Pi-hole v6 blocking states without mapping failed/unknown to disabled.
+ * @param {*} value Raw blocking property returned by the Pi-hole API.
+ * @returns {string} enabled, disabled, failed or unknown.
+ */
+function blockingMode(value) {
+  if (value === true || value === "enabled") return "enabled";
+  if (value === false || value === "disabled") return "disabled";
+  if (value === "failed") return "failed";
+  return "unknown";
+}
+/**
+ * Require valid query counts before including an instance in dashboard totals.
+ * @param {*} payload The decoded v6 /stats/summary response.
+ * @returns {object} The verified response, preserving all optional details.
+ */
+function requireSummaryResult(payload) {
+  const queries = payload?.queries;
+  if (!queries || typeof queries !== "object" ||
+      !Number.isFinite(queries.total) || queries.total < 0 ||
+      !Number.isFinite(queries.blocked) || queries.blocked < 0 ||
+      queries.blocked > queries.total) {
+    throw new ApiCompatibilityError(msg("api.incompatibleResponse"));
+  }
+  return payload;
+}
+/**
+ * Parse a read-only Pi-hole FTL version response, without guessing privileges.
+ * @param {*} payload Documented GET /info/version response.
+ * @returns {object} Parsed local version and supported/unsupported/unknown state.
+ */
+function apiVersionInfo(payload) {
+  const version = payload?.version?.ftl?.local?.version;
+  if (typeof version !== "string" || !version.trim() || version.length > 80) {
+    return { state: "unknown", version: null };
+  }
+  const match = /^v?(\d+)\./u.exec(version.trim());
+  return { state: !match ? "unknown" : Number(match[1]) === 6 ? "supported" : "unsupported", version: version.trim() };
+}
 /** Identify a request that reached its deadline, rather than a user-initiated cancellation. */
 class RequestTimeoutError extends Error {}
 // Normal requests are bounded independently from the longer Gravity streaming operation.
@@ -2721,6 +2764,15 @@ async function apiCall(server, path, {
   timeoutMs = API_REQUEST_TIMEOUT_MS,
   invalidateSessionOn401 = true
 } = {}) {
+  // Refuse known non-v6 writes but always allow session revocation.
+  if (method !== "GET" && path !== "/auth" && server.apiVersionState === "unsupported") {
+    throw new ApiCompatibilityError(msg("api.unsupportedVersion"));
+  }
+  if (method !== "GET" && path.startsWith("/config/") && server.configWriteDenied) {
+    const error = new PermissionError(msg("api.configWriteDenied"));
+    error.httpStatus = 403;
+    throw error;
+  }
   const deadline = requestSignals(requestSignal, timeoutMs);
   const { signal } = deadline;
   const headers = { "Content-Type": "application/json" };
@@ -2750,16 +2802,28 @@ async function apiCall(server, path, {
     }
     if (rawResponse) return response;
     if (response.status === 204) return null;
-    const payload = (response.headers.get("content-type") || "").includes("application/json")
+    const isJson = (response.headers.get("content-type") || "").toLowerCase().includes("application/json");
+    const payload = isJson
       ? await response.json().catch(/** Preserve aborts and deadlines; only malformed complete JSON may fall back to null. */ error => {
         if (signal.aborted) throw error;
         return null;
       })
       : await response.text();
     if (!response.ok) {
+      if (response.status === 403) {
+        const deniedConfig = method !== "GET" && path.startsWith("/config/");
+        if (deniedConfig && server.sid === requestSid) server.configWriteDenied = true;
+        const failure = new PermissionError(msg(deniedConfig ? "api.configWriteDenied" : "api.permissionDenied"));
+        failure.httpStatus = 403;
+        throw failure;
+      }
       const failure = new Error(payload?.error?.message || (typeof payload === "string" ? payload : "HTTP " + response.status));
       failure.httpStatus = response.status;
       throw failure;
+    }
+    // HTTP 200 with HTML, broken JSON, an array, or no payload is not a valid v6 API response.
+    if (!isJson || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new ApiCompatibilityError(msg("api.incompatibleResponse"));
     }
     return payload;
   } catch (error) {
@@ -2786,9 +2850,18 @@ async function login(server, password) {
     if (response.status === 409 && payload?.error?.code === "dashboard_config_changed") {
       throw new Error(msg("config.changed"));
     }
-    if (!response.ok || !payload?.session?.sid) {
-      throw new Error(payload?.error?.message || msg("auth.loginFailed"));
+    if (!response.ok || payload?.session?.valid === false) {
+      throw new Error(response.status === 429 ? msg("auth.rateLimited") :
+        payload?.session?.totp === true ? msg("auth.totpRequired") :
+        payload?.error?.message || msg("auth.loginFailed"));
     }
+    if (payload?.session?.valid !== true || typeof payload.session.sid !== "string" ||
+        !payload.session.sid.trim()) {
+      throw new ApiCompatibilityError(msg("api.incompatibleResponse"));
+    }
+    server.configWriteDenied = false;
+    server.apiVersionState = "unknown";
+    server.apiVersion = null;
     server.sid = payload.session.sid;
     server.connected = true;
     server.unverified = false;
