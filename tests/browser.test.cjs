@@ -3081,3 +3081,53 @@ test('Issue #9 Codex: truncated queries remain warned when another instance is u
     assert.equal(await page.locator('#qArea tbody tr').count(), 21);
     await assertNoCorruption(fixture);
   });
+
+
+for (const revoked of [true, false]) {
+  test('Issue #9 Codex: obsolete logout notices do not contradict a replacement session (' +
+    (revoked ? 'confirmed revoke' : 'failed revoke') + ')',
+    /** An old DELETE completion must never announce logout after a new session has authenticated. */
+    async t => {
+      const fixture = await openDashboard(t, { language: 'en' });
+      const { page } = fixture;
+      await page.evaluate(
+        /** Hold the old remote revoke until the UI has accepted a fresh login. */
+        () => {
+          const originalFetch = window.fetch;
+          let release;
+          window.__oldRevokeResponse = new Promise(resolve => { release = resolve; });
+          window.__releaseOldRevoke = release;
+          window.fetch = (url, init) => String(url).endsWith('/auth') && init?.method === 'DELETE'
+            ? window.__oldRevokeResponse
+            : originalFetch(url, init);
+        });
+      await page.locator('[data-logout="1"]').first().click();
+      await page.locator('[data-loginform="1"]').waitFor();
+      await page.locator('[data-loginpw="1"]').fill('replacement-password');
+      await page.locator('[data-loginform="1"] button').click();
+      await page.waitForFunction(
+        /** Observe the replacement session before allowing the obsolete DELETE to finish. */
+        () => serverById('1')?.sid === 'fixture-login-1' && serverById('1').connected
+      );
+      await page.evaluate(
+        /** Deliver either a confirmed revoke or a remote failure for the already retired SID. */
+        revokedSuccessfully => {
+          window.__releaseOldRevoke(revokedSuccessfully
+            ? new Response(null, { status: 204 })
+            : new Response(JSON.stringify({ error: { message: 'synthetic revoke failure' } }), {
+                status: 503,
+                headers: { 'Content-Type': 'application/json' }
+              }));
+        }, revoked);
+      await page.evaluate(
+        /** Flush the old async handler and its toast microtasks before checking the user interface. */
+        () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      );
+      assert.equal(await page.locator('.toast').filter({ hasText: /Logged out|Logged out locally/u }).count(), 0,
+        'An obsolete logout completion cannot override the current authenticated status');
+      assert.equal(await page.evaluate(/** Read the active session after the old revoke settles. */
+        () => serverById('1')?.sid), 'fixture-login-1');
+      assert.equal(await page.locator('#serverPills .pill.on').count(), 2);
+      await assertNoCorruption(fixture);
+    });
+}
