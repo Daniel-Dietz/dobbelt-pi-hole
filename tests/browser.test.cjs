@@ -493,6 +493,8 @@ async function openDashboard(t, options = {}) {
         return route.fulfill({ status: 201, body: '' });
       } else if (endpoint.startsWith('/config/dns/hosts/') && method === 'DELETE') {
         data.hosts = data.hosts.filter(/** Remove only the complete local-DNS entry encoded in the request path. */ row => row !== decodeURIComponent(endpoint.slice('/config/dns/hosts/'.length)));
+        // Match Pi-hole v6: deleting a configuration array item returns HTTP 204 without a body.
+        return route.fulfill({ status: 204, body: '' });
       } else if (endpoint === '/lists' && method === 'POST') {
         data.lists.push(...body.address.map(/** Create enabled list records using the requested allow/block type and shared payload fields. */ address => ({
           ...body,
@@ -3387,7 +3389,7 @@ for (const language of ['da', 'en', 'de']) {
       );
       await page.locator('#hostForm button[type="submit"]').click();
       const response = await responsePromise;
-      assert.equal(await response.body().then(buffer => buffer.length), 0);
+      assert.equal(response.status(), 201, 'The fixture acknowledges a bodyless config PUT by status alone');
       await page.waitForFunction(
         /** A confirmed PUT clears the submitted draft after the observed server response. */
         () => document.querySelector('#hName')?.value === ''
