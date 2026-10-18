@@ -3220,8 +3220,8 @@ async function renderDashboard(container, generation) {
     }
     try {
       const [summaryResponse, blockingResponse] = await Promise.all([
-        apiCall(requestedServer, "/stats/summary", { signal: controller.signal }),
-        apiCall(requestedServer, "/dns/blocking", { signal: controller.signal })
+        apiCall(requestedServer, "/stats/summary", { signal: controller.signal }).then(requireSummaryResult),
+        apiCall(requestedServer, "/dns/blocking", { signal: controller.signal }).catch(/** Preserve verified query totals when only blocking is unavailable. */ () => null)
       ]);
       // Optional charts must not delay an already confirmed summary card.
       if (ownsView()) {
@@ -3302,12 +3302,14 @@ async function renderDashboard(container, generation) {
     const gravityStats = summaryResult.summary.gravity || {};
     combinedQueries += Number(queryStats.total) || 0;
     combinedBlockedQueries += Number(queryStats.blocked) || 0;
-    const blockingState = summaryResult.blocking && summaryResult.blocking.blocking;
-    const blockingEnabled = blockingState === true || blockingState === "enabled";
+    const mode = blockingMode(summaryResult.blocking?.blocking);
+    const blockingEnabled = mode === "enabled";
+    const blockingDisabled = mode === "disabled";
+    const actionable = (blockingEnabled || blockingDisabled) && summaryServer.apiVersionState !== "unsupported";
     return `<div class="card">
 					<h2 class="flex-between">
 						<span><span class="tag tag-${summaryServer.chip.slice(1)}">${escapeHtml(summaryServer.label)}</span></span>
-						<span class="badge ${blockingEnabled ? "on" : "off"}">${htmlMsg(blockingEnabled ? "dashboard.blockingEnabled" : "dashboard.blockingDisabled")}</span>
+						<span class="badge ${blockingEnabled ? "on" : blockingDisabled ? "off" : ""}" data-blocking-state="${mode}">${htmlMsg("dashboard.blocking" + mode[0].toUpperCase() + mode.slice(1))}</span>
 					</h2>
 					<div class="big-num">${fmtNum(queryStats.total)}</div>
 					<div class="sub">${escapeHtml(msgCount("dashboard.queriesToday", queryStats.total))}</div>
@@ -3320,9 +3322,9 @@ async function renderDashboard(container, generation) {
 					<div class="stat-row"><span class="k">${htmlMsg("dashboard.gravityUpdated")}</span><span class="v">${fmtDate(gravityStats.last_update)}</span></div>
 					<hr class="sep">
 					<div class="row-inline">
-						<button class="btn xs ${blockingEnabled ? "danger" : "success"}" data-toggle-block="${summaryServer.id}" data-newstate="${blockingEnabled ? "off" : "on"}">
-						${htmlMsg(blockingEnabled ? "dashboard.disableBlocking" : "dashboard.enableBlocking")}
-						</button>
+${actionable ? `<button class="btn xs ${blockingEnabled ? "danger" : "success"}" data-toggle-block="${summaryServer.id}" data-newstate="${blockingEnabled ? "off" : "on"}">
+              ${htmlMsg(blockingEnabled ? "dashboard.disableBlocking" : "dashboard.enableBlocking")}
+            </button>` : `<span class="sub" data-blocking-unavailable="${summaryServer.id}">${htmlMsg("dashboard.blockingNotActionable")}</span>`}
 						<button class="btn xs" data-logout="${summaryServer.id}">${htmlMsg("dashboard.logout")}</button>
 					</div>
 					</div>`;
@@ -3341,12 +3343,14 @@ async function renderDashboard(container, generation) {
       const blockingServer = serverById(blockingButton.dataset.toggleBlock);
       blockingButton.disabled = true;
       try {
-        await apiCall(blockingServer, "/dns/blocking", {
+        const desiredMode = blockingButton.dataset.newstate === "on" ? "enabled" : "disabled";
+        const response = await apiCall(blockingServer, "/dns/blocking", {
           method: "POST",
-          body: {
-            blocking: blockingButton.dataset.newstate === "on"
-          }
+          body: { blocking: desiredMode === "enabled" }
         });
+        if (blockingMode(response?.blocking) !== desiredMode) {
+          throw new ApiCompatibilityError(msg("dashboard.blockingUnconfirmed"));
+        }
         toast(msg(blockingButton.dataset.newstate === "on" ? "dashboard.blockingEnabledToast" : "dashboard.blockingDisabledToast", {
           server: blockingServer.label
         }), "ok");
@@ -3384,7 +3388,8 @@ async function renderDashboard(container, generation) {
    * @returns {string} Ranked-list markup.
    */
   function renderTopEntries(entries, entryTotal, entryBarClass, limit = 5, labelForEntry = null) {
-    return entries && entries.length !== 0 ? [...entries].sort(/** Put the most frequently queried entries first, treating missing counts as zero. */ (leftEntry, rightEntry) => (rightEntry.count || 0) - (leftEntry.count || 0)).slice(0, limit).map(/** Choose the entry's display label and render its count against the list total. */ entry => renderStatBar(labelForEntry ? labelForEntry(entry) : entry.domain || entry.name || entry.ip || "–", entry.count || 0, entryTotal, entryBarClass)).join("") : `<p class="sub">${htmlMsg("dashboard.noData")}</p>`;
+    if (!Array.isArray(entries)) return `<p class="sub">${htmlMsg("dashboard.detailsUnavailable")}</p>`;
+    return entries.length !== 0 ? [...entries].sort(/** Put the most frequently queried entries first, treating missing counts as zero. */ (leftEntry, rightEntry) => (rightEntry.count || 0) - (leftEntry.count || 0)).slice(0, limit).map(/** Choose the entry's display label and render its count against the list total. */ entry => renderStatBar(labelForEntry ? labelForEntry(entry) : entry.domain || entry.name || entry.ip || "–", entry.count || 0, entryTotal, entryBarClass)).join("") : `<p class="sub">${htmlMsg("dashboard.noData")}</p>`;
   }
   const availableResults = serverResults.filter(/** Include details and charts only for connected instances with a usable summary. */ candidateResult => candidateResult.server.connected && candidateResult.summary);
   detailGrid.innerHTML = availableResults.map(/** Build an instance's domain, client and query-type detail card from the available responses. */ detailResult => {
