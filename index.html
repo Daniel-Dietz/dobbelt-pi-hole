@@ -5749,7 +5749,7 @@ async function renderGravity(container, generation) {
  * and Pi-hole configuration are never written by this settings view.
  * @param {HTMLElement} container Active-tab container to populate.
  */
-async function renderSettings(container) {
+async function renderSettings(container, generation) {
   container.innerHTML = `
     <details class="help">
       <summary>${htmlMsg("settings.helpSummary")}</summary>
@@ -5760,10 +5760,16 @@ async function renderSettings(container) {
         <p>${htmlMsg("settings.proxyConfiguration")}</p>
         <h3>${htmlMsg("settings.appPasswordTitle")}</h3>
         <p>${htmlMsg("settings.appPasswordHelp")}</p>
+        <p>${htmlMsg("settings.permissionsHelp")}</p>
         <h3>${htmlMsg("settings.sessionsTitle")}</h3>
         <p>${htmlMsg("settings.sessionsHelp")}</p>
       </div>
     </details>
+    <div class="card">
+      <h2>${htmlMsg("settings.apiVersionTitle")}</h2>
+      <p class="sub">${htmlMsg("settings.apiVersionHelp")}</p>
+      <div id="apiVersions" aria-live="polite"></div>
+    </div>
     <div class="card">
       <h2>${htmlMsg("settings.title")}</h2>
       <form id="settingsForm">
@@ -5779,6 +5785,42 @@ async function renderSettings(container) {
         </div>
       </form>
     </div>`;
+  const versionArea = document.getElementById("apiVersions");
+  /**
+   * Display the reported FTL version without exposing a SID or the upstream URL.
+   * Missing version information is unknown, never assumed compatible.
+   */
+  function paintApiVersionStatuses() {
+    if (generation !== state.renderGen || !versionArea.isConnected) return;
+    versionArea.innerHTML = state.servers.map(
+      /** Render only escaped target labels and the read-only version string. */
+      server => {
+        const status = !server.connected ? "offline" : server.apiVersionState || "unknown";
+        const key = "settings.apiVersion" + status[0].toUpperCase() + status.slice(1);
+        return `<p class="sub" data-api-support="${escapeHtml(status)}" data-api-server="${escapeHtml(server.id)}"><b>${escapeHtml(server.label)}</b>: ${htmlMsg(key)}${server.apiVersion ? ` — ${escapeHtml(server.apiVersion)}` : ""}</p>`;
+      }).join("");
+  }
+  paintApiVersionStatuses();
+  void Promise.all(state.servers.map(
+    /** Request only documented read-only version information for each connected instance. */
+    async server => {
+      if (!server.connected) return;
+      const sid = server.sid;
+      try {
+        const response = await apiCall(server, "/info/version");
+        if (generation !== state.renderGen || server.sid !== sid) return;
+        const details = apiVersionInfo(response);
+        server.apiVersionState = details.state;
+        server.apiVersion = details.version;
+      } catch {
+        if (generation !== state.renderGen || server.sid !== sid) return;
+        server.apiVersionState = "unknown";
+        server.apiVersion = null;
+      } finally {
+        paintApiVersionStatuses();
+      }
+    }
+  ));
   const form = document.getElementById("settingsForm");
   const labelInputs = [...form.querySelectorAll("[data-label]")];
   const validateLabel = /** Set the browser's localized validation message for an invalid personal server name. */ input => input.setCustomValidity(validLocalLabel(input.value) ? "" : msg("settings.invalidName"));
