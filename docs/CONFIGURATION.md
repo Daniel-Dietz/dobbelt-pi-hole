@@ -71,8 +71,12 @@ do not claim to enforce an nginx or Pi-hole server-side deadline.
 | Gravity response stream, including continuous output | 30 minutes (absolute) |
 
 A timeout or transport error is **not** proof that a valid Pi-hole session has
-expired. The browser keeps its route-bound SID and marks the connection
-unverified, with a manual retry control. An explicit HTTP 401 invalidates only
+expired. During a **restored-session probe**, the browser retains its
+route-bound SID, marks this connection unverified and offers a manual retry.
+During ordinary API requests, a timeout retains the SID and the previous
+connection indicator, but reports the individual operation as failed or
+unconfirmed; it does **not** automatically switch to the unverified state or
+show the session-retry control. An explicit HTTP 401 invalidates only
 the session that was actually used by that request; an older 401 cannot delete
 a subsequent successful login. Navigation and changed time ranges cancel
 obsolete dashboard or query-history reads and their paginated cursor requests.
