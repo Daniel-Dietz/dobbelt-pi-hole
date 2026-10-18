@@ -3138,3 +3138,230 @@ for (const revoked of [true, false]) {
       await assertNoCorruption(fixture);
     });
 }
+
+
+for (const [language, labels] of Object.entries({
+  da: { enabled: 'blokerer', disabled: 'slået fra', failed: 'blokering mislykkedes', unknown: 'blokeringsstatus ukendt' },
+  en: { enabled: 'blocking', disabled: 'disabled', failed: 'blocking failed', unknown: 'blocking status unknown' },
+  de: { enabled: 'Blockierung aktiv', disabled: 'Blockierung deaktiviert', failed: 'Blockierung fehlgeschlagen', unknown: 'Blockierungsstatus unbekannt' }
+})) {
+  test('Issue #10: blocking modes remain distinct and safe (' + language + ')',
+    /** Never mistake unknown or failed blocking for an explicit disabled state. */
+    async t => {
+      const fixture = await openDashboard(t, { language });
+      const { page } = fixture;
+      for (const mode of ['enabled', 'disabled', 'failed', 'unknown']) {
+        fixture.serverData['1'].blocking = mode;
+        await page.evaluate(
+          /** Re-read the status through the real dashboard renderer. */
+          () => switchTab('dashboard')
+        );
+        const firstCard = page.locator('#dashGrid > .card').first();
+        const status = firstCard.locator('[data-blocking-state]');
+        assert.equal(await status.getAttribute('data-blocking-state'), mode);
+        assert.equal(await status.textContent(), labels[mode]);
+        const toggle = firstCard.locator('[data-toggle-block="1"]');
+        assert.equal(await toggle.count(), mode === 'enabled' || mode === 'disabled' ? 1 : 0);
+        if (mode === 'enabled') assert.equal(await toggle.getAttribute('data-newstate'), 'off');
+        if (mode === 'disabled') assert.equal(await toggle.getAttribute('data-newstate'), 'on');
+        if (mode === 'failed' || mode === 'unknown') {
+          assert.equal(await firstCard.locator('[data-blocking-unavailable="1"]').count(), 1);
+        }
+      }
+      fixture.serverData['1'].blocking = 'undocumented-value';
+      await page.evaluate(
+        /** Unknown API enum values are not safe to treat as disabled. */
+        () => switchTab('dashboard')
+      );
+      assert.equal(await page.locator('#dashGrid > .card').first()
+        .locator('[data-blocking-state]').getAttribute('data-blocking-state'), 'unknown');
+      assert.equal(await page.locator('[data-toggle-block="1"]').count(), 0);
+      await assertNoCorruption(fixture);
+    });
+}
+
+test('Issue #10: a successful HTTP status without a confirmed new blocking state is not success',
+  /** Do not show a green mutation result for an unconfirmed Pi-hole blocking change. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    let intercepted = 0;
+    await fixture.page.route('**/dns/blocking',
+      /** Replace only target-one POST response with a syntactically valid but uncertain state. */
+      route => {
+        const request = route.request();
+        if (request.method() === 'POST' && new URL(request.url()).pathname.includes('/api1/')) {
+          intercepted++;
+          return route.fulfill({
+            status: 200, contentType: 'application/json',
+            body: JSON.stringify({ blocking: 'unknown' })
+          });
+        }
+        return route.fallback();
+      });
+    await fixture.page.locator('[data-toggle-block="1"]').click();
+    await fixture.page.locator('.toast.err').filter({ hasText: /did not confirm the requested blocking state/u }).waitFor();
+    assert.equal(intercepted, 1);
+    assert.equal(await fixture.page.locator('.toast.ok').filter({ hasText: /blocking disabled/u }).count(), 0);
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #10: forbidden configuration write retains readable app session and suppresses later writes',
+  /** A known HTTP 403 is a permission failure, not a lost login or an empty hosts collection. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'de', hash: 'hosts' });
+    const { page } = fixture;
+    let interceptedWrites = 0;
+    await page.route('**/config/dns/hosts/*',
+      /** Only refuse the host write; the existing hosts GET and unrelated API reads remain successful. */
+      route => {
+        if (route.request().method() === 'PUT') {
+          interceptedWrites++;
+          return route.fulfill({
+            status: 403, contentType: 'application/json',
+            body: JSON.stringify({ error: { key: 'forbidden', message: 'Access denied' } })
+          });
+        }
+        return route.fallback();
+      });
+    await page.locator('#targetHost').selectOption('1');
+    await page.locator('#hIp').fill('192.168.1.87');
+    await page.locator('#hName').fill('restricted.example');
+    await page.locator('#hostForm button[type="submit"]').click();
+    await page.locator('[data-host-write-denied="true"]').waitFor();
+    assert.equal(interceptedWrites, 1);
+    assert.match(await page.locator('[data-host-write-denied="true"]').textContent(), /Konfigurationsänderungen/u);
+    assert.equal(await page.locator('#hName').inputValue(), 'restricted.example');
+    const readState = await page.evaluate(
+      /** A refused write must not destroy a working read session or its SID. */
+      async () => {
+        const server = serverById('1');
+        const data = await apiCall(server, '/clients');
+        return {
+          connected: server.connected, sid: server.sid,
+          denied: server.configWriteDenied, clients: data.clients.length
+        };
+      });
+    assert.deepEqual(readState, {
+      connected: true, sid: 'fixture-sid-1', denied: true, clients: 1
+    });
+    await page.locator('#hostForm button[type="submit"]').click();
+    await page.locator('.toast.err').last().waitFor();
+    assert.equal(interceptedWrites, 1, 'Known restricted configuration writes must not be replayed');
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #10: malformed summary or HTML response cannot fabricate confirmed query totals',
+  /** Keep healthy peer data while representing unsupported and incomplete API data as unavailable. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page } = fixture;
+    await page.route('**/stats/summary',
+      /** Return an incomplete success payload only for the first configured instance. */
+      route => new URL(route.request().url()).pathname.includes('/api1/')
+        ? route.fulfill({
+            status: 200, contentType: 'application/json',
+            body: JSON.stringify({ queries: { total: 12345 } })
+          })
+        : route.fallback());
+    await page.evaluate(
+      /** Re-read totals after interception, rather than assuming the old dashboard state is current. */
+      () => switchTab('dashboard')
+    );
+    assert.equal(await page.locator('#dashGrid > .card').first()
+      .locator('[data-blocking-state]').count(), 0);
+    assert.match(await page.locator('#dashGrid > .card').first().textContent(), /Could not load status/u);
+    assert.equal(await page.locator('#dashGrid > .card').last().locator('.big-num').textContent(), '12,345');
+    const invalid = await page.evaluate(
+      /** A 200 HTML login page is not a successful Pi-hole API response. */
+      async () => {
+        const orig = window.fetch;
+        window.fetch = (url, options) => String(url).endsWith('/clients')
+          ? Promise.resolve(new Response('<html>login</html>', { status: 200, headers: { 'Content-Type': 'text/html' } }))
+          : orig(url, options);
+        try {
+          await apiCall(serverById('1'), '/clients');
+          return false;
+        } catch (error) {
+          return error instanceof ApiCompatibilityError;
+        } finally {
+          window.fetch = orig;
+        }
+      });
+    assert.equal(invalid, true);
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #10: v6 read-only detection, unsupported major and unknown version are distinct',
+  /** Version metadata does not imply config sudo privileges; an explicitly incompatible major blocks writes. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'da' });
+    fixture.serverData['2'].ftlVersion = 'v5.18.0';
+    await visit(fixture.page, 'settings');
+    await fixture.page.locator('[data-api-server="1"][data-api-support="supported"]').waitFor();
+    await fixture.page.locator('[data-api-server="2"][data-api-support="unsupported"]').waitFor();
+    const output = await fixture.page.evaluate(
+      /** Version verification must not log out an instance; known non-v6 writes fail before network access. */
+      async () => {
+        const server = serverById('2');
+        const before = server.sid;
+        const read = await apiCall(server, '/clients');
+        let refused = false;
+        try {
+          await apiCall(server, '/dns/blocking', { method: 'POST', body: { blocking: false } });
+        } catch (error) {
+          refused = error instanceof ApiCompatibilityError;
+        }
+        return { refused, connected: server.connected, sameSid: before === server.sid, clients: read.clients.length };
+      });
+    assert.deepEqual(output, { refused: true, connected: true, sameSid: true, clients: 1 });
+    assert.equal(fixture.requests.filter(
+      /** The unsupported instance must never receive an actual blocking mutation. */
+      request => request.id === '2' && request.method === 'POST' && request.path === '/dns/blocking'
+    ).length, 0);
+    fixture.serverData['2'].ftlVersion = null;
+    await visit(fixture.page, 'dashboard');
+    await visit(fixture.page, 'settings');
+    await fixture.page.locator('[data-api-server="2"][data-api-support="unknown"]').waitFor();
+    await assertNoCorruption(fixture);
+  });
+
+for (const language of ['da', 'en', 'de']) {
+  test('Issue #10: invalid authenticated-session payload never installs an SID (' + language + ')',
+    /** A 200 response with a valid=false session or missing valid field is incompatible with successful login. */
+    async t => {
+      const fixture = await openDashboard(t, { language, connected: false });
+      const result = await fixture.page.evaluate(
+        /** Return two incompatible session payloads without making real Pi-hole requests. */
+        async () => {
+          const originalFetch = window.fetch;
+          const server = serverById('1');
+          const results = [];
+          try {
+            for (const session of [
+              { valid: false, sid: 'must-not-be-used' },
+              { sid: 'missing-valid-flag' }
+            ]) {
+              window.fetch = (url, options) => String(url).endsWith('/auth') && options?.method === 'POST'
+                ? Promise.resolve(new Response(JSON.stringify({ session }), {
+                    status: 200, headers: { 'Content-Type': 'application/json' }
+                  }))
+                : originalFetch(url, options);
+              try {
+                await login(server, 'fixture-password');
+                results.push('unexpected-success');
+              } catch (error) {
+                results.push(error instanceof ApiCompatibilityError ? 'incompatible' : 'denied');
+              }
+              if (server.connected || server.sid || sessionStorage.getItem(sessionStorageKey(server))) {
+                results.push('credential-installed');
+              }
+            }
+          } finally {
+            window.fetch = originalFetch;
+          }
+          return results;
+        });
+      assert.deepEqual(result, ['denied', 'incompatible']);
+      await assertNoCorruption(fixture);
+    });
+}
