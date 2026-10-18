@@ -2429,3 +2429,63 @@ for (const scenario of [
       await assertNoCorruption(fixture);
     });
 }
+
+for (const rejectedReply of [false, true]) {
+  test('Issue #8 Codex: partially successful suggestions refresh clients when the other target ' +
+    (rejectedReply ? 'rejects the write' : 'drops the response'),
+    /**
+     * A successful suggestion add must appear in the client inventory even if a
+     * second target is rejected or its mutation reply is lost. The suggestion
+     * must stop offering an add action once it is known on a healthy instance.
+     */
+    async t => {
+      const fixture = await openDashboard(t, { language: 'en' });
+      const { page, serverData, requests } = fixture;
+      await visit(page, 'clients');
+      const suggestionId = 'AA:BB:CC:DD:EE:01';
+      let failedTargetAttempts = 0;
+      await page.route('**/*',
+        /** Reject or interrupt the second instance's POST without affecting instance one. */
+        async route => {
+          const request = route.request();
+          const url = new URL(request.url());
+          if (request.method() === 'POST' && url.pathname.includes('/api2/') &&
+              url.pathname.endsWith('/clients')) {
+            failedTargetAttempts++;
+            if (rejectedReply) {
+              return route.fulfill({
+                status: 403,
+                contentType: 'application/json',
+                body: JSON.stringify({ error: { message: 'synthetic forbidden' } })
+              });
+            }
+            return route.abort('failed');
+          }
+          return route.fallback();
+        });
+      await page.locator('[data-add-sugg]').first().click();
+      await page.waitForFunction(
+        /** Wait for the confirmed first-server client to appear in the reloaded table. */
+        id => (document.querySelector('#clientArea')?.textContent || '').includes(id),
+        suggestionId
+      );
+      assert.ok(serverData['1'].clients.some(
+        /** Only the healthy instance must contain the successful added record. */
+        record => record.client === suggestionId
+      ));
+      assert.equal(serverData['2'].clients.some(
+        /** The failed target must not be silently counted as a success. */
+        record => record.client === suggestionId
+      ), false);
+      assert.equal(await page.locator('[data-add-sugg][data-key="' + suggestionId + '"]').count(), 0,
+        'A confirmed client must disappear from the suggested-add controls');
+      const actualWrites = requests.filter(
+        /** Count real HTTP writes, not the number of displayed toast messages. */
+        request => request.path === '/clients' && request.method === 'POST'
+      );
+      assert.equal(actualWrites.length, 1, 'The original fixture receives exactly one healthy-target write');
+      assert.equal(failedTargetAttempts, 1, 'The separate rejected-target interceptor sees exactly one write');
+      assert.ok((await page.locator('#toastArea').textContent()).includes('change confirmed'));
+      await assertNoCorruption(fixture);
+    });
+}

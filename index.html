@@ -4832,8 +4832,11 @@ async function renderClients(container, generation) {
             body: { client: [addButton.dataset.key], comment, groups: [0] }
           })
         });
-        if (outcomes?.every(result => ["confirmed", "unchanged"].includes(result.status))
-          && container.isConnected && generation === state.renderGen) loadClientData();
+        // A partial success still changes the merged client inventory. Refresh the
+        // current view, including after a language rerender replaces this handler.
+        if (outcomes && state.activeTab === "clients") {
+          document.getElementById("clientReload")?.click();
+        }
       });
     }
     const previousPageButton = document.getElementById("suggPagePrev");
