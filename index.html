@@ -5415,42 +5415,41 @@ async function renderGravity(container, generation) {
    */
   async function update(server) {
     const run = runFor(server);
-    if (run.running || !server.connected) {
-      return;
-    }
-    Object.assign(run, {
-      rawLog: "",
-      running: true,
-      status: "running",
-      error: "",
-      httpStatus: null
-    });
+    if (run.running || !server.connected) return;
+    Object.assign(run, { rawLog: "", running: true, status: "running", error: "", httpStatus: null });
     paint(server);
+    const controller = new AbortController();
+    let idleTimer = null;
+    let idleExpired = false;
+    /** Renew the inactivity deadline after each received Gravity output chunk. */
+    function refreshIdleDeadline() {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(/** Abort a silent stream instead of leaving its controls locked forever. */ () => {
+        idleExpired = true;
+        controller.abort();
+      }, GRAVITY_IDLE_TIMEOUT_MS);
+    }
     try {
       const response = await apiCall(server, "/action/gravity?color=true", {
-        method: "POST",
-        rawResponse: true
+        method: "POST", rawResponse: true, signal: controller.signal,
+        timeoutMs: GRAVITY_STREAM_TIMEOUT_MS
       });
       if (response.ok && response.body) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         try {
+          refreshIdleDeadline();
           for (;;) {
-            const {
-              value,
-              done
-            } = await reader.read();
-            if (done) {
-              break;
-            }
-            run.rawLog += decoder.decode(value, {
-              stream: true
-            });
+            const { value, done } = await reader.read();
+            if (done) break;
+            run.rawLog += decoder.decode(value, { stream: true });
+            refreshIdleDeadline();
             paint(server);
           }
           run.rawLog += decoder.decode();
           run.status = "done";
         } finally {
+          clearTimeout(idleTimer);
           reader.releaseLock();
         }
         await refreshLastUpdate(server);
@@ -5460,8 +5459,10 @@ async function renderGravity(container, generation) {
       }
     } catch (error) {
       run.status = "error";
-      run.error = error.message;
+      run.error = idleExpired || error instanceof RequestTimeoutError || error.name === "TimeoutError"
+        ? msg("gravity.streamTimeout") : error.message;
     } finally {
+      clearTimeout(idleTimer);
       run.running = false;
       paint(server);
     }
