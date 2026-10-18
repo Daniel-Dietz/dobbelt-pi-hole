@@ -198,6 +198,7 @@ async function openDashboard(t, options = {}) {
     holdInitialSessions = false,
     holdSummaryServer = null,
     holdQueriesServer = null,
+    holdOptionalServer = null,
     contentSecurityPolicy = null,
     origin = ORIGIN,
     html = readFileSync(HTML_PATH, 'utf8'),
@@ -271,6 +272,7 @@ async function openDashboard(t, options = {}) {
   const initialSessionGate = holdInitialSessions ? pauseReads('/dns/blocking', typeof holdInitialSessions === 'string' ? holdInitialSessions : null) : null;
   const summaryGate = holdSummaryServer ? pauseReads('/stats/summary', holdSummaryServer) : null;
   const queriesGate = holdQueriesServer ? pauseReads('/queries', holdQueriesServer) : null;
+  const optionalGate = holdOptionalServer ? pauseReads('/stats/top_clients', holdOptionalServer) : null;
   const serverData = Object.fromEntries([1, 2, 3, 4].map(/** Allocate independent writable API data for each possible instance so mutations cannot leak between fixtures. */ id => [String(id), {
     blocking: true,
     domains: [{
@@ -673,7 +675,8 @@ async function openDashboard(t, options = {}) {
     pauseReads,
     initialSessionGate,
     summaryGate,
-    queriesGate
+    queriesGate,
+    optionalGate
   };
 }
 
@@ -2972,3 +2975,109 @@ for (const language of ['da', 'en', 'de']) {
       await assertNoCorruption(fixture);
     });
 }
+
+
+test('Issue #9 Codex: an optional slow endpoint cannot hold back the healthy summary',
+  /** A blocked optional top-clients request must not delay the confirmed summary preview. */
+  async t => {
+    const fixture = await openDashboard(t, {
+      language: 'de', holdOptionalServer: '1', waitForReady: false
+    });
+    const { page, optionalGate } = fixture;
+    await page.locator('[data-dashboard-preview="1"]').waitFor();
+    assert.ok(optionalGate.arrived > 0, 'Top clients must still be held when the summary appears');
+    assert.equal(await page.locator('[data-dashboard-preview="1"] .big-num').textContent(), (12345).toLocaleString('de-DE'));
+    optionalGate.release();
+    await page.locator('#dashGrid [data-toggle-block="1"]').waitFor();
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #9 Codex: Gravity 401 restores login without leaving the view',
+  /** A raw-stream 401 must update the instance pill and expose a working login form on Gravity. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en', hash: 'gravity' });
+    const { page } = fixture;
+    await page.evaluate(
+      /** Intercept the next Gravity update as a rejected session while preserving all other requests. */
+      () => {
+        const originalFetch = window.fetch;
+        window.fetch = (url, init) =>
+          String(url).includes('/action/gravity?') && init?.method === 'POST'
+            ? Promise.resolve(new Response(null, { status: 401 }))
+            : originalFetch(url, init);
+      }
+    );
+    await page.locator('#gravBtn1').click();
+    await page.locator('#gravLogin1 [data-loginform="1"]').waitFor();
+    assert.equal(await page.locator('#serverPills .pill.on').count(), 1);
+    assert.equal(await page.locator('#gravBtn1').isDisabled(), true);
+    assert.equal(await page.locator('[data-tab="gravity"]').getAttribute('class'), 'active');
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #9 Codex: Gravity pre-stream timeout uses normal request deadline wording',
+  /** A timed-out POST before headers arrive must not claim that a stream timed out. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'da', hash: 'gravity', fakeClock: true });
+    const { page } = fixture;
+    await page.evaluate(
+      /** Hold the next Gravity POST until its request signal aborts. */
+      () => {
+        const originalFetch = window.fetch;
+        window.fetch = (url, init) =>
+          String(url).includes('/action/gravity?') && init?.method === 'POST'
+            ? new Promise((resolve, reject) => {
+              init.signal.addEventListener('abort',
+                /** Propagate the aborted header wait into the API deadline classifier. */
+                () => reject(new DOMException('request cancelled', 'AbortError')), { once: true });
+            })
+            : originalFetch(url, init);
+      }
+    );
+    await page.locator('#gravBtn1').click();
+    await page.clock.runFor(15001);
+    const result = await page.evaluate(
+      /** Read the failed operation and both locale-sensitive status messages. */
+      () => ({
+        actual: state.gravityRuns.get('1')?.error,
+        status: state.gravityRuns.get('1')?.status,
+        expected: msg('common.requestTimeout'),
+        stream: msg('gravity.streamTimeout')
+      })
+    );
+    assert.equal(result.status, 'error');
+    assert.equal(result.actual, result.expected);
+    assert.notEqual(result.actual, result.stream);
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #9 Codex: truncated queries remain warned when another instance is unavailable',
+  /** Never call a 20-page cursor cap complete or hide its guidance behind partial coverage. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en', hash: 'queries' });
+    const { page } = fixture;
+    await page.evaluate(
+      /** Force one peer's pagination to remain open while the other instance is disconnected. */
+      () => {
+        const first = serverById('1');
+        serverById('2').connected = false;
+        const originalFetch = window.fetch;
+        window.fetch = (url, init) => String(url).startsWith(first.base + '/queries?')
+          ? Promise.resolve(new Response(JSON.stringify({
+              queries: [{time: 1700000000, domain: 'capped.example', type: 'A', status: 'FORWARDED'}],
+              cursor: 'never-ending'
+            }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+          : originalFetch(url, init);
+      }
+    );
+    await page.locator('#qReload').click();
+    await page.waitForFunction(
+      /** Wait for the cursor limit to become visible after all twenty follow-up pages. */
+      () => document.querySelector('#qStatus')?.textContent.includes('Narrow the time range')
+    );
+    const status = await page.locator('#qStatus').textContent();
+    assert.match(status, /Partial data:/u);
+    assert.match(status, /Narrow the time range/u);
+    assert.equal(await page.locator('#qArea tbody tr').count(), 21);
+    await assertNoCorruption(fixture);
+  });
