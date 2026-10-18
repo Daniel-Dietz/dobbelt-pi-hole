@@ -2751,7 +2751,10 @@ async function apiCall(server, path, {
     if (rawResponse) return response;
     if (response.status === 204) return null;
     const payload = (response.headers.get("content-type") || "").includes("application/json")
-      ? await response.json().catch(/** Invalid JSON must not be treated as a successful collection. */ () => null)
+      ? await response.json().catch(/** Preserve aborts and deadlines; only malformed complete JSON may fall back to null. */ error => {
+        if (signal.aborted) throw error;
+        return null;
+      })
       : await response.text();
     if (!response.ok) {
       const failure = new Error(payload?.error?.message || (typeof payload === "string" ? payload : "HTTP " + response.status));
