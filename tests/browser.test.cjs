@@ -3367,3 +3367,97 @@ for (const language of ['da', 'en', 'de']) {
       await assertNoCorruption(fixture);
     });
 }
+
+
+for (const language of ['da', 'en', 'de']) {
+  test('Issue #10 Codex: empty 201 host insert is confirmed without duplicating the draft (' + language + ')',
+    /** Match Pi-hole's documented success response instead of assuming every successful PUT has a JSON body. */
+    async t => {
+      const fixture = await openDashboard(t, { language, hash: 'hosts' });
+      const { page, requests } = fixture;
+      await page.locator('#targetHost').selectOption('1');
+      await page.locator('#hIp').fill('192.168.1.181');
+      await page.locator('#hName').fill('new-v6.example');
+      const responsePromise = page.waitForResponse(
+        /** Require the real fixture to return an empty 201 from the intended target. */
+        response => response.request().method() === 'PUT' &&
+          response.status() === 201 &&
+          new URL(response.url()).pathname.endsWith(
+            '/config/dns/hosts/' + encodeURIComponent('192.168.1.181 new-v6.example'))
+      );
+      await page.locator('#hostForm button[type="submit"]').click();
+      const response = await responsePromise;
+      assert.equal(await response.body().then(buffer => buffer.length), 0);
+      await page.waitForFunction(
+        /** A confirmed PUT clears the submitted draft after the observed server response. */
+        () => document.querySelector('#hName')?.value === ''
+      );
+      const exact = requests.filter(
+        /** Count writes for the exact API path to ensure one successful mutation. */
+        request => request.method === 'PUT' &&
+          request.path === '/config/dns/hosts/' + encodeURIComponent('192.168.1.181 new-v6.example')
+      );
+      assert.equal(exact.length, 1);
+      assert.ok(fixture.serverData['1'].hosts.includes('192.168.1.181 new-v6.example'));
+      await assertNoCorruption(fixture);
+    });
+}
+
+test('Issue #10 Codex: empty 201 replacement PUT proceeds to delete old host record',
+  /** A successful 201 insertion must not interrupt the two-stage host address replacement. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'de', hash: 'hosts' });
+    const { page, requests, serverData } = fixture;
+    const oldRecord = '192.168.1.99 Tillad.example';
+    const replacement = '192.168.1.20 Tillad.example';
+    serverData['2'].hosts = [oldRecord];
+    await page.locator('#hostReload').click();
+    const sourceButton = page.locator('[data-sync-target="2"][data-sync-source="1"]').first();
+    await sourceButton.waitFor();
+    const responsePromise = page.waitForResponse(
+      /** Recognize the second step of a real replacement after the 201 PUT. */
+      response => response.request().method() === 'DELETE' &&
+        new URL(response.url()).pathname.endsWith('/config/dns/hosts/' + encodeURIComponent(oldRecord))
+    );
+    const dialogPromise = page.waitForEvent('dialog');
+    const click = sourceButton.click();
+    const dialog = await dialogPromise;
+    await dialog.accept();
+    await click;
+    const response = await responsePromise;
+    assert.equal(response.status(), 204);
+    assert.deepEqual(serverData['2'].hosts, [replacement],
+      'The successful replacement must delete the old entry without leaving a duplicate');
+    const writes = requests.filter(
+      /** Inspect exact write ordering for the target Pi-hole. */
+      request => request.id === '2' && ['PUT', 'DELETE'].includes(request.method) &&
+        request.path.startsWith('/config/dns/hosts/')
+    );
+    assert.deepEqual(writes.map(request => request.method), ['PUT', 'DELETE']);
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #10 Codex: an unrelated empty 201 is not accepted as a valid JSON API response',
+  /** Only documented config-array PUT success may omit its response body. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const result = await fixture.page.evaluate(
+      /** Forge an empty success only for a non-config read endpoint. */
+      async () => {
+        const originalFetch = window.fetch;
+        window.fetch = (url, options) => String(url).endsWith('/clients')
+          ? Promise.resolve(new Response(null, { status: 201 }))
+          : originalFetch(url, options);
+        try {
+          await apiCall(serverById('1'), '/clients');
+          return 'unexpected-success';
+        } catch (error) {
+          return error instanceof ApiCompatibilityError ? 'incompatible' : error.name;
+        } finally {
+          window.fetch = originalFetch;
+        }
+      }
+    );
+    assert.equal(result, 'incompatible');
+    await assertNoCorruption(fixture);
+  });
