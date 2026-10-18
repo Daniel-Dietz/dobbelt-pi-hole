@@ -83,7 +83,8 @@ jobs:
           printf '81ffafe13c37e1b25793b020d446f4d9739b949dadb7f9f79d709a0cad781c2f  %s\n' "$chart_path" | sha256sum --check --status
           printf 'CHART_JS_PATH=%s\n' "$chart_path" >> "$GITHUB_ENV"
       - name: Exercise login, charts, sort controls and narrow layout
-        run: node --test --test-name-pattern='Issue #11 smoke:' tests/browser.test.cjs
+        run: |
+          node --test --test-name-pattern='Issue #11 smoke:' tests/browser.test.cjs
 
   container:
     name: External configuration and Docker behavior
