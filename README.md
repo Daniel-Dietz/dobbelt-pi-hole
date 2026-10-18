@@ -388,12 +388,13 @@ published release artifacts.
 - **Subsequent fix on `main`:** API and login redirects rejected — [#7](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/7), merged in [PR #25](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/25)
 - **Per-instance reliability on `main`:** Verified per-Pi-hole read/write outcomes, safe retry behavior and client-suggestion drafts — [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8), merged in [PR #29](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/29).
 - **Reliable API sessions and query views on `main`:** Bounded request and Gravity deadlines, isolated Pi-hole progress and safe stale-session handling — [#9](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/9), merged in [PR #31](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/31); [main CI](https://github.com/Daniel-Dietz/dobbelt-pi-hole/actions/runs/39106508075) passed.
+- **Pi-hole v6 API compatibility on `main`:** Validated login and response contracts, permission-aware read-only sessions and distinct blocking modes — [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10), merged in [PR #33](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/33). [Main CI](https://github.com/Daniel-Dietz/dobbelt-pi-hole/actions/runs/39110660077) passed.
 
 ## Roadmap
 
 [Tracker #6](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/6) is the
-authoritative progress record. **Snapshot: 2026-10-18 — 3 of 19 work packages
-completed; 16 open. Next: #10.** The table follows its recommended working order.
+authoritative progress record. **Snapshot: 2026-10-18 — 4 of 19 work packages
+completed; 15 open. Next: #11.** The table follows its recommended working order.
 Only the prerequisites column expresses technical dependencies within this
 roadmap; an earlier row is not automatically a prerequisite. The issues define
 scope and acceptance criteria. Future version numbers and delivery dates have
@@ -408,8 +409,8 @@ for #23 or #24.
 | 01 | [#7](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/7) — Reject API/login redirects to other instance routes | Completed | None |
 | 02 | [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8) — Per-instance read/write outcomes, partial failures and unknown data states | Completed | #7 |
 | 03 | [#9](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/9) — Request limits, query-load race protection and distinct session/connection states | Completed | #7, #8 |
-| 04 | [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10) — API compatibility, permissions and failed/unknown blocking states | Open — next | #9 |
-| 05 | [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11) — Preserve drafts; improve keyboard, browser and mobile coverage | Open | #8, #9 |
+| 04 | [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10) — API compatibility, permissions and failed/unknown blocking states | Completed | #9 |
+| 05 | [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11) — Preserve drafts; improve keyboard, browser and mobile coverage | Open — next | #8, #9 |
 | 06 | [#12](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/12) — Configuration preflight, coordinated activation and rollback | Open | None |
 | 07 | [#13](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/13) — Read-only configuration, service and connection diagnostics | Open | #12 |
 | 08 | [#14](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/14) — Log retention and less sensitive nginx access logs | Open | None |
