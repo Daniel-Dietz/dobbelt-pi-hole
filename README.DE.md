@@ -424,9 +424,11 @@ Dokumentationslinks erhalten.
   ausschließlich lesende Versionsprüfungen werden in
   [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10)
   behandelt. Unvollständige API-Antworten gelten weder als leer noch als
-  erfolgreich. Formularentwürfe, Tastaturbedienung und zusätzliche
-  Browser-/Mobiltests bleiben in
-  [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11).
+  erfolgreich. [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11)
+  erhält Entwürfe, Auswahl und Bearbeitungsfokus bei Theme-/Sprachwechseln;
+  die Tabellen besitzen per Tastatur bedienbare Sortierbuttons und `aria-sort`.
+  Firefox, WebKit und schmale Ansichten mit langen deutschen Texten werden in
+  kontrollierten Smoke-Tests geprüft, ohne laufende Schreibaktionen zu verdoppeln.
 - **Konfigurationsänderungen:** Beim Start wird das JSON geprüft. Ein Neustart
   mit ungültiger Eingabe kann den Dienst jedoch unerreichbar lassen. Bewahre
   eine funktionierende Kopie der privaten Konfiguration auf. Getrennte
@@ -556,11 +558,11 @@ stellt kein Failover bereit.
 ## Prüfungen
 
 Der [i18n-Workflow](.github/workflows/i18n.yml) prüft Übersetzungsverhalten,
-Chromium-Browserabläufe mit Testdaten, Konfigurationserzeugung und
-Docker-Integration sowie Proxmox-CLI-Fixtures und die Installation in einem
-Debian-13-Systemd-Testcontainer. Diese Prüfungen belegen keine reale
-Proxmox-Installation oder Wiederherstellung. Firefox, WebKit und eine gezielte
-mobile Smoke-Testmatrix bleiben in #11 offen.
+vollständige Chromium-Regressionen, gezielte Firefox-/WebKit-Smoke-Tests
+und schmale Mobilansichten mit langen deutschen Beschriftungen sowie
+Konfigurationserzeugung, Docker-Integration, Proxmox-CLI-Fixtures und die
+Installation in einem Debian-13-Systemd-Testcontainer. Diese Prüfungen
+belegen keine reale Proxmox-Installation oder Wiederherstellung.
 
 Die Prüfungen ohne zusätzliche Paketabhängigkeiten benötigen Node.js 24 und
 Python und werden im Hauptverzeichnis des Repositorys ausgeführt:
