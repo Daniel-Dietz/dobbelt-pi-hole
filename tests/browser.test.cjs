@@ -489,6 +489,8 @@ async function openDashboard(t, options = {}) {
         data.clients = data.clients.filter(/** Remove only the client selected by the decoded API path. */ row => row.client !== decodeURIComponent(endpoint.slice('/clients/'.length)));
       } else if (endpoint.startsWith('/config/dns/hosts/') && method === 'PUT') {
         data.hosts.push(decodeURIComponent(endpoint.slice('/config/dns/hosts/'.length)));
+        // Match Pi-hole v6: a successful config-array insertion is HTTP 201 without JSON.
+        return route.fulfill({ status: 201, body: '' });
       } else if (endpoint.startsWith('/config/dns/hosts/') && method === 'DELETE') {
         data.hosts = data.hosts.filter(/** Remove only the complete local-DNS entry encoded in the request path. */ row => row !== decodeURIComponent(endpoint.slice('/config/dns/hosts/'.length)));
       } else if (endpoint === '/lists' && method === 'POST') {
