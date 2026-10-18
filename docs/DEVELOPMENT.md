@@ -104,12 +104,17 @@ Browser tests use a deterministic Chart.js fixture by default; CI supplies the
 checksum-verified Chart.js 4.4.1 bundle through `CHART_JS_PATH`. The
 [frontend verification guide](I18N.md#verification) explains that option and how
 to select an existing Chromium executable. CI installs Chromium's Linux system
-dependencies with `npx playwright install --with-deps chromium`.
+dependencies with `npx playwright install --with-deps chromium` and runs two
+independent smoke jobs using `PLAYWRIGHT_BROWSER=firefox` and
+`PLAYWRIGHT_BROWSER=webkit` with their matching browser dependencies.
+The smoke subset is selected with `--test-name-pattern='Issue #11 smoke:'`;
+it covers login, charts, keyboard sorting, DA/EN/DE drafts and a narrow mobile
+viewport without running the entire Chromium-only regression suite three times.
 
 | Test group | Environment and instructions |
 | --- | --- |
 | Translation unit tests | Node.js 24; isolated VM with storage and DOM fixtures, without dashboard startup or real Pi-hole access |
-| Browser tests | Node.js 24, npm dependencies and Chromium; actual page behavior with controlled Pi-hole responses, currently Chromium only |
+| Browser tests | Node.js 24 and pinned Playwright; full Chromium regressions with actual Chart.js, plus targeted Firefox/WebKit smoke and a 390-pixel German mobile layout |
 | Renderer tests | Python standard library; configuration validation and generated files |
 | Docker integration | Docker and OpenSSL; build the deployment image, then run local backend fixtures as described in [configuration checks](CONFIGURATION.md#upgrading-and-checks) |
 | Proxmox host CLI tests | Python standard library; controlled host-command fixtures that do not create a real CT |

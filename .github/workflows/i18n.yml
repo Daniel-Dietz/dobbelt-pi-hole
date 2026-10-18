@@ -53,6 +53,39 @@ jobs:
       - name: Verify all languages in the browser
         run: npm run test:browser
 
+  cross-browser-smoke:
+    name: Browser smoke (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, webkit]
+    env:
+      PLAYWRIGHT_BROWSER: ${{ matrix.browser }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install test dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install smoke-test browser and system libraries
+        run: npx playwright install --with-deps "${{ matrix.browser }}"
+      - name: Fetch and verify the production Chart.js bundle
+        run: |
+          chart_path="$RUNNER_TEMP/chart-4.4.1.umd.min.js"
+          curl --fail --show-error --silent --location --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 120 --retry 3 \
+            --output "$chart_path" https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js
+          printf '81ffafe13c37e1b25793b020d446f4d9739b949dadb7f9f79d709a0cad781c2f  %s\n' "$chart_path" | sha256sum --check --status
+          printf 'CHART_JS_PATH=%s\n' "$chart_path" >> "$GITHUB_ENV"
+      - name: Exercise login, charts, sort controls and narrow layout
+        run: |
+          node --test --test-name-pattern='Issue #11 smoke:' tests/browser.test.cjs
+
   container:
     name: External configuration and Docker behavior
     runs-on: ubuntu-latest

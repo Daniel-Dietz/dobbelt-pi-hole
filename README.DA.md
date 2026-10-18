@@ -325,8 +325,10 @@ eksisterende filnavne bevares af hensyn til dokumentationslinks.
   versionskontrol er implementeret i
   [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10).
   Utilgængelige API-data vises ikke som tomme eller vellykkede svar.
-  Kladder, tastaturbetjening og flere browser-/mobiltests er fortsat i
-  [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11).
+  [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11) bevarer
+  kladder, valgte mål og redigeringsfokus ved tema- og sprogskift; sortering
+  fungerer med tastatur og `aria-sort`. Målrettede Firefox-, WebKit- og
+  smalle mobiltests kontrollerer funktionerne uden at gentage aktive skrivninger.
 - **Konfigurationsændringer:** JSON valideres ved opstart, men en genstart med
   ugyldigt indhold kan gøre tjenesten utilgængelig. Behold en fungerende kopi
   af den private konfiguration. Forhåndsvalidering, koordineret aktivering og
@@ -453,11 +455,11 @@ starter ikke synkronisering, ændrer ikke konfiguration og leverer ikke failover
 ## Kontrol og test
 
 [i18n-workflowet](.github/workflows/i18n.yml) dækker oversættelsesadfærd,
-Chromium-tests med kontrollerede testdata, genereret konfiguration og
+fulde Chromium-regressionstests, målrettede Firefox-/WebKit-tests og smalle
+mobilvisninger med lange tyske tekster, genereret konfiguration og
 Docker-integration samt Proxmox-CLI-fixtures og installation i en Debian 13
 systemd-testcontainer. Disse kontroller dokumenterer ikke reel installation
-eller gendannelse på Proxmox. Firefox, WebKit og målrettede mobiltests er
-fortsat planlagt i #11.
+eller gendannelse på Proxmox.
 
 Fra projektets rodmappe kan kontrollerne uden ekstra afhængigheder køres med
 Node.js 24 og Python:

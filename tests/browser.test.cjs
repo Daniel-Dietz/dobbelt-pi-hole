@@ -1,9 +1,10 @@
 'use strict';
 
-// Run with `node --test tests/browser.test.cjs` after installing Playwright and
-// Chromium. An existing compatible browser can be selected with
-// PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH. Requests use intercepted fixtures or a
-// loopback-only HTTP fixture; no real Pi-hole or external service is contacted.
+// Run with `node --test tests/browser.test.cjs` after installing Playwright.
+// PLAYWRIGHT_BROWSER selects chromium, firefox or webkit; the full regression
+// suite defaults to Chromium. PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH optionally
+// selects a compatible Chromium binary. All Pi-hole data uses intercepted fixtures
+// or a loopback-only redirect server; no real Pi-hole is ever contacted.
 const assert = require('node:assert/strict');
 const {
   execFileSync
@@ -26,8 +27,15 @@ const {
   after
 } = require('node:test');
 const {
-  chromium
+  chromium,
+  firefox,
+  webkit
 } = require('playwright');
+const BROWSER_TYPES = { chromium, firefox, webkit };
+const BROWSER_NAME = process.env.PLAYWRIGHT_BROWSER || 'chromium';
+if (!Object.hasOwn(BROWSER_TYPES, BROWSER_NAME)) {
+  throw new Error('Unsupported PLAYWRIGHT_BROWSER: ' + BROWSER_NAME);
+}
 const HTML_PATH = join(__dirname, '..', 'index.html');
 const ORIGIN = 'https://dashboard.test';
 // The embedded onerror handler would flip the browser sentinel if literal fixture text became executable HTML.
@@ -157,10 +165,10 @@ const CHART_FIXTURE = `window.Chart = class Chart {
   destroy() { delete Chart.instances[this.id]; }
 };`;
 let browser;
-before(/** Launch the shared headless Chromium process, honoring an explicitly selected browser executable. */ async () => {
-  browser = await chromium.launch({
+before(/** Launch the selected headless browser, with an optional custom Chromium binary. */ async () => {
+  browser = await BROWSER_TYPES[BROWSER_NAME].launch({
     headless: true,
-    ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? {
+    ...(BROWSER_NAME === 'chromium' && process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? {
       executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
     } : {})
   });
@@ -194,6 +202,7 @@ async function openDashboard(t, options = {}) {
     configText = null,
     configResponseGate = null,
     waitForReady = true,
+    viewport = { width: 1600, height: 1100 },
     fakeClock = false,
     holdInitialSessions = false,
     holdSummaryServer = null,
@@ -209,10 +218,7 @@ async function openDashboard(t, options = {}) {
   const context = await browser.newContext({
     locale: browserLanguages[0],
     timezoneId: 'UTC',
-    viewport: {
-      width: 1600,
-      height: 1100
-    }
+    viewport
   });
   t.after(/** Dispose of this scenario's browser context and storage even if the test fails. */ () => context.close());
   const requests = [],
@@ -3461,5 +3467,291 @@ test('Issue #10 Codex: an unrelated empty 201 is not accepted as a valid JSON AP
       }
     );
     assert.equal(result, 'incompatible');
+    await assertNoCorruption(fixture);
+  });
+
+
+for (const language of ['da', 'en', 'de']) {
+  test('Issue #11 smoke: theme keeps a multilingual domain draft, selection and pointer focus (' + language + ')',
+    /** Verify that visual theme changes cannot discard unsaved fields or change the target instance. */
+    async t => {
+      const fixture = await openDashboard(t, { language });
+      const { page, requests } = fixture;
+      await visit(page, 'domains');
+      const originalDomain = 'theme-draft.example';
+      const originalComment = 'Unsaved Äöø comment for {server} and focus';
+      await page.locator('#dDomain').fill(originalDomain);
+      await page.locator('#dComment').fill(originalComment);
+      await page.locator('#dType').selectOption('allow');
+      await page.locator('#dKind').selectOption('regex');
+      await page.locator('#targetDomain').selectOption('2');
+      await page.locator('#dComment').focus();
+      await page.evaluate(
+        /** Select a substring so a theme refresh must restore both focus and selection. */
+        () => document.getElementById('dComment').setSelectionRange(4, 13)
+      );
+      const beforeWrites = requests.filter(
+        /** Exclude session checks; no configuration mutation should occur while toggling appearance. */
+        request => request.method !== 'GET').length;
+      await page.locator('#themeToggle').click();
+      await page.waitForFunction(
+        /** Wait for the new form to regain its selection and for the theme to settle. */
+        comment => document.documentElement.getAttribute('data-theme') === 'light' &&
+          document.querySelector('#dComment')?.value === comment &&
+          document.activeElement?.id === 'dComment' &&
+          document.querySelector('#dComment')?.selectionStart === 4,
+        originalComment
+      );
+      assert.equal(await page.locator('#dDomain').inputValue(), originalDomain);
+      assert.equal(await page.locator('#dComment').inputValue(), originalComment);
+      assert.equal(await page.locator('#dType').inputValue(), 'allow');
+      assert.equal(await page.locator('#dKind').inputValue(), 'regex');
+      assert.equal(await page.locator('#targetDomain').inputValue(), '2');
+      assert.deepEqual(await page.evaluate(
+        /** Read actual browser selection boundaries after the asynchronous theme render. */
+        () => {
+          const field = document.getElementById('dComment');
+          return [field.selectionStart, field.selectionEnd];
+        }), [4, 13]);
+      const afterWrites = requests.filter(
+        /** A theme or language rerender must not trigger any write endpoint. */
+        request => request.method !== 'GET').length;
+      assert.equal(afterWrites, beforeWrites);
+      await assertNoCorruption(fixture);
+    });
+}
+
+test('Issue #11 smoke: sort controls use native keyboard buttons and expose aria-sort',
+  /** Exercise keyboard sorting and focus recovery on queries, hosts and clients. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'de', hash: 'queries' });
+    const { page } = fixture;
+    const scenarios = [
+      { tab: 'queries', root: '#qArea', attr: 'data-sort', column: 'domain' },
+      { tab: 'hosts', root: '#hostArea', attr: 'data-host-sort', column: '1' },
+      { tab: 'clients', root: '#clientArea', attr: 'data-client-sort', column: 'comment' }
+    ];
+    for (const scenario of scenarios) {
+      if (scenario.tab !== 'queries') await visit(page, scenario.tab);
+      const selector = scenario.root + ' button[' + scenario.attr + '="' + scenario.column + '"]';
+      const button = page.locator(selector);
+      await button.waitFor();
+      assert.match(await button.getAttribute('aria-label'), /sortieren/u);
+      await button.focus();
+      await page.keyboard.press('Enter');
+      const expectedAscending = scenario.root + ' th[aria-sort="ascending"] button[' +
+        scenario.attr + '="' + scenario.column + '"]';
+      await page.locator(expectedAscending).waitFor();
+      assert.equal(await page.evaluate(
+        /** The replacement button receives keyboard focus after its table is rebuilt. */
+        attribute => document.activeElement?.getAttribute(attribute), scenario.attr), scenario.column);
+      await page.keyboard.press('Space');
+      const expectedDescending = scenario.root + ' th[aria-sort="descending"] button[' +
+        scenario.attr + '="' + scenario.column + '"]';
+      await page.locator(expectedDescending).waitFor();
+      assert.equal(await page.evaluate(
+        /** Space is native button activation and must retain the sorting control's focus. */
+        attribute => document.activeElement?.getAttribute(attribute), scenario.attr), scenario.column);
+      assert.equal(await page.locator(scenario.root + ' th[aria-sort]').count(), 1,
+        'Only the currently active sorting column may own aria-sort');
+    }
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #11 smoke: login, navigation and real chart palette survive a theme change',
+  /** Preserve authenticated navigation while recreating a chart in the chosen theme. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en', connected: false });
+    const { page, requests } = fixture;
+    await page.locator('[data-loginpw="1"]').fill('fixture-app-password');
+    await page.locator('[data-loginform="1"] button').click();
+    await page.locator('#qtChart1').waitFor();
+    await page.waitForFunction(
+      /** Wait for the dark-theme Chart.js instance instead of a canvas placeholder. */
+      () => Object.values(Chart.instances).some(
+        /** Require the actual chart configuration to contain its theme-specific x-axis color. */
+        chart => chart?.config?.type === 'bar' && chart?.options?.scales?.x?.ticks?.color === '#8b98a5')
+    );
+    await page.locator('#themeToggle').click();
+    await page.waitForFunction(
+      /** A new chart instance must use the light-theme palette after the rerender. */
+      () => document.documentElement.getAttribute('data-theme') === 'light' &&
+        Object.values(Chart.instances).some(
+          /** Accept a confirmed light-theme bar chart rather than just a theme attribute. */
+          chart => chart?.config?.type === 'bar' && chart?.options?.scales?.x?.ticks?.color === '#5b6673')
+    );
+    await visit(page, 'hosts');
+    await page.locator('#hostForm').waitFor();
+    await visit(page, 'clients');
+    await page.locator('#clientForm').waitFor();
+    assert.deepEqual(requests.filter(
+      /** A login POST is expected, but navigation and the theme refresh must not perform writes. */
+      request => request.method !== 'GET' && request.path !== '/auth'), []);
+    await assertNoCorruption(fixture);
+  });
+
+
+test('Issue #11 smoke: narrow German view keeps horizontal table navigation and long labels',
+  /** Exercise a phone-width dashboard with a long configured label and German form text. */
+  async t => {
+    const config = publicConfig(2);
+    config.servers[0].label = 'Außergewöhnlich langer deutscher Standortname – Zentrale und besonders lange Pi-hole-Instanz';
+    const fixture = await openDashboard(t, {
+      language: 'de',
+      browserLanguages: ['de-DE'],
+      viewport: { width: 390, height: 844 },
+      runtimeConfig: config,
+      labelOverrides: null,
+      hash: 'queries'
+    });
+    const { page } = fixture;
+    assert.equal(await page.locator('html').getAttribute('lang'), 'de');
+    const metrics = await page.locator('#qArea .table-wrap').evaluate(
+      /** Read the native horizontal scroll container rather than relying on body overflow. */
+      element => {
+        const width = element.clientWidth;
+        element.scrollLeft = element.scrollWidth;
+        return {
+          width,
+          content: element.scrollWidth,
+          scrollLeft: element.scrollLeft,
+          overflow: getComputedStyle(element).overflowX
+        };
+      });
+    assert.ok(metrics.width <= 390, 'The table viewport must not be wider than the phone');
+    assert.ok(metrics.content > metrics.width && metrics.scrollLeft > 0,
+      'Users must be able to scroll wide query columns horizontally');
+    assert.match(metrics.overflow, /auto|scroll/u);
+    await page.locator('#qArea button[data-sort="server"]').click();
+    assert.equal(await page.locator('#qArea th[aria-sort="ascending"] button[data-sort="server"]').count(), 1);
+    await visit(page, 'domains');
+    const text = 'Sehr lange deutsche Beschreibung: Datenschutz und sichere Einstellungen ohne Schreibzugriff auf Pi-hole.';
+    await page.locator('#dDomain').fill('mobile-layout.example');
+    await page.locator('#dComment').fill(text);
+    await page.locator('#targetDomain').selectOption('2');
+    await page.locator('#dComment').focus();
+    await page.locator('#themeToggle').click();
+    await page.waitForFunction(
+      /** Require actual mobile draft restoration after the asynchronous themed render. */
+      comment => document.querySelector('#dComment')?.value === comment &&
+        document.activeElement?.id === 'dComment', text);
+    assert.equal(await page.locator('#dDomain').inputValue(), 'mobile-layout.example');
+    assert.equal(await page.locator('#targetDomain').inputValue(), '2');
+    assert.ok(await page.locator('#domainForm button[type="submit"]').isVisible());
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #11: theme and language changes never repeat an in-flight domain mutation',
+  /** Protect exactly-once remote writes while visual refreshes replace the original form. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page, requests } = fixture;
+    await visit(page, 'domains');
+    const gate = deferred(t);
+    const arrival = deferred(t);
+    await page.route('**/*',
+      /** Delay only the chosen write; all prior preflight and subsequent GETs continue. */
+      async route => {
+        const request = route.request();
+        if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/domains/allow/exact')) {
+          arrival.release();
+          await gate.promise;
+        }
+        return route.fallback();
+      });
+    await page.locator('#dDomain').fill('theme-inflight.example');
+    await page.locator('#dComment').fill('in-flight draft');
+    await page.locator('#dType').selectOption('allow');
+    await page.locator('#targetDomain').selectOption('1');
+    await page.locator('#domainForm button[type="submit"]').click();
+    await arrival.promise;
+    await page.locator('#themeToggle').click();
+    await page.locator('#dDomain').waitFor();
+    assert.equal(await page.locator('#dDomain').inputValue(), 'theme-inflight.example');
+    await page.locator('#domainForm button[type="submit"]').click();
+    await language(page, 'de', 'domains');
+    gate.release();
+    await page.waitForFunction(
+      /** Confirm the legitimate original write appears in the refreshed view, not a duplicate. */
+      () => (document.querySelector('#domArea')?.textContent || '').includes('theme-inflight.example'));
+    assert.equal(requests.filter(
+      /** Count only target writes, ignoring authentication and safe preflight reads. */
+      request => request.method === 'POST' && request.path === '/domains/allow/exact').length, 1);
+    await assertNoCorruption(fixture);
+  });
+
+test('Issue #11 smoke: canceled pointer gestures cannot steal subsequent keyboard focus',
+  /** Reproduce a canceled or off-button release before activating the theme with the keyboard. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page, requests } = fixture;
+    await visit(page, 'domains');
+    await page.locator('#dComment').fill('Unsaved draft after a canceled gesture');
+    await page.locator('#dComment').focus();
+    await page.evaluate(
+      /** Simulate an aborted pointer interaction while the text draft still has focus. */
+      () => {
+        const toggle = document.getElementById('themeToggle');
+        toggle.dispatchEvent(new PointerEvent('pointerdown', {
+          pointerId: 90, pointerType: 'mouse', bubbles: true
+        }));
+        document.dispatchEvent(new PointerEvent('pointercancel', {
+          pointerId: 90, pointerType: 'mouse', bubbles: true
+        }));
+      });
+    await page.locator('#themeToggle').focus();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(
+      /** Wait for the completed rerender rather than a transient theme attribute. */
+      () => document.documentElement.getAttribute('data-theme') === 'light' &&
+        document.querySelector('#dComment')?.value === 'Unsaved draft after a canceled gesture');
+    assert.equal(await page.evaluate(/** Return keyboard focus after the theme rerender. */ () => document.activeElement?.id), 'themeToggle');
+
+    await page.locator('#dComment').focus();
+    await page.evaluate(
+      /** Release a subsequent pointer away from the toggle so it produces no toggle click. */
+      () => {
+        const toggle = document.getElementById('themeToggle');
+        toggle.dispatchEvent(new PointerEvent('pointerdown', {
+          pointerId: 91, pointerType: 'mouse', bubbles: true
+        }));
+        document.body.dispatchEvent(new PointerEvent('pointerup', {
+          pointerId: 91, pointerType: 'mouse', bubbles: true
+        }));
+      });
+    await page.locator('#themeToggle').focus();
+    await page.keyboard.press('Space');
+    await page.waitForFunction(
+      /** Confirm the second theme change and the preserved user draft. */
+      () => document.documentElement.getAttribute('data-theme') === 'dark' &&
+        document.querySelector('#dComment')?.value === 'Unsaved draft after a canceled gesture');
+    assert.equal(await page.evaluate(/** Return keyboard focus after the theme rerender. */ () => document.activeElement?.id), 'themeToggle');
+    await page.locator('#dComment').focus();
+    await page.evaluate(
+      /** Release a pointer on the toggle without dispatching its matching click. */
+      () => {
+        const toggle = document.getElementById('themeToggle');
+        toggle.dispatchEvent(new PointerEvent('pointerdown', {
+          pointerId: 92, pointerType: 'mouse', bubbles: true
+        }));
+        toggle.dispatchEvent(new PointerEvent('pointerup', {
+          pointerId: 92, pointerType: 'mouse', bubbles: true
+        }));
+      });
+    await page.evaluate(
+      /** Allow the abandoned pointerup cleanup to run before keyboard activation. */
+      () => new Promise(/** Resolve on the next event-loop tick. */ resolve => setTimeout(resolve, 0)));
+    await page.locator('#themeToggle').focus();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(
+      /** Check that the draft survives while keyboard focus stays on the toggle. */
+      () => document.documentElement.getAttribute('data-theme') === 'light' &&
+        document.querySelector('#dComment')?.value === 'Unsaved draft after a canceled gesture');
+    assert.equal(await page.evaluate(
+      /** Report focus after the third appearance change. */
+      () => document.activeElement?.id), 'themeToggle');
+    assert.equal(requests.filter(
+      /** Neither abandoned pointer gestures nor keyboard theme toggles may write Pi-hole data. */
+      request => request.method !== 'GET').length, 0);
     await assertNoCorruption(fixture);
   });

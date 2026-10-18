@@ -429,6 +429,26 @@ main {
   font-size: 12px
 }
 
+/* Native sort controls: keyboard navigation and visible focus. */
+.datatable th.sortable-header { padding: 0; }
+.datatable .sort-column {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  gap: 5px;
+  padding: 9px 11px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.datatable .sort-column:hover { background: var(--panel2); }
+.datatable .sort-column:focus-visible { outline: 2px solid var(--blue); outline-offset: -3px; }
+.datatable .sort-indicator { flex: none; }
+
 /* Form fields and action buttons shared by the management views. */
 button.btn {
   background: var(--panel2);
@@ -941,6 +961,7 @@ const I18N = {
     "app.description": "Et samlet kontrolpanel til to, tre eller fire Pi-hole v6-instanser.",
     "app.headingSuffix": "· kontrolpanel",
     "app.language": "Sprog",
+    "sort.byColumn": "Sortér efter {column}",
     "app.themeToggle": "Skift mellem lys og mørk tilstand",
     "tabs.dashboard": "Dashboard",
     "tabs.queries": "Forespørgsler",
@@ -1252,6 +1273,7 @@ const I18N = {
     "app.description": "A combined dashboard for two, three or four Pi-hole v6 instances.",
     "app.headingSuffix": "· dashboard",
     "app.language": "Language",
+    "sort.byColumn": "Sort by {column}",
     "app.themeToggle": "Switch between light and dark mode",
     "tabs.dashboard": "Dashboard",
     "tabs.queries": "Queries",
@@ -1563,6 +1585,7 @@ const I18N = {
     "app.description": "Ein gemeinsames Kontrollzentrum für zwei, drei oder vier Pi-hole-v6-Instanzen.",
     "app.headingSuffix": "· Kontrollzentrum",
     "app.language": "Sprache",
+    "sort.byColumn": "Nach {column} sortieren",
     "app.themeToggle": "Zwischen hellem und dunklem Design wechseln",
     "tabs.dashboard": "Übersicht",
     "tabs.queries": "Anfragen",
@@ -1956,8 +1979,8 @@ function resolveLanguage(saved, browserLanguages = [], configuredDefault = "auto
   return "en";
 }
 let currentLanguage = resolveLanguage(storedValue(LANGUAGE_KEY), [...(navigator.languages || []), navigator.language]);
-let pendingLanguageFormState = null;
-// A tab navigation creates a fresh draft identity; language-only rerenders preserve it.
+let pendingFormRerenderState = null;
+// User navigation creates a new draft identity; language and theme rerenders preserve it.
 let formContextRevision = 0;
 const fieldEditRevisions = new Map();
 let formEditSerial = 0;
@@ -2069,7 +2092,7 @@ function captureFormState() {
 }
 
 /**
- * Merge drafts from overlapping language changes while retaining newer edits.
+ * Merge drafts from overlapping language and theme changes while retaining newer edits.
  * An untouched placeholder from a pending render must not overwrite a saved draft.
  * @returns {Object} The merged field and help-section snapshot.
  */
@@ -2096,7 +2119,7 @@ function mergeFormState(previous, current) {
 
 /**
  * Track user input/change revisions for current form fields and update the pending
- * language snapshot only when its tab and render generation are still current.
+ * visual-rerender snapshot only while its tab and generation remain current.
  */
 function recordPendingFormEdit(event) {
   const element = event.target;
@@ -2110,7 +2133,7 @@ function recordPendingFormEdit(event) {
   // Record actual user edits even when no language render is pending.
   // Programmatic snapshot restoration does not emit input/change events.
   fieldEditRevisions.set(selector, ++formEditSerial);
-  const pending = pendingLanguageFormState;
+  const pending = pendingFormRerenderState;
   if (!pending || pending.generation !== state.renderGen || pending.tab !== state.activeTab) {
     return;
   }
@@ -2168,24 +2191,54 @@ function restoreFormState(snapshot) {
 }
 
 /**
- * Apply and persist a language choice, then rebuild the shell and optionally the active tab.
- * Carry unfinished form edits through asynchronous rendering. Restore the final
- * snapshot only if its tab, language and render generation are still current.
- * @param {string} language Requested language tag; unsupported values select English.
- * @param {boolean} rerender Whether to rebuild the operational tab as well as the shell.
+ * Capture the active view's latest draft, including edits made during an
+ * overlapping theme or language render. Passwords stay in transient memory.
+ * @returns {object} Fields, selection, focus and expanded help sections.
+ */
+function activeViewDraftSnapshot() {
+  const pending = pendingFormRerenderState;
+  const previous = pending?.generation === state.renderGen && pending.tab === state.activeTab
+    ? pending.snapshot : null;
+  return mergeFormState(previous, captureFormState());
+}
+/**
+ * Rebuild the active tab without creating a new draft or submission identity.
+ * Restore immediately when possible and after asynchronous reads finish.
+ * Only the owning generation can complete its final restoration.
+ * @param {object} snapshot Form state merged with any pending view draft.
+ * @returns {Promise<void>} Resolves when the rendering operation settles.
+ */
+async function rerenderActiveViewPreservingDrafts(snapshot) {
+  if (configurationStatus !== "ready" || !state.activeTab || !snapshot) return;
+  const tab = state.activeTab;
+  const rendering = switchTab(tab, false);
+  const generation = state.renderGen;
+  pendingFormRerenderState = { tab, generation, snapshot };
+  restoreFormState(snapshot);
+  await rendering;
+  if (state.renderGen === generation && state.activeTab === tab) {
+    restoreFormState(snapshot);
+    if (pendingFormRerenderState?.generation === generation) {
+      pendingFormRerenderState = null;
+    }
+  }
+}
+/**
+ * Apply and persist a language choice, then rebuild the shell and active view.
+ * Reuse theme changes' draft-preserving logic so concurrent visual refreshes
+ * cannot discard new typing, target selections or focus.
+ * @param {string} language Requested language; unsupported values select English.
+ * @param {boolean} rerender Whether to rebuild the operational tab.
  */
 async function setLanguage(language, rerender = true) {
   const code = normalizeLanguage(language) || "en";
   languageChosenThisPage = true;
-  const previous = pendingLanguageFormState?.generation === state.renderGen && pendingLanguageFormState.tab === state.activeTab ? pendingLanguageFormState.snapshot : null;
-  const snapshot = rerender && configurationStatus === "ready" ? mergeFormState(previous, captureFormState()) : null;
+  const snapshot = rerender && configurationStatus === "ready" ? activeViewDraftSnapshot() : null;
   currentLanguage = code;
   storeValue(LANGUAGE_KEY, code);
   document.documentElement.lang = code;
   const select = document.getElementById("languageSelect");
-  if (select) {
-    select.value = code;
-  }
+  if (select) select.value = code;
   applyI18n();
   renderTabs();
   renderPills();
@@ -2193,24 +2246,8 @@ async function setLanguage(language, rerender = true) {
     renderConfigurationState();
     return;
   }
-  if (rerender && state.activeTab) {
-    const tab = state.activeTab;
-    const rendering = switchTab(tab, false);
-    const generation = state.renderGen;
-    pendingLanguageFormState = {
-      tab,
-      generation,
-      snapshot
-    };
-    restoreFormState(snapshot);
-    await rendering;
-    if (state.renderGen === generation && state.activeTab === tab && currentLanguage === code) {
-      restoreFormState(snapshot);
-      pendingLanguageFormState = null;
-    }
-  }
+  if (rerender && state.activeTab) await rerenderActiveViewPreservingDrafts(snapshot);
 }
-
 /**
  * Populate the language selector and connect language changes and pending-draft tracking.
  * Apply translations to the static shell without starting configuration or Pi-hole requests.
@@ -2730,6 +2767,29 @@ function pagerHtml(idPrefix, pageIndex, pageCount, totalRows, visibleRows) {
     </div>
   </div>`;
 }
+
+/**
+ * Build a semantic sortable table header with a native keyboard-activated button.
+ * aria-sort appears only on the active column; the visible arrow is decorative.
+ * @param {string} columnKey Stable column identifier.
+ * @param {string} headingText Plain heading text, including user-assigned server names.
+ * @param {string} selectedKey Currently sorted column.
+ * @param {string} direction asc or desc.
+ * @param {string} attributeName Internal sort button data attribute.
+ * @returns {string} Escaped HTML header and button.
+ */
+function sortableColumnHeading(columnKey, headingText, selectedKey, direction, attributeName) {
+  const selected = selectedKey === columnKey;
+  const ariaSort = selected ? ` aria-sort="${direction === "asc" ? "ascending" : "descending"}"` : "";
+  const glyph = selected ? direction === "asc" ? " ▲" : " ▼" : "";
+  return `<th scope="col" class="sortable-header"${ariaSort}>
+    <button type="button" class="sort-column" ${attributeName}="${escapeHtml(columnKey)}"
+      aria-label="${htmlMsg("sort.byColumn", { column: headingText })}">
+      ${escapeHtml(headingText)}<span class="sort-indicator" aria-hidden="true">${glyph}</span>
+    </button>
+  </th>`;
+}
+
 /** Read a page-size selector by ID, representing its all option as Infinity. */
 function pageSizeOf(selectId) {
   const selection = document.getElementById(selectId).value;
@@ -3935,10 +3995,8 @@ async function renderQueries(container, generation) {
     persistQueryState();
     const pageOffset = pageIndex * pageSize;
     const visibleRows = Number.isFinite(pageSize) ? filteredRows.slice(pageOffset, pageOffset + pageSize) : filteredRows;
-    const renderSortHeading = /** Build a translated sortable query heading and show the current direction on its active column. */ (columnKey, headingKey) => {
-      const indicator = sortKey === columnKey ? sortDirection === "asc" ? " \u25B2" : " \u25BC" : "";
-      return `<th data-sort="${columnKey}" style="cursor:pointer;user-select:none;">${htmlMsg(headingKey)}${indicator}</th>`;
-    };
+    const renderSortHeading = /** Render an accessible query sort button with active aria-sort. */ (columnKey, headingKey) =>
+      sortableColumnHeading(columnKey, msg(headingKey), sortKey, sortDirection, "data-sort");
     queryTableArea.innerHTML = `<div class="table-wrap"><table class="datatable">
 				<thead><tr>
 					${renderSortHeading("time", "queries.time")}${renderSortHeading("server", "queries.server")}${renderSortHeading("status", "queries.status")}${renderSortHeading("type", "queries.type")}${renderSortHeading("domain", "queries.domain")}${renderSortHeading("client", "queries.client")}
@@ -3963,6 +4021,7 @@ async function renderQueries(container, generation) {
           sortDirection = clickedColumn === "time" ? "desc" : "asc";
         }
         renderQueryTable();
+        queryTableArea.querySelector(`[data-sort="${CSS.escape(clickedColumn)}"]`)?.focus({ preventScroll: true });
       });
     }
     const previousPageButton = document.getElementById("qPagePrev");
@@ -4280,7 +4339,7 @@ function clearConfirmedDraft(outcomes, form, fields, submission) {
   for (const [selector, previous] of fields) {
     // Pending language renders may still restore the captured draft later.
     // Clear only snapshots belonging to the same tab and render generation.
-    const pending = pendingLanguageFormState;
+    const pending = pendingFormRerenderState;
     if (pending && pending.tab === submission.tab && pending.generation === state.renderGen) {
       const field = pending.snapshot.fields.find(candidate => candidate.selector === selector);
       if (field && typeof field.value === "string" && field.value.trim() === previous) field.value = "";
@@ -4376,8 +4435,8 @@ function clearSubmittedFields(fields) {
   for (const [id, value] of Object.entries(fields)) {
     const element = document.getElementById(id);
     if (element && element.value === value) element.value = "";
-    if (pendingLanguageFormState) {
-      for (const field of pendingLanguageFormState.snapshot.fields) {
+    if (pendingFormRerenderState) {
+      for (const field of pendingFormRerenderState.snapshot.fields) {
         if (field.selector === "#" + id && field.value === value) field.value = "";
       }
     }
@@ -4757,10 +4816,10 @@ async function renderHosts(container, generation) {
         hostArea.innerHTML = hostPermissionNoticeHtml() + collectionCoverageHtml(readStates) + `<p class="empty">${htmlMsg("hosts.empty")}</p>`;
         return;
       }
-      const sortIndicator = sortDirection === "asc" ? " ▲" : " ▼";
-      const hostSortHeadingHtml = /** Build a host-table sort heading from its internal key and already escaped label. */ (columnKey, headingHtml) => `<th data-host-sort="${escapeHtml(columnKey)}" style="cursor:pointer;user-select:none;">${headingHtml}${sortKey === columnKey ? sortIndicator : ""}</th>`;
+      const hostSortHeadingHtml = /** Render native host sort buttons with current aria-sort direction. */ (columnKey, headingText) =>
+        sortableColumnHeading(columnKey, headingText, sortKey, sortDirection, "data-host-sort");
       hostArea.innerHTML = hostPermissionNoticeHtml() + collectionCoverageHtml(readStates) + `<div class="table-wrap"><table class="datatable">
-				<thead><tr>${hostSortHeadingHtml("name", htmlMsg("hosts.nameHeading"))}${state.servers.map(/** Build the address-sort heading for one configured instance. */ server => hostSortHeadingHtml(server.id, escapeHtml(server.label))).join("")}<th></th></tr></thead>
+				<thead><tr>${hostSortHeadingHtml("name", msg("hosts.nameHeading"))}${state.servers.map(/** Build the address-sort heading for one configured instance. */ server => hostSortHeadingHtml(server.id, server.label)).join("")}<th></th></tr></thead>
 				<tbody>${sortedHosts.map(/** Render a hostname row and highlight addresses that differ across its loaded instance records. */ (host, rowIndex) => {
         const serverCells = state.servers.map(/** Render this instance's address and eligible copy actions, or an add action for a missing record. */ server => {
           if (readStates.get(server.id) !== "confirmed") return uncertainCell(readStates, server);
@@ -4798,6 +4857,7 @@ async function renderHosts(container, generation) {
           });
           saveUiState();
           renderHostTable();
+          hostArea.querySelector(`[data-host-sort="${CSS.escape(selectedSortKey)}"]`)?.focus({ preventScroll: true });
         });
       }
       for (const syncButton of hostArea.querySelectorAll("[data-sync-host-row]")) {
@@ -5049,10 +5109,10 @@ async function renderClients(container, generation) {
     saveClientViewState();
     const pageStart = clientPage * pageSize;
     const visibleClients = Number.isFinite(pageSize) ? sortedClients.slice(pageStart, pageStart + pageSize) : sortedClients;
-    const sortIndicator = sortDirection === "asc" ? " ▲" : " ▼";
-    const clientSortHeadingHtml = /** Build a client-table sort heading from its internal key and already escaped label. */ (columnKey, headingHtml) => `<th data-client-sort="${escapeHtml(columnKey)}" style="cursor:pointer;user-select:none;">${headingHtml}${sortKey === columnKey ? sortIndicator : ""}</th>`;
+    const clientSortHeadingHtml = /** Render native client and instance sorting buttons with aria-sort. */ (columnKey, headingText) =>
+      sortableColumnHeading(columnKey, headingText, sortKey, sortDirection, "data-client-sort");
     clientArea.innerHTML = collectionCoverageHtml(clientReadStates) + `<div class="table-wrap client-table-wrap"><table class="datatable">
-					<thead><tr>${clientSortHeadingHtml("client", htmlMsg("clients.clientHeading"))}${clientSortHeadingHtml("comment", htmlMsg("clients.descriptionHeading"))}${state.servers.map(/** Build the client-presence sort heading for one configured instance. */ server => clientSortHeadingHtml(server.id, escapeHtml(server.label))).join("")}<th></th></tr></thead>
+					<thead><tr>${clientSortHeadingHtml("client", msg("clients.clientHeading"))}${clientSortHeadingHtml("comment", msg("clients.descriptionHeading"))}${state.servers.map(/** Build the client-presence sort heading for one configured instance. */ server => clientSortHeadingHtml(server.id, server.label)).join("")}<th></th></tr></thead>
 					<tbody>${visibleClients.map(/** Render a client row using its original array index so actions still select the correct record after sorting. */ (client, visibleRowIndex) => {
       const clientIndex = clients.indexOf(client);
       const serverCellsHtml = state.servers.map(/** Show an instance's loaded client membership or provide a button to add the missing client. */ server => clientReadStates.get(server.id) !== "confirmed" ? uncertainCell(clientReadStates, server) : client.byServer[server.id] ? `<td><span class="badge on">${htmlMsg("clients.active")}</span></td>` : `<td><span class="badge off">${htmlMsg("clients.missing")}</span> <button class="btn xs" data-add-client-server="${escapeHtml(server.id)}" data-client-row="${clientIndex}">${htmlMsg("clients.add")}</button></td>`).join("");
@@ -5077,6 +5137,7 @@ async function renderClients(container, generation) {
         clientPage = 0;
         saveClientViewState();
         renderClientTable();
+        clientArea.querySelector(`[data-client-sort="${CSS.escape(selectedSortKey)}"]`)?.focus({ preventScroll: true });
       });
     }
     for (const addButton of clientArea.querySelectorAll("[data-add-client-server]")) {
@@ -5939,20 +6000,68 @@ function applyTheme(theme) {
 }
 /**
  * Apply the stored theme and bind the toggle to persist changes and refresh the current view.
- * The current theme refresh rebuilds the tab and does not preserve unfinished form drafts.
+ * A theme refresh preserves active-tab drafts and restores chart colors.
  */
 function initThemeToggle() {
   applyTheme(loadTheme());
-  document.getElementById("themeToggle").addEventListener("click", /** Switch between light and dark, save the choice and repaint the active tab or configuration message. */ () => {
-    const theme = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
-    applyTheme(theme);
-    storeValue(THEME_KEY, theme);
-    if (configurationStatus === "ready") {
-      void switchTab(state.activeTab);
-    } else {
-      renderConfigurationState();
-    }
-  });
+  const toggle = document.getElementById("themeToggle");
+  let pointerFocus = null;
+  toggle.addEventListener("pointerdown",
+    /** Capture a matching pointer gesture before it transfers focus away from a draft. */
+    event => {
+      const root = document.getElementById("tabContent");
+      const active = document.activeElement;
+      const selector = root.contains(active) && active.matches?.("input, select, textarea")
+        ? formFieldSelector(active) : null;
+      pointerFocus = selector ? {
+        selector, start: active.selectionStart, end: active.selectionEnd, pointerId: event.pointerId
+      } : null;
+    });
+  document.addEventListener("pointercancel",
+    /** Discard a canceled gesture so a later keyboard click cannot restore stale focus. */
+    event => {
+      if (pointerFocus?.pointerId === event.pointerId) pointerFocus = null;
+    });
+  document.addEventListener("pointerup",
+    /** Expire a released gesture if no matching button click is dispatched. */
+    event => {
+      const gesture = pointerFocus;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      if (!toggle.contains(event.target)) {
+        pointerFocus = null;
+        return;
+      }
+      // A normal click follows pointerup; defer cleanup until it has dispatched.
+      setTimeout(/** Drop a gesture not consumed by its expected click. */ () => {
+        if (pointerFocus === gesture) pointerFocus = null;
+      }, 0);
+    });
+  toggle.addEventListener("click",
+    /** Repaint without transferring focus from a keyboard activation to an old draft. */
+    event => {
+      const matchingPointerFocus = event.detail > 0 && pointerFocus &&
+        (!("pointerId" in event) || pointerFocus.pointerId === event.pointerId)
+        ? pointerFocus : null;
+      pointerFocus = null;
+      const snapshot = configurationStatus === "ready" ? activeViewDraftSnapshot() : null;
+      if (snapshot && matchingPointerFocus) {
+        for (const field of snapshot.fields) {
+          if (field.selector === matchingPointerFocus.selector) {
+            field.focused = true;
+            field.start = matchingPointerFocus.start;
+            field.end = matchingPointerFocus.end;
+          }
+        }
+      }
+      const theme = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+      applyTheme(theme);
+      storeValue(THEME_KEY, theme);
+      if (configurationStatus === "ready") {
+        void rerenderActiveViewPreservingDrafts(snapshot);
+      } else {
+        renderConfigurationState();
+      }
+    });
 }
 /** Initialize language and theme controls, resolve the initial tab and begin validated configuration loading. */
 async function bootstrap() {
