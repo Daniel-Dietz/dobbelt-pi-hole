@@ -2800,6 +2800,7 @@ async function checkSession(server) {
     server.checking = false;
   }
 }
+let activeQueryAbortController = null;
 let dashboardCharts = [];
 /**
  * Release all Chart.js instances before the dashboard is replaced.
@@ -2887,6 +2888,11 @@ function renderPills() {
 async function switchTab(tabId, updateHash = true) {
   if (configurationStatus !== "ready") {
     return;
+  }
+  // Navigation or translation abandons pending query cursors from the old render.
+  if (state.activeTab === "queries" && activeQueryAbortController) {
+    activeQueryAbortController.abort();
+    activeQueryAbortController = null;
   }
   if (state.activeTab === "dashboard" && tabId !== "dashboard") {
     destroyDashboardCharts();
@@ -3474,7 +3480,7 @@ async function renderDashboard(container, generation) {
  * Render the combined query log with persistent filters, natural sorting and local pagination.
  * Fetch an initial page from each connected instance, then follow their cursors within
  * the selected time window. Tab generations prevent updates to a replaced view;
- * overlapping reloads within this same view still share the current row buffer.
+ * overlapping reloads cancel older cursor chains and publish only the newest row buffer.
  * @param {HTMLElement} container Active-tab container to populate.
  * @param {number} generation Render generation assigned by switchTab.
  */
@@ -3529,6 +3535,8 @@ async function renderQueries(container, generation) {
     return;
   }
   let queryRows = [];
+  let queryLoadSerial = 0;
+  let queryLoadController = null;
 
   let sortKey = queryUiState.sortKey;
   let sortDirection = queryUiState.sortDir;
@@ -3729,9 +3737,10 @@ async function renderQueries(container, generation) {
    * @param {number} pageFromTimestamp Beginning of the time window, in Unix seconds.
    * @param {number} pageUntilTimestamp End of the time window, in Unix seconds.
    * @param {*} initialCursor Cursor returned with the initial page.
+   * @param {AbortSignal} loadSignal Cancelled when the view or time range changes.
    * @returns {Promise<Object>} Collected rows, a truncation flag and the remaining cursor, if any.
    */
-  async function fetchQueryPages(pageServer, pageFromTimestamp, pageUntilTimestamp, initialCursor) {
+  async function fetchQueryPages(pageServer, pageFromTimestamp, pageUntilTimestamp, initialCursor, loadSignal) {
     const collectedRows = [];
     let cursor = undefined !== initialCursor ? initialCursor : null;
     for (let fetchPageIndex = 0; fetchPageIndex < 20; fetchPageIndex++) {
@@ -3739,8 +3748,10 @@ async function renderQueries(container, generation) {
       if (cursor != null) {
         queryPath += "&cursor=" + encodeURIComponent(cursor);
       }
-      const pageResponse = await apiCall(pageServer, queryPath);
-      const pageRows = pageResponse.queries || [];
+      if (loadSignal.aborted) return { rows: [], truncated: false, cursor: null };
+      const pageResponse = await apiCall(pageServer, queryPath, { signal: loadSignal });
+      if (loadSignal.aborted) return { rows: [], truncated: false, cursor: null };
+      const pageRows = requireCollection(pageResponse, "queries");
       collectedRows.push(...pageRows);
       if (!pageResponse.cursor || pageRows.length === 0) {
         return {
@@ -3764,6 +3775,14 @@ async function renderQueries(container, generation) {
    * Report per-instance request failures and indicate when that follow-up limit truncates results.
    */
   async function reloadQueries() {
+    // Abort an older reload even while it is reading cursor pages.
+    queryLoadController?.abort();
+    const controller = new AbortController();
+    queryLoadController = controller;
+    activeQueryAbortController = controller;
+    const serial = ++queryLoadSerial;
+    const ownsView = /** Only the newest mounted load may update DOM, filters or toasts. */ () =>
+      serial === queryLoadSerial && generation === state.renderGen && !controller.signal.aborted;
     const rangeHours = Number(document.getElementById("qRange").value);
     const untilTimestamp = Math.floor(Date.now() / 1000);
     const fromTimestamp = untilTimestamp - 3600 * rangeHours;
@@ -3771,68 +3790,52 @@ async function renderQueries(container, generation) {
     const queryStatus = document.getElementById("qStatus");
     loadingArea.innerHTML = `<p class="empty">${htmlMsg("queries.loading")}</p>`;
     queryStatus.textContent = "";
-    queryRows = [];
-    const cursorsByServer = {};
-    await Promise.all(state.servers.map(/** Fetch one instance's initial query page and remember its cursor for the follow-up request. */ async initialServer => {
-      if (initialServer.connected) {
+    try {
+      const initial = await Promise.all(state.servers.map(
+      /** Fetch each instance into an isolated buffer instead of mutating shared queryRows. */
+      async server => {
+        if (!server.connected) return { server, rows: [], cursor: null };
         try {
-          const initialResponse = await apiCall(initialServer, "/queries?length=100&from=" + fromTimestamp + "&until=" + untilTimestamp);
-          for (const initialRow of initialResponse.queries || []) {
-            queryRows.push({
-              server: initialServer,
-              ...initialRow
-            });
-          }
-          if (initialResponse.cursor) {
-            cursorsByServer[initialServer.id] = initialResponse.cursor;
-          }
-        } catch (initialError) {
-          toast(msg("queries.serverError", {
-            server: initialServer.label,
-            error: initialError.message
-          }), "err");
+          const response = await apiCall(server, "/queries?length=100&from=" + fromTimestamp + "&until=" + untilTimestamp, { signal: controller.signal });
+          return { server, rows: requireCollection(response, "queries"), cursor: response.cursor || null };
+        } catch (error) {
+          return { server, rows: [], cursor: null, error };
         }
+      }));
+      if (!ownsView()) return;
+      const cursors = initial.filter(/** Follow cursors only for successfully read instances. */ entry => entry.cursor);
+      queryRows = initial.flatMap(/** Attach each source server after the current initial stage finishes. */ entry =>
+        entry.rows.map(/** Decorate the data with the source instance without mutation. */ row => ({ server: entry.server, ...row })));
+      for (const entry of initial) {
+        if (entry.error) toast(msg("queries.serverError", { server: entry.server.label, error: entry.error.message }), "err");
       }
-    }));
-    if (generation !== state.renderGen) {
-      return;
-    }
-    rebuildQueryFilters();
-    renderQueryTable(false);
-    const hasMorePages = Object.keys(cursorsByServer).length > 0;
-    queryStatus.textContent = msgCount(hasMorePages ? "queries.loadingMore" : "queries.total", queryRows.length);
-    if (!hasMorePages) {
-      return;
-    }
-    let anyTruncated = false;
-    await Promise.all(state.servers.map(/** Fetch the remaining bounded pages for an instance with a cursor and append rows with their source server. */ async remainingServer => {
-      if (remainingServer.connected && cursorsByServer[remainingServer.id]) {
+      rebuildQueryFilters();
+      renderQueryTable(false);
+      queryStatus.textContent = msgCount(cursors.length ? "queries.loadingMore" : "queries.total", queryRows.length);
+      if (!cursors.length) return;
+      const remaining = await Promise.all(cursors.map(
+      /** Read each cursor chain into an isolated per-instance buffer. */
+      async entry => {
         try {
-          const {
-            rows: remainingRows,
-            truncated: serverTruncated
-          } = await fetchQueryPages(remainingServer, fromTimestamp, untilTimestamp, cursorsByServer[remainingServer.id]);
-          if (serverTruncated) {
-            anyTruncated = true;
-          }
-          for (const remainingRow of remainingRows) {
-            queryRows.push({
-              server: remainingServer,
-              ...remainingRow
-            });
-          }
-        } catch (remainingError) {
-          toast(msg("queries.serverError", {
-            server: remainingServer.label,
-            error: remainingError.message
-          }), "err");
+          const result = await fetchQueryPages(entry.server, fromTimestamp, untilTimestamp, entry.cursor, controller.signal);
+          return { server: entry.server, ...result };
+        } catch (error) {
+          return { server: entry.server, rows: [], truncated: false, error };
         }
+      }));
+      if (!ownsView()) return;
+      const anyTruncated = remaining.some(/** Record whether any cursor reached its page cap. */ entry => entry.truncated);
+      queryRows = queryRows.concat(remaining.flatMap(/** Publish only the current run's cursor results. */ entry =>
+        entry.rows.map(/** Attach the source instance to the returned page. */ row => ({ server: entry.server, ...row }))));
+      for (const entry of remaining) {
+        if (entry.error) toast(msg("queries.serverError", { server: entry.server.label, error: entry.error.message }), "err");
       }
-    }));
-    if (generation === state.renderGen) {
       queryStatus.textContent = msgCount(anyTruncated ? "queries.truncated" : "queries.total", queryRows.length);
       rebuildQueryFilters();
       renderQueryTable(false);
+    } finally {
+      if (queryLoadController === controller) queryLoadController = null;
+      if (activeQueryAbortController === controller) activeQueryAbortController = null;
     }
   }
   document.getElementById("qReload").addEventListener("click", /** Save query preferences before explicitly reloading the selected time window. */ () => {
