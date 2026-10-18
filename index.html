@@ -2446,7 +2446,10 @@ async function loadRuntimeConfiguration() {
     sid: storedValue(sessionStorageKey(server), "sessionStorage") || null,
     connected: false,
     unverified: false,
-    checking: true
+    checking: true,
+    configWriteDenied: false,
+    apiVersionState: "unknown",
+    apiVersion: null
   }));
   for (const id of ["1", "2", "3", "4"]) {
     storeValue("ph_sid_" + id, null, "sessionStorage");
@@ -4123,6 +4126,11 @@ async function performCheckedWrites(button, targets, op) {
   try {
     for (const server of targets) {
       if (!server.connected) { outcomes.push({ server, status: "skipped" }); continue; }
+      // A previously confirmed 403 prevents repeat writes to the same protected config route.
+      if (server.configWriteDenied && op.path(server).startsWith("/config/")) {
+        outcomes.push({ server, status: "failed", error: msg("api.configWriteDenied") });
+        continue;
+      }
       let rows;
       try { rows = op.extract(await apiCall(server, op.path(server))); }
       catch (error) { outcomes.push({ server, status: "failed", error: error.message }); continue; }
@@ -4578,6 +4586,17 @@ async function renderHosts(container, generation) {
 				</div>
 				<div id="hostArea"><p class="empty">${htmlMsg("hosts.loading")}</p></div>
 				</div>`;
+  /**
+   * Display the instances whose configuration writes were explicitly denied.
+   * A denied app-password session remains connected and can still read records.
+   * @returns {string} Localized, escaped permission notice or an empty string.
+   */
+  function hostPermissionNoticeHtml() {
+    const denied = state.servers.filter(/** Select only peers with a confirmed forbidden config write. */ server => server.configWriteDenied);
+    return denied.length ? `<p class="sub" role="alert" data-host-write-denied="true">${htmlMsg("hosts.configWriteRestricted", {
+      servers: denied.map(/** Escape each instance name before including it in the notice. */ server => escapeHtml(server.label)).join(", ")
+    })}</p>` : "";
+  }
   const hostUiState = uiState.hosts;
   let sortKey = state.servers.some(/** Retain a saved instance-address sort column only while its instance remains configured. */ server => server.id === hostUiState.sortKey) ? hostUiState.sortKey : "name";
 
@@ -4669,19 +4688,19 @@ async function renderHosts(container, generation) {
         return sortDirection === "asc" ? comparison : -comparison;
       });
       if (sortedHosts.length === 0) {
-        hostArea.innerHTML = collectionCoverageHtml(readStates) + `<p class="empty">${htmlMsg("hosts.empty")}</p>`;
+        hostArea.innerHTML = hostPermissionNoticeHtml() + collectionCoverageHtml(readStates) + `<p class="empty">${htmlMsg("hosts.empty")}</p>`;
         return;
       }
       const sortIndicator = sortDirection === "asc" ? " ▲" : " ▼";
       const hostSortHeadingHtml = /** Build a host-table sort heading from its internal key and already escaped label. */ (columnKey, headingHtml) => `<th data-host-sort="${escapeHtml(columnKey)}" style="cursor:pointer;user-select:none;">${headingHtml}${sortKey === columnKey ? sortIndicator : ""}</th>`;
-      hostArea.innerHTML = collectionCoverageHtml(readStates) + `<div class="table-wrap"><table class="datatable">
+      hostArea.innerHTML = hostPermissionNoticeHtml() + collectionCoverageHtml(readStates) + `<div class="table-wrap"><table class="datatable">
 				<thead><tr>${hostSortHeadingHtml("name", htmlMsg("hosts.nameHeading"))}${state.servers.map(/** Build the address-sort heading for one configured instance. */ server => hostSortHeadingHtml(server.id, escapeHtml(server.label))).join("")}<th></th></tr></thead>
 				<tbody>${sortedHosts.map(/** Render a hostname row and highlight addresses that differ across its loaded instance records. */ (host, rowIndex) => {
         const serverCells = state.servers.map(/** Render this instance's address and eligible copy actions, or an add action for a missing record. */ server => {
           if (readStates.get(server.id) !== "confirmed") return uncertainCell(readStates, server);
           const hostRecord = host.byServer[server.id];
           if (hostRecord) {
-            const syncButtonsHtml = state.servers.filter(/** Offer source instances only when their loaded address differs from this target's address. */ sourceCandidate => sourceCandidate.id !== server.id && host.byServer[sourceCandidate.id] && host.byServer[sourceCandidate.id].ip !== hostRecord.ip).map(/** Build a copy-address button whose source and target IDs remain explicit in its data attributes. */ sourceServer => `<button class="btn xs" data-sync-host-row="${rowIndex}" data-sync-target="${escapeHtml(server.id)}" data-sync-source="${escapeHtml(sourceServer.id)}" title="${htmlMsg("hosts.useSource", {
+            const syncButtonsHtml = state.servers.filter(/** Offer source instances only when their loaded address differs from this target's address. */ sourceCandidate => sourceCandidate.id !== server.id && host.byServer[sourceCandidate.id] && host.byServer[sourceCandidate.id].ip !== hostRecord.ip).map(/** Build a copy-address button whose source and target IDs remain explicit in its data attributes. */ sourceServer => `<button class="btn xs" data-sync-host-row="${rowIndex}" data-sync-target="${escapeHtml(server.id)}" ${server.configWriteDenied ? "disabled" : ""} data-sync-source="${escapeHtml(sourceServer.id)}" title="${htmlMsg("hosts.useSource", {
               source: sourceServer.label,
               target: server.label
             })}" aria-label="${htmlMsg("hosts.useSource", {
@@ -4693,9 +4712,9 @@ async function renderHosts(container, generation) {
           const fallbackRecord = Object.values(host.byServer)[0];
           const fallbackIp = fallbackRecord ? fallbackRecord.ip : "";
           return `<td><span class="badge off">${htmlMsg("hosts.missing")}</span>
-							<button class="btn xs" data-add-host="${escapeHtml(server.id)}" data-name="${escapeHtml(host.name)}" data-ip="${escapeHtml(fallbackIp)}">${htmlMsg("hosts.add")}</button></td>`;
+							<button class="btn xs" data-add-host="${escapeHtml(server.id)}" ${server.configWriteDenied ? "disabled" : ""} data-name="${escapeHtml(host.name)}" data-ip="${escapeHtml(fallbackIp)}">${htmlMsg("hosts.add")}</button></td>`;
         });
-        return `<tr class="${new Set(Object.values(host.byServer).map(/** Collect loaded addresses so the row can detect cross-instance mismatches. */ record => record.ip)).size > 1 ? "row-mismatch" : ""}"><td class="mono">${escapeHtml(host.name)}</td>${serverCells.join("")}<td><button class="btn xs danger" data-del-row="${rowIndex}">${htmlMsg("hosts.delete")}</button></td></tr>`;
+        return `<tr class="${new Set(Object.values(host.byServer).map(/** Collect loaded addresses so the row can detect cross-instance mismatches. */ record => record.ip)).size > 1 ? "row-mismatch" : ""}"><td class="mono">${escapeHtml(host.name)}</td>${serverCells.join("")}<td><button class="btn xs danger" data-del-row="${rowIndex}" ${state.servers.filter(server => host.byServer[server.id]).every(server => server.configWriteDenied) ? "disabled" : ""}>${htmlMsg("hosts.delete")}</button></td></tr>`;
       }).join("")}</tbody>
 				</table></div>`;
       for (const sortHeader of hostArea.querySelectorAll("[data-host-sort]")) {
