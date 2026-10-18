@@ -100,7 +100,9 @@ or completed. The browser does not provide persistent server-side monitoring
 after the tab closes. The fuller data-age and automatic-refresh functionality
 remains tracked in [#22](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/22).
 
-## Supported Pi-hole v6 API baseline and permissions
+## Pi-hole API permissions
+
+### Supported Pi-hole v6 API baseline
 
 The dashboard supports the **Pi-hole v6 FTL REST API**, not the older v5 PHP
 API. Consult the [Pi-hole API documentation](https://docs.pi-hole.net/api/)
