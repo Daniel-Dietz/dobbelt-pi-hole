@@ -408,10 +408,12 @@ Dokumentationslinks erhalten.
   zeigen Status und Query-Zeilen unabhängig von langsamen Gegenstellen;
   Gesamtsummen werden bei fehlenden Antworten als Teildaten gekennzeichnet.
   Zeitraumwechsel und Navigation brechen überholte Query-/Cursor-Abfragen ab.
-  HTTP 401 verwirft nur die ursprüngliche Sitzung. Bei vorübergehenden
-  Verbindungsfehlern bleibt die SID zur erneuten manuellen Prüfung erhalten;
-  Logout löscht sie sofort lokal und unterscheidet einen bestätigten von
-  einem fehlgeschlagenen Remote-Widerruf. Details stehen in der englischen
+  HTTP 401 verwirft nur die ursprüngliche Sitzung. Scheitert die Prüfung
+  einer wiederhergestellten SID an einem Verbindungsfehler, bleibt die Sitzung
+  als unbestätigt gespeichert und kann manuell erneut geprüft werden.
+  Transportfehler gewöhnlicher API-Aufrufe bewahren die SID, ändern aber
+  einen bereits bestehenden Verbindungsstatus nicht. Logout löscht sie sofort
+  lokal und unterscheidet bestätigten und unbestätigten Remote-Widerruf. Details stehen in der englischen
   [Betriebsanleitung](docs/CONFIGURATION.md#browser-request-limits-and-session-state).
   Weitergehende Pi-hole-Berechtigungen bleiben in
   [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10),
