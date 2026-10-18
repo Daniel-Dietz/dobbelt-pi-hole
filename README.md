@@ -306,9 +306,11 @@ existing filenames remain available for documentation links.
   and combined data is explicitly marked partial when a target is missing.
   Changing a query range or leaving its tab cancels obsolete query/cursor
   reads; late results cannot overwrite the selected range. HTTP 401 invalidates
-  the original session only. A transient connection failure leaves its SID
-  unverified for explicit retry, while logout clears the local SID immediately
-  and reports whether remote revocation was confirmed. See the
+  the original session only. Failed verification of a restored SID marks
+  that connection unverified and offers a manual session retry. A normal API
+  transport error retains the SID but does not change an established
+  connection state. Logout clears the local SID immediately and reports
+  whether remote revocation was confirmed. See the
   [request and session guide](docs/CONFIGURATION.md#browser-request-limits-and-session-state).
   More specific API permissions remain in
   [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10); draft
