@@ -2693,12 +2693,14 @@ async function apiCall(server, path, {
   body,
   rawResponse = false,
   signal: requestSignal,
-  timeoutMs = API_REQUEST_TIMEOUT_MS
+  timeoutMs = API_REQUEST_TIMEOUT_MS,
+  invalidateSessionOn401 = true
 } = {}) {
   const deadline = requestSignals(requestSignal, timeoutMs);
   const { signal } = deadline;
   const headers = { "Content-Type": "application/json" };
-  if (server.sid) headers["X-FTL-SID"] = server.sid;
+  const requestSid = server.sid;
+  if (requestSid) headers["X-FTL-SID"] = requestSid;
   try {
     const response = await fetch(server.base.replace(/\/$/, "") + path, {
       method, redirect: "error", headers,
@@ -2712,10 +2714,13 @@ async function apiCall(server, path, {
       throw failure;
     }
     if (response.status === 401) {
-      server.connected = false;
-      server.unverified = false;
-      server.sid = null;
-      storeValue(sessionStorageKey(server), null, "sessionStorage");
+      // A delayed response from an old request must not invalidate a newly logged-in SID.
+      if (invalidateSessionOn401 && server.sid === requestSid) {
+        server.connected = false;
+        server.unverified = false;
+        server.sid = null;
+        storeValue(sessionStorageKey(server), null, "sessionStorage");
+      }
       throw new AuthError(msg("auth.notConnectedOn", { server: server.label }));
     }
     if (rawResponse) return response;
@@ -2781,7 +2786,8 @@ async function logout(server) {
   storeValue(sessionStorageKey(server), null, "sessionStorage");
   if (!previousSid) return false;
   try {
-    await apiCall({ ...server, sid: previousSid }, "/auth", { method: "DELETE" });
+    // A late revoke response belongs only to the retired SID, never to a replacement login.
+    await apiCall({ ...server, sid: previousSid }, "/auth", { method: "DELETE", invalidateSessionOn401: false });
     return true;
   } catch {
     return false;
