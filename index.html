@@ -6004,17 +6004,40 @@ function applyTheme(theme) {
  */
 function initThemeToggle() {
   applyTheme(loadTheme());
-  document.getElementById("themeToggle").addEventListener("click", /** Switch between light and dark, save the choice and repaint the active tab or configuration message. */ () => {
-    const theme = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
-    applyTheme(theme);
-    storeValue(THEME_KEY, theme);
-    if (configurationStatus === "ready") {
-      // Preserve the active submission context and draft while rebuilding theme-sensitive charts.
-      void rerenderActiveViewPreservingDrafts(activeViewDraftSnapshot());
-    } else {
-      renderConfigurationState();
-    }
-  });
+  const toggle = document.getElementById("themeToggle");
+  let pointerFocus = null;
+  toggle.addEventListener("pointerdown",
+    /** Capture the focused draft before a pointer activation moves focus to the theme button. */
+    () => {
+      const root = document.getElementById("tabContent");
+      const active = document.activeElement;
+      const selector = root.contains(active) && active.matches?.("input, select, textarea")
+        ? formFieldSelector(active) : null;
+      pointerFocus = selector ? { selector, start: active.selectionStart, end: active.selectionEnd } : null;
+    });
+  toggle.addEventListener("click",
+    /** Repaint while retaining the most recently edited form and its keyboard focus. */
+    () => {
+      const snapshot = configurationStatus === "ready" ? activeViewDraftSnapshot() : null;
+      if (snapshot && pointerFocus) {
+        for (const field of snapshot.fields) {
+          if (field.selector === pointerFocus.selector) {
+            field.focused = true;
+            field.start = pointerFocus.start;
+            field.end = pointerFocus.end;
+          }
+        }
+      }
+      pointerFocus = null;
+      const theme = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+      applyTheme(theme);
+      storeValue(THEME_KEY, theme);
+      if (configurationStatus === "ready") {
+        void rerenderActiveViewPreservingDrafts(snapshot);
+      } else {
+        renderConfigurationState();
+      }
+    });
 }
 /** Initialize language and theme controls, resolve the initial tab and begin validated configuration loading. */
 async function bootstrap() {
