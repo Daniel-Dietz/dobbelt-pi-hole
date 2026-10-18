@@ -3995,10 +3995,8 @@ async function renderQueries(container, generation) {
     persistQueryState();
     const pageOffset = pageIndex * pageSize;
     const visibleRows = Number.isFinite(pageSize) ? filteredRows.slice(pageOffset, pageOffset + pageSize) : filteredRows;
-    const renderSortHeading = /** Build a translated sortable query heading and show the current direction on its active column. */ (columnKey, headingKey) => {
-      const indicator = sortKey === columnKey ? sortDirection === "asc" ? " \u25B2" : " \u25BC" : "";
-      return `<th data-sort="${columnKey}" style="cursor:pointer;user-select:none;">${htmlMsg(headingKey)}${indicator}</th>`;
-    };
+    const renderSortHeading = /** Render an accessible query sort button with active aria-sort. */ (columnKey, headingKey) =>
+      sortableColumnHeading(columnKey, msg(headingKey), sortKey, sortDirection, "data-sort");
     queryTableArea.innerHTML = `<div class="table-wrap"><table class="datatable">
 				<thead><tr>
 					${renderSortHeading("time", "queries.time")}${renderSortHeading("server", "queries.server")}${renderSortHeading("status", "queries.status")}${renderSortHeading("type", "queries.type")}${renderSortHeading("domain", "queries.domain")}${renderSortHeading("client", "queries.client")}
@@ -4023,6 +4021,7 @@ async function renderQueries(container, generation) {
           sortDirection = clickedColumn === "time" ? "desc" : "asc";
         }
         renderQueryTable();
+        queryTableArea.querySelector(`[data-sort="${CSS.escape(clickedColumn)}"]`)?.focus({ preventScroll: true });
       });
     }
     const previousPageButton = document.getElementById("qPagePrev");
@@ -4817,10 +4816,10 @@ async function renderHosts(container, generation) {
         hostArea.innerHTML = hostPermissionNoticeHtml() + collectionCoverageHtml(readStates) + `<p class="empty">${htmlMsg("hosts.empty")}</p>`;
         return;
       }
-      const sortIndicator = sortDirection === "asc" ? " ▲" : " ▼";
-      const hostSortHeadingHtml = /** Build a host-table sort heading from its internal key and already escaped label. */ (columnKey, headingHtml) => `<th data-host-sort="${escapeHtml(columnKey)}" style="cursor:pointer;user-select:none;">${headingHtml}${sortKey === columnKey ? sortIndicator : ""}</th>`;
+      const hostSortHeadingHtml = /** Render native host sort buttons with current aria-sort direction. */ (columnKey, headingText) =>
+        sortableColumnHeading(columnKey, headingText, sortKey, sortDirection, "data-host-sort");
       hostArea.innerHTML = hostPermissionNoticeHtml() + collectionCoverageHtml(readStates) + `<div class="table-wrap"><table class="datatable">
-				<thead><tr>${hostSortHeadingHtml("name", htmlMsg("hosts.nameHeading"))}${state.servers.map(/** Build the address-sort heading for one configured instance. */ server => hostSortHeadingHtml(server.id, escapeHtml(server.label))).join("")}<th></th></tr></thead>
+				<thead><tr>${hostSortHeadingHtml("name", msg("hosts.nameHeading"))}${state.servers.map(/** Build the address-sort heading for one configured instance. */ server => hostSortHeadingHtml(server.id, server.label)).join("")}<th></th></tr></thead>
 				<tbody>${sortedHosts.map(/** Render a hostname row and highlight addresses that differ across its loaded instance records. */ (host, rowIndex) => {
         const serverCells = state.servers.map(/** Render this instance's address and eligible copy actions, or an add action for a missing record. */ server => {
           if (readStates.get(server.id) !== "confirmed") return uncertainCell(readStates, server);
@@ -4858,6 +4857,7 @@ async function renderHosts(container, generation) {
           });
           saveUiState();
           renderHostTable();
+          hostArea.querySelector(`[data-host-sort="${CSS.escape(selectedSortKey)}"]`)?.focus({ preventScroll: true });
         });
       }
       for (const syncButton of hostArea.querySelectorAll("[data-sync-host-row]")) {
