@@ -5109,10 +5109,10 @@ async function renderClients(container, generation) {
     saveClientViewState();
     const pageStart = clientPage * pageSize;
     const visibleClients = Number.isFinite(pageSize) ? sortedClients.slice(pageStart, pageStart + pageSize) : sortedClients;
-    const sortIndicator = sortDirection === "asc" ? " ▲" : " ▼";
-    const clientSortHeadingHtml = /** Build a client-table sort heading from its internal key and already escaped label. */ (columnKey, headingHtml) => `<th data-client-sort="${escapeHtml(columnKey)}" style="cursor:pointer;user-select:none;">${headingHtml}${sortKey === columnKey ? sortIndicator : ""}</th>`;
+    const clientSortHeadingHtml = /** Render native client and instance sorting buttons with aria-sort. */ (columnKey, headingText) =>
+      sortableColumnHeading(columnKey, headingText, sortKey, sortDirection, "data-client-sort");
     clientArea.innerHTML = collectionCoverageHtml(clientReadStates) + `<div class="table-wrap client-table-wrap"><table class="datatable">
-					<thead><tr>${clientSortHeadingHtml("client", htmlMsg("clients.clientHeading"))}${clientSortHeadingHtml("comment", htmlMsg("clients.descriptionHeading"))}${state.servers.map(/** Build the client-presence sort heading for one configured instance. */ server => clientSortHeadingHtml(server.id, escapeHtml(server.label))).join("")}<th></th></tr></thead>
+					<thead><tr>${clientSortHeadingHtml("client", msg("clients.clientHeading"))}${clientSortHeadingHtml("comment", msg("clients.descriptionHeading"))}${state.servers.map(/** Build the client-presence sort heading for one configured instance. */ server => clientSortHeadingHtml(server.id, server.label)).join("")}<th></th></tr></thead>
 					<tbody>${visibleClients.map(/** Render a client row using its original array index so actions still select the correct record after sorting. */ (client, visibleRowIndex) => {
       const clientIndex = clients.indexOf(client);
       const serverCellsHtml = state.servers.map(/** Show an instance's loaded client membership or provide a button to add the missing client. */ server => clientReadStates.get(server.id) !== "confirmed" ? uncertainCell(clientReadStates, server) : client.byServer[server.id] ? `<td><span class="badge on">${htmlMsg("clients.active")}</span></td>` : `<td><span class="badge off">${htmlMsg("clients.missing")}</span> <button class="btn xs" data-add-client-server="${escapeHtml(server.id)}" data-client-row="${clientIndex}">${htmlMsg("clients.add")}</button></td>`).join("");
@@ -5137,6 +5137,7 @@ async function renderClients(container, generation) {
         clientPage = 0;
         saveClientViewState();
         renderClientTable();
+        clientArea.querySelector(`[data-client-sort="${CSS.escape(selectedSortKey)}"]`)?.focus({ preventScroll: true });
       });
     }
     for (const addButton of clientArea.querySelectorAll("[data-add-client-server]")) {
