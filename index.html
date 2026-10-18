@@ -998,6 +998,7 @@ const I18N = {
     "dashboard.blockedTotal": "Blokeret i alt",
     "dashboard.blockedPercent": "Blokeret %",
     "dashboard.totalHint": "Tallene er en simpel sum af de aktive Pi-holes – brug fanen Gravity til at opdatere bloklister, og Forespørgsler for en samlet log.",
+    "dashboard.partialCoverage": "Delvise data: {ready} af {total} Pi-hole-instanser har bekræftede data. Summen udelader ventende, utilgængelige og afbrudte instanser.",
     "dashboard.blockingEnabledToast": "{server}: blokering slået til",
     "dashboard.blockingDisabledToast": "{server}: blokering slået fra",
     "dashboard.serverError": "{server}: {error}",
@@ -1287,6 +1288,7 @@ const I18N = {
     "dashboard.blockedTotal": "Total blocked",
     "dashboard.blockedPercent": "Blocked %",
     "dashboard.totalHint": "These figures are the sum of all active Pi-holes. Use the Gravity tab to update blocklists and the Queries tab for a combined log.",
+    "dashboard.partialCoverage": "Partial data: {ready} of {total} Pi-hole instances have confirmed data. Totals exclude pending, unavailable and disconnected instances.",
     "dashboard.blockingEnabledToast": "{server}: blocking enabled",
     "dashboard.blockingDisabledToast": "{server}: blocking disabled",
     "dashboard.serverError": "{server}: {error}",
@@ -1576,6 +1578,7 @@ const I18N = {
     "dashboard.blockedTotal": "Insgesamt blockiert",
     "dashboard.blockedPercent": "Blockiert %",
     "dashboard.totalHint": "Die Werte sind die Summe aller aktiven Pi-holes. Auf dem Reiter Gravity können Sie die Sperrlisten aktualisieren; der Reiter Anfragen zeigt das gemeinsame Protokoll.",
+    "dashboard.partialCoverage": "Teildaten: Für {ready} von {total} Pi-hole-Instanzen liegen bestätigte Daten vor. Ausstehende, nicht erreichbare und getrennte Instanzen fehlen in der Summe.",
     "dashboard.blockingEnabledToast": "{server}: Blockierung aktiviert",
     "dashboard.blockingDisabledToast": "{server}: Blockierung deaktiviert",
     "dashboard.serverError": "{server}: {error}",
@@ -2589,28 +2592,44 @@ function exactClientIp(value) {
  * Refresh the shared IPv4-to-friendly-name lookup from connected instances' client comments.
  * Ignore unavailable client lists and keep the first nonblank name in configured server order.
  */
+let clientNamesRefreshSerial = 0;
+/**
+ * Load friendly names without allowing an older tab's completion to replace newer data.
+ * A fresh call aborts the previous read and only its own server snapshot can publish.
+ * @returns {Promise<boolean>} Whether the current request published a complete name map.
+ */
 async function refreshClientNames() {
-  const clientLists = await Promise.all(state.servers.map(/** Read one connected instance's client list; an unavailable instance contributes no name overrides. */ async server => {
-    if (!server.connected) {
-      return [];
+  const serial = ++clientNamesRefreshSerial;
+  const servers = [...state.servers];
+  activeClientNamesAbortController?.abort();
+  const controller = new AbortController();
+  activeClientNamesAbortController = controller;
+  const clientLists = await Promise.all(servers.map(
+    /** Read every instance independently; missing optional comments never authenticate another target. */
+    async server => {
+      if (!server.connected) return [];
+      try {
+        const response = await apiCall(server, "/clients", { signal: controller.signal });
+        return requireCollection(response, "clients");
+      } catch {
+        return [];
+      }
     }
-    try {
-      return (await apiCall(server, "/clients")).clients || [];
-    } catch {
-      return [];
-    }
-  }));
+  ));
+  if (serial !== clientNamesRefreshSerial || controller.signal.aborted ||
+      servers.length !== state.servers.length ||
+      servers.some((server, index) => server !== state.servers[index])) return false;
   const namesByIp = new Map();
   for (const clients of clientLists) {
     for (const client of clients) {
       const ip = exactClientIp(client.client);
       const name = String(client.comment || "").trim();
-      if (ip && name && !namesByIp.has(ip)) {
-        namesByIp.set(ip, name);
-      }
+      if (ip && name && !namesByIp.has(ip)) namesByIp.set(ip, name);
     }
   }
   state.clientNames = namesByIp;
+  if (activeClientNamesAbortController === controller) activeClientNamesAbortController = null;
+  return true;
 }
 /**
  * Choose a client's saved IPv4 name, then its API-provided name, IP or a dash.
@@ -2822,6 +2841,8 @@ async function checkSession(server) {
   }
 }
 let activeQueryAbortController = null;
+let activeDashboardAbortController = null;
+let activeClientNamesAbortController = null;
 let dashboardCharts = [];
 /**
  * Release all Chart.js instances before the dashboard is replaced.
@@ -2910,6 +2931,10 @@ async function switchTab(tabId, updateHash = true) {
   if (configurationStatus !== "ready") {
     return;
   }
+  // Navigation aborts stale dashboard reads and shared client-name lookups.
+  activeDashboardAbortController?.abort();
+  activeDashboardAbortController = null;
+  activeClientNamesAbortController?.abort();
   // Navigation or translation abandons pending query cursors from the old render.
   if (state.activeTab === "queries" && activeQueryAbortController) {
     activeQueryAbortController.abort();
@@ -3062,10 +3087,38 @@ async function renderDashboard(container, generation) {
   const summaryGrid = document.getElementById("dashGrid");
   const detailGrid = document.getElementById("dashDetailGrid");
   const chartArea = document.getElementById("dashChartArea");
-  await refreshClientNames();
-  if (generation !== state.renderGen) {
-    return;
+  const controller = new AbortController();
+  activeDashboardAbortController = controller;
+  const ownsView = /** Ignore results from a replaced dashboard or cancelled view. */ () =>
+    generation === state.renderGen && !controller.signal.aborted;
+  const clientNamesPromise = refreshClientNames();
+  const earlyResults = new Map();
+  /**
+   * Show each healthy Pi-hole immediately without implying that pending peers supplied data.
+   * This read-only preview is replaced by the interactive dashboard after all reads settle.
+   */
+  function paintEarlySummary() {
+    if (!ownsView()) return;
+    const ready = [...earlyResults.values()].filter(
+      /** Count only server responses containing an actual summary. */ result => result.server.connected && result.summary);
+    const totalQueries = ready.reduce(
+      /** Aggregate only verified summary responses, not pending or failed targets. */ (sum, result) => sum + (Number(result.summary.queries?.total) || 0), 0);
+    summaryGrid.innerHTML = state.servers.map(
+      /** Keep a placeholder for pending targets so the layout remains stable. */ server => {
+        const result = earlyResults.get(server.id);
+        const heading = '<h2><span class="tag tag-' + escapeHtml(server.chip.slice(1)) + '">' + escapeHtml(server.label) + '</span></h2>';
+        if (!result) return '<div class="card" data-dashboard-pending="' + escapeHtml(server.id) + '">' + heading + '<p class="empty">' + htmlMsg("common.loading") + '</p></div>';
+        if (!server.connected) return '<div class="card">' + heading + '<p class="sub">' + htmlMsg("dashboard.notLoggedIn") + '</p></div>';
+        if (!result.summary) return '<div class="card">' + heading + '<p class="empty">' + htmlMsg("dashboard.statusUnavailable") + '</p></div>';
+        const queries = result.summary.queries || {};
+        return '<div class="card" data-dashboard-preview="' + escapeHtml(server.id) + '">' + heading +
+          '<div class="big-num">' + fmtNum(queries.total) + '</div><div class="sub">' +
+          escapeHtml(msgCount("dashboard.queriesToday", queries.total)) + '</div></div>';
+      }).join("") + '<div class="card" data-dashboard-progress="true"><h2><span class="tag tag-combo">' +
+      htmlMsg("dashboard.total") + '</span></h2><div class="big-num">' + (ready.length ? fmtNum(totalQueries) : '–') +
+      '</div><p class="sub">' + htmlMsg("dashboard.partialCoverage", {ready:ready.length,total:state.servers.length}) + '</p></div>';
   }
+  paintEarlySummary();
   const serverResults = await Promise.all(state.servers.map(
   /**
    * Collect one instance's summary and blocking state, with best-effort optional detail requests.
@@ -3091,15 +3144,15 @@ async function renderDashboard(container, generation) {
         clientHistoryResponse,
         upstreamsResponse
       ] = await Promise.all([
-        apiCall(requestedServer, "/stats/summary"),
-        apiCall(requestedServer, "/dns/blocking"),
-        apiCall(requestedServer, "/stats/top_domains").catch(/** Allow the summary to render when the top allowed-domain request fails. */ () => null),
-        apiCall(requestedServer, "/stats/top_domains?blocked=true").catch(/** Allow the summary to render when the top blocked-domain request fails. */ () => null),
-        apiCall(requestedServer, "/stats/top_clients").catch(/** Allow the summary to render when the top-client request fails. */ () => null),
-        apiCall(requestedServer, "/stats/query_types").catch(/** Leave query-type details unavailable when their request fails. */ () => null),
-        apiCall(requestedServer, "/history").catch(/** Leave the query-history chart unavailable when its request fails. */ () => null),
-        apiCall(requestedServer, "/history/clients").catch(/** Leave the client-history chart unavailable when its request fails. */ () => null),
-        apiCall(requestedServer, "/stats/upstreams").catch(/** Leave upstream details unavailable when their request fails. */ () => null)
+        apiCall(requestedServer, "/stats/summary", { signal: controller.signal }),
+        apiCall(requestedServer, "/dns/blocking", { signal: controller.signal }),
+        apiCall(requestedServer, "/stats/top_domains", { signal: controller.signal }).catch(/** Allow the summary to render when the top allowed-domain request fails. */ () => null),
+        apiCall(requestedServer, "/stats/top_domains?blocked=true", { signal: controller.signal }).catch(/** Allow the summary to render when the top blocked-domain request fails. */ () => null),
+        apiCall(requestedServer, "/stats/top_clients", { signal: controller.signal }).catch(/** Allow the summary to render when the top-client request fails. */ () => null),
+        apiCall(requestedServer, "/stats/query_types", { signal: controller.signal }).catch(/** Leave query-type details unavailable when their request fails. */ () => null),
+        apiCall(requestedServer, "/history", { signal: controller.signal }).catch(/** Leave the query-history chart unavailable when its request fails. */ () => null),
+        apiCall(requestedServer, "/history/clients", { signal: controller.signal }).catch(/** Leave the client-history chart unavailable when its request fails. */ () => null),
+        apiCall(requestedServer, "/stats/upstreams", { signal: controller.signal }).catch(/** Leave upstream details unavailable when their request fails. */ () => null)
       ]);
       return {
         server: requestedServer,
@@ -3120,13 +3173,20 @@ async function renderDashboard(container, generation) {
         blocking: null
       };
     }
+  }).map(async pendingRequest => {
+    const result = await pendingRequest;
+    if (ownsView()) {
+      earlyResults.set(result.server.id, result);
+      paintEarlySummary();
+    }
+    return result;
   }));
-  if (generation !== state.renderGen) {
-    return;
-  }
+  await clientNamesPromise;
+  if (!ownsView()) return;
   let combinedQueries = 0;
   let combinedBlockedQueries = 0;
   let hasSummaryData = false;
+  const summaryCoverage = serverResults.filter(/** Count only returned usable summaries. */ result => result.server.connected && result.summary).length;
   summaryGrid.innerHTML = serverResults.map(
   /** Render an instance's login prompt, unavailable state or summary and add available counts to the combined totals. */
   summaryResult => {
@@ -3178,7 +3238,7 @@ async function renderDashboard(container, generation) {
 				<hr class="sep">
 				<div class="stat-row"><span class="k">${htmlMsg("dashboard.blockedTotal")}</span><span class="v">${hasSummaryData ? fmtNum(combinedBlockedQueries) : "–"}</span></div>
 				<div class="stat-row"><span class="k">${htmlMsg("dashboard.blockedPercent")}</span><span class="v">${hasSummaryData && combinedQueries ? fmtPct(combinedBlockedQueries / combinedQueries * 100) : "–"}</span></div>
-				<p class="sub" style="margin-top:10px;">${htmlMsg("dashboard.totalHint")}</p>
+				<p class="sub" style="margin-top:10px;">${summaryCoverage === state.servers.length ? htmlMsg("dashboard.totalHint") : htmlMsg("dashboard.partialCoverage", {ready:summaryCoverage, total:state.servers.length})}</p>
 				</div>`;
   bindLoginHandlers(summaryGrid, /** Rebuild the dashboard after one of its login controls changes the session. */ () => switchTab("dashboard"));
   for (const blockingButton of summaryGrid.querySelectorAll("[data-toggle-block]")) {
