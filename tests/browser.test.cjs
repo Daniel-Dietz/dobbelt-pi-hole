@@ -275,6 +275,7 @@ async function openDashboard(t, options = {}) {
   const optionalGate = holdOptionalServer ? pauseReads('/stats/top_clients', holdOptionalServer) : null;
   const serverData = Object.fromEntries([1, 2, 3, 4].map(/** Allocate independent writable API data for each possible instance so mutations cannot leak between fixtures. */ id => [String(id), {
     blocking: true,
+    ftlVersion: "v6.5.0",
     domains: [{
       domain: DOMAIN,
       type: 'deny',
@@ -460,8 +461,12 @@ async function openDashboard(t, options = {}) {
     if (endpoint === '/dns/blocking') {
       if (method === 'POST') data.blocking = body.blocking;
       return json({
-        blocking: data.blocking ? 'enabled' : 'disabled'
+        blocking: data.blocking === true ? 'enabled' :
+          data.blocking === false ? 'disabled' : data.blocking
       });
+    }
+    if (endpoint === '/info/version' && method === 'GET') {
+      return json({ version: { ftl: { local: { version: data.ftlVersion } } } });
     }
     if (method !== 'GET') {
       if (endpoint.startsWith('/domains/') && method === 'POST') {
