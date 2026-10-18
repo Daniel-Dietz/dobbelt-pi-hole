@@ -4657,7 +4657,7 @@ async function renderHosts(container, generation) {
   function hostPermissionNoticeHtml() {
     const denied = state.servers.filter(/** Select only peers with a confirmed forbidden config write. */ server => server.configWriteDenied);
     return denied.length ? `<p class="sub" role="alert" data-host-write-denied="true">${htmlMsg("hosts.configWriteRestricted", {
-      servers: denied.map(/** Escape each instance name before including it in the notice. */ server => escapeHtml(server.label)).join(", ")
+      servers: denied.map(/** Pass plain labels to htmlMsg, which escapes the completed localized message. */ server => server.label).join(", ")
     })}</p>` : "";
   }
   const hostUiState = uiState.hosts;
