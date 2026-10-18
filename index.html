@@ -1040,10 +1040,8 @@ const I18N = {
     "queries.total.other": "{count} forespørgsler i alt for det valgte tidsrum.",
     "queries.truncated.one": "{count} forespørgsel hentet for det valgte tidsrum – der er muligvis flere end vist; indsnævr tidsrummet for et fuldstændigt resultat.",
     "queries.truncated.other": "{count} forespørgsler hentet for det valgte tidsrum – der er muligvis flere end vist; indsnævr tidsrummet for et fuldstændigt resultat.",
-        "multi.conflict": "Modstridende regel findes allerede; kontrollér målserveren.",
     "multi.busy": "En anden ændring på disse Pi-hole-instanser er stadig i gang.",
     "multi.invalidRead": "Ufuldstændigt svar fra Pi-hole.",
-    "multi.unknown": "Ukendt",
     "multi.disconnected": "Ikke forbundet",
     "multi.unavailable": "Data kunne ikke hentes fra: {servers}. Posterne regnes ikke som manglende.",
     "multi.confirmed": "{server}: ændringen er bekræftet.",
@@ -1210,7 +1208,7 @@ const I18N = {
     "config.unsupportedVersion": "Konfigurationens version mangler eller understøttes ikke. Generer konfigurationen med værktøjerne fra denne version af kontrolpanelet.",
     "config.changed": "Pi-hole-konfigurationen er ændret. Genindlæs denne side, før du fortsætter.",
     "multi.unknown": "Status ukendt",
-    "multi.skipped": "Sprunget over",
+    "multi.skippedLabel": "Sprunget over",
     "multi.invalidResponse": "Pi-hole returnerede ufuldstændige data.",
     "multi.readUnavailable": "Kunne ikke hente data fra: {servers}. Ukendte poster må ikke ændres.",
     "multi.confirmedResult": "{server}: ændringen er bekræftet.",
@@ -1325,10 +1323,8 @@ const I18N = {
     "queries.total.other": "{count} queries in total for the selected time range.",
     "queries.truncated.one": "{count} query loaded for the selected time range – more queries may be available. Narrow the time range for complete results.",
     "queries.truncated.other": "{count} queries loaded for the selected time range – more queries may be available. Narrow the time range for complete results.",
-        "multi.conflict": "A conflicting rule already exists; inspect the target instance.",
     "multi.busy": "Another change to these Pi-hole instances is still running.",
     "multi.invalidRead": "Incomplete response from Pi-hole.",
-    "multi.unknown": "Unknown",
     "multi.disconnected": "Not connected",
     "multi.unavailable": "Data unavailable from: {servers}. These records are not considered missing.",
     "multi.confirmed": "{server}: change confirmed.",
@@ -1495,7 +1491,7 @@ const I18N = {
     "config.unsupportedVersion": "The configuration version is missing or unsupported. Generate the configuration with the tools from this dashboard version.",
     "config.changed": "The Pi-hole configuration has changed. Reload this page before continuing.",
     "multi.unknown": "Unknown",
-    "multi.skipped": "Skipped",
+    "multi.skippedLabel": "Skipped",
     "multi.invalidResponse": "Pi-hole returned incomplete data.",
     "multi.readUnavailable": "Could not read data from: {servers}. Unknown entries cannot be modified.",
     "multi.confirmedResult": "{server}: change confirmed.",
@@ -1610,10 +1606,8 @@ const I18N = {
     "queries.total.other": "Insgesamt {count} Anfragen im gewählten Zeitraum.",
     "queries.truncated.one": "{count} Anfrage wurde für den gewählten Zeitraum geladen – möglicherweise sind weitere Anfragen vorhanden. Grenzen Sie den Zeitraum für ein vollständiges Ergebnis ein.",
     "queries.truncated.other": "{count} Anfragen wurden für den gewählten Zeitraum geladen – möglicherweise sind weitere Anfragen vorhanden. Grenzen Sie den Zeitraum für ein vollständiges Ergebnis ein.",
-        "multi.conflict": "Es besteht bereits eine widersprüchliche Regel; Zielinstanz prüfen.",
     "multi.busy": "Eine weitere Änderung an diesen Pi-hole-Instanzen läuft noch.",
     "multi.invalidRead": "Unvollständige Antwort von Pi-hole.",
-    "multi.unknown": "Unbekannt",
     "multi.disconnected": "Nicht verbunden",
     "multi.unavailable": "Daten nicht verfügbar von: {servers}. Diese Einträge gelten nicht als fehlend.",
     "multi.confirmed": "{server}: Änderung bestätigt.",
@@ -1780,7 +1774,7 @@ const I18N = {
     "config.unsupportedVersion": "Die Konfigurationsversion fehlt oder wird nicht unterstützt. Erzeugen Sie die Konfiguration mit den Werkzeugen dieser Dashboard-Version.",
     "config.changed": "Die Pi-hole-Konfiguration wurde geändert. Laden Sie diese Seite neu, bevor Sie fortfahren.",
     "multi.unknown": "Unbekannt",
-    "multi.skipped": "Übersprungen",
+    "multi.skippedLabel": "Übersprungen",
     "multi.invalidResponse": "Pi-hole hat unvollständige Daten zurückgegeben.",
     "multi.readUnavailable": "Daten konnten nicht geladen werden von: {servers}. Einträge mit unbekanntem Status dürfen nicht geändert werden.",
     "multi.confirmedResult": "{server}: Änderung bestätigt.",
@@ -3977,7 +3971,7 @@ function initialReadStates() {
 /** Replace actionable absence with an unknown/skipped indicator when an instance was not read. */
 function unavailableCell(readStates, server) {
   const status = readStates.get(server.id);
-  return status === "ok" ? null : '<td><span class="badge off">' + htmlMsg(status === "unknown" ? "multi.unknown" : "multi.skipped") + "</span></td>";
+  return status === "ok" ? null : '<td><span class="badge off">' + htmlMsg(status === "unknown" ? "multi.unknown" : "multi.skippedLabel") + "</span></td>";
 }
 
 /** Summarize failed instance reads without hiding partial data from healthy servers. */
@@ -4641,6 +4635,25 @@ async function renderClients(container, generation) {
   let suggestions = [];
   let clientReadStates = new Map();
   let suggestionReadStates = new Map();
+  const suggestionDrafts = new Map();
+  /**
+   * Remember each visible suggestion's description and chosen destination before
+   * its row is replaced by pagination or a refresh. This cache stays in memory.
+   */
+  function rememberSuggestionDrafts() {
+    const area = document.getElementById("suggArea");
+    if (!area) return;
+    for (const row of area.querySelectorAll("tr[data-sugg-row]")) {
+      const nameInput = row.querySelector(".sugg-name");
+      const targetSelect = row.querySelector("select.target-select");
+      if (nameInput && targetSelect) {
+        suggestionDrafts.set(nameInput.dataset.suggestionName, {
+          name: nameInput.value,
+          target: targetSelect.value
+        });
+      }
+    }
+  }
   const clientUiState = uiState.clients;
   let sortKey = clientUiState.sortKey;
 
@@ -4790,6 +4803,7 @@ async function renderClients(container, generation) {
    */
   function renderSuggestionTable() {
     const suggestionArea = document.getElementById("suggArea");
+    rememberSuggestionDrafts();
     if (suggestions.length === 0) {
       suggestionArea.innerHTML = collectionCoverageHtml(suggestionReadStates) + `<p class="empty">${htmlMsg("clients.unknownEmpty")}</p>`;
       return;
@@ -4818,6 +4832,18 @@ async function renderClients(container, generation) {
 					</tr>`).join("")}</tbody>
 				</table></div>
 				${pagerHtml("suggPage", suggestionPage, pageCount, suggestions.length, visibleSuggestions.length)}`;
+    // Confirmed suggestions disappear naturally. Keep the original name and
+    // target when a rejected or uncertain attempt leaves the row available.
+    for (const row of suggestionArea.querySelectorAll("tr[data-sugg-row]")) {
+      const nameInput = row.querySelector(".sugg-name");
+      const targetSelect = row.querySelector("select.target-select");
+      const draft = suggestionDrafts.get(nameInput?.dataset.suggestionName);
+      if (!draft || !nameInput || !targetSelect) continue;
+      nameInput.value = draft.name;
+      if ([...targetSelect.options].some(/** Restore only a configured target still present in this selector. */ option => option.value === draft.target)) {
+        targetSelect.value = draft.target;
+      }
+    }
     for (const addButton of suggestionArea.querySelectorAll("[data-add-sugg]")) {
       addButton.addEventListener("click", /** Add the discovered identifier and entered name to each selected connected instance, then refresh both tables. */ async () => {
         const suggestionIndex = addButton.dataset.addSugg;
@@ -4862,13 +4888,14 @@ async function renderClients(container, generation) {
    */
   async function loadClientData() {
     const loadId = ++loadRevision;
+    rememberSuggestionDrafts();
     const clientArea = document.getElementById("clientArea");
     const suggestionArea = document.getElementById("suggArea");
     clientArea.innerHTML = `<p class="empty">${htmlMsg("clients.loading")}</p>`;
     suggestionArea.innerHTML = `<p class="empty">${htmlMsg("clients.loading")}</p>`;
-    clients = [];
-    clientReadStates = new Map(state.servers.map(server => [server.id, "skipped"]));
-    suggestionReadStates = new Map(state.servers.map(server => [server.id, "skipped"]));
+    // An older request must not mutate the read-state maps of a newer reload.
+    const nextClientReadStates = new Map(state.servers.map(server => [server.id, "skipped"]));
+    const nextSuggestionReadStates = new Map(state.servers.map(server => [server.id, "skipped"]));
     const clientsByIdentifier = new Map();
     const suggestionsByServerId = {};
     await Promise.all(state.servers.map(
@@ -4881,7 +4908,7 @@ async function renderClients(container, generation) {
         try {
           const clientResponse = await apiCall(server, "/clients");
           const clientRecords = requireCollection(clientResponse, "clients");
-          clientReadStates.set(server.id, "confirmed");
+          nextClientReadStates.set(server.id, "confirmed");
           for (const serverClient of clientRecords) {
             const identifier = String(serverClient.client || "").trim();
             if (!identifier) {
@@ -4902,7 +4929,7 @@ async function renderClients(container, generation) {
             }
           }
         } catch (error) {
-          clientReadStates.set(server.id, error instanceof AuthError ? "skipped" : "unknown");
+          nextClientReadStates.set(server.id, error instanceof AuthError ? "skipped" : "unknown");
           toast(msg("clients.requestError", {
             server: server.label,
             error: error.message
@@ -4913,10 +4940,10 @@ async function renderClients(container, generation) {
         try {
           const suggestionResponse = await apiCall(server, "/clients/_suggestions");
           suggestionsByServerId[server.id] = requireCollection(suggestionResponse, "clients");
-          suggestionReadStates.set(server.id, "confirmed");
+          nextSuggestionReadStates.set(server.id, "confirmed");
         } catch (error) {
-          suggestionReadStates.set(server.id, error instanceof AuthError ? "skipped" : "unknown");
-          if (error instanceof AuthError) clientReadStates.set(server.id, "skipped");
+          nextSuggestionReadStates.set(server.id, error instanceof AuthError ? "skipped" : "unknown");
+          if (error instanceof AuthError) nextClientReadStates.set(server.id, "skipped");
           suggestionsByServerId[server.id] = [];
         }
       }
@@ -4924,6 +4951,8 @@ async function renderClients(container, generation) {
     if (generation !== state.renderGen || loadId !== loadRevision) {
       return;
     }
+    clientReadStates = nextClientReadStates;
+    suggestionReadStates = nextSuggestionReadStates;
     if (!state.servers.some(server => server.connected)) {
       const loginHtml = `<div class="empty">${htmlMsg("clients.loginRequired")}<br><br>${state.servers.map(loginBoxHtml).join("<br>")}</div>`;
       clientArea.innerHTML = loginHtml;
