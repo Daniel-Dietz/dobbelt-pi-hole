@@ -94,9 +94,13 @@ install Pi-hole or change the DNS servers advertised to your network clients.
   Pi-hole administration interface.
 
 A successful app-password login does not authorize every change. Local DNS
-edits depend on Pi-hole's `webserver.api.app_sudo` setting; review the
-[API permissions](docs/CONFIGURATION.md#pi-hole-api-permissions) before changing
-privileges.
+edits use protected configuration endpoints and may fail with HTTP 403 while
+read access continues. Pi-hole's `webserver.api.app_sudo` is disabled by default;
+enabling it gives app-password sessions broad configuration privileges,
+including upstream DNS, DHCP and password changes. Review the
+[API permissions](docs/CONFIGURATION.md#pi-hole-api-permissions) before granting
+anything: use Pi-hole administration for restricted changes where possible.
+The dashboard never changes Pi-hole permissions automatically.
 
 ## Docker setup
 
@@ -312,8 +316,9 @@ existing filenames remain available for documentation links.
   connection state. Logout clears the local SID immediately and reports
   whether remote revocation was confirmed. See the
   [request and session guide](docs/CONFIGURATION.md#browser-request-limits-and-session-state).
-  More specific API permissions remain in
-  [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10); draft
+  Pi-hole v6 permission errors, unknown blocking states and read-only version
+  checks are implemented in [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10).
+  Unavailable API details are not treated as empty or successful. Draft
   preservation, keyboard improvements and broader browser/mobile checks
   remain in [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11).
 - **Configuration changes:** startup validates the JSON, but a restart with
