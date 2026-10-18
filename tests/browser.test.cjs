@@ -2489,3 +2489,131 @@ for (const rejectedReply of [false, true]) {
       await assertNoCorruption(fixture);
     });
 }
+
+
+for (const failurePoint of ['preflight', 'write']) {
+  test('Issue #8 Codex: rejected suggestion ' + failurePoint + ' retains its name and exact target after reload',
+    /**
+     * Failed suggestion attempts refresh the joined inventory without discarding
+     * the surviving device draft or silently broadening its selected destination.
+     */
+    async t => {
+      const fixture = await openDashboard(t, { language: 'en' });
+      const { page, serverData } = fixture;
+      await visit(page, 'clients');
+      const identifier = 'AA:BB:CC:DD:EE:01';
+      const nameSelector = '[data-suggestion-name="' + identifier + '"]';
+      const targetSelector = '[data-form-state-key="suggestion-target:' + identifier + '"]';
+      const draftName = 'Draft after ' + failurePoint + ' rejection';
+      await page.locator(nameSelector).fill(draftName);
+      await page.locator(targetSelector).selectOption('2');
+      let rejected = 0;
+      await page.route('**/*',
+        /** Reject one target preflight or POST while leaving the subsequent read refresh functional. */
+        async route => {
+          const request = route.request();
+          const path = new URL(request.url()).pathname;
+          if (path.includes('/api2/') && path.endsWith('/clients') &&
+              request.method() === (failurePoint === 'preflight' ? 'GET' : 'POST') &&
+              rejected === 0) {
+            rejected++;
+            return route.fulfill({
+              status: 403,
+              contentType: 'application/json',
+              body: JSON.stringify({ error: { message: 'synthetic rejection' } })
+            });
+          }
+          return route.fallback();
+        });
+      const refreshed = page.waitForResponse(
+        /** Observe the live suggestion refresh after the rejected operation. */
+        response => response.request().method() === 'GET' &&
+          new URL(response.url()).pathname.includes('/api1/') &&
+          new URL(response.url()).pathname.endsWith('/clients/_suggestions')
+      );
+      await page.locator('[data-add-sugg][data-key="' + identifier + '"]').click();
+      await refreshed;
+      await page.waitForFunction(
+        /** Both data tables must be rebuilt before asserting field state on live rows. */
+        () => !!document.querySelector('#clientArea .datatable') &&
+          !!document.querySelector('#suggArea [data-suggestion-name="AA:BB:CC:DD:EE:01"]')
+      );
+      assert.equal(await page.locator(nameSelector).inputValue(), draftName,
+        'A rejected suggestion must preserve the typed name after reload');
+      assert.equal(await page.locator(targetSelector).inputValue(), '2',
+        'A rejected suggestion must not reset its destination to all instances');
+      assert.ok((await page.locator('#toastArea').textContent()).includes('change or preflight failed'));
+      assert.equal(rejected, 1);
+      assert.ok(!serverData['2'].clients.some(
+        /** Rejecting one selected target must not silently create a configured client. */
+        client => client.client === identifier
+      ));
+      await assertNoCorruption(fixture);
+    });
+}
+
+test('Issue #8 Codex: an obsolete client read cannot change the latest unavailable instance state',
+  /**
+   * Resolve an old confirmed GET after a new GET has failed. A later pagination
+   * redraw must not treat the newer unknown instance as an actionable absence.
+   */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const { page, serverData } = fixture;
+    serverData['2'].clients = [];
+    await visit(page, 'clients');
+    const oldReadSeen = deferred(t);
+    const releaseOldRead = deferred(t);
+    let reads = 0;
+    await page.route('**/*',
+      /** Hold the first server-two collection read and reject the second concurrent read. */
+      async route => {
+        const request = route.request();
+        const url = new URL(request.url());
+        if (request.method() === 'GET' && url.pathname.includes('/api2/') &&
+            url.pathname.endsWith('/clients')) {
+          reads++;
+          if (reads === 1) {
+            oldReadSeen.release();
+            await releaseOldRead.promise;
+            return route.fallback();
+          }
+          if (reads === 2) {
+            return route.fulfill({
+              status: 503,
+              contentType: 'application/json',
+              body: JSON.stringify({ error: { message: 'synthetic newer read failure' } })
+            });
+          }
+        }
+        return route.fallback();
+      });
+    await page.locator('#clientReload').click();
+    await oldReadSeen.promise;
+    await page.locator('#clientReload').click();
+    await page.waitForFunction(
+      /** The latest failed server-two read must publish while the old read remains held. */
+      () => !!document.querySelector('#clientArea .datatable') &&
+        (document.querySelector('#clientArea')?.textContent || '').includes('Data unavailable')
+    );
+    const oldResponse = page.waitForResponse(
+      /** Detect the delayed response so its obsolete continuation can settle. */
+      response => response.request().method() === 'GET' &&
+        new URL(response.url()).pathname.includes('/api2/') &&
+        new URL(response.url()).pathname.endsWith('/clients') &&
+        response.status() === 200
+    );
+    releaseOldRead.release();
+    await oldResponse;
+    await page.evaluate(
+      /** Wait two rendering frames so an obsolete response can no longer alter the current table. */
+      () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    );
+    await page.locator('#clientPageSize').selectOption('25');
+    assert.ok((await page.locator('#clientArea').textContent()).includes('Data unavailable'),
+      'An older success cannot remove an unavailable-data warning');
+    assert.equal(await page.locator('[data-add-client-server="2"]').count(), 0,
+      'A client absent only from unknown data must never be offered as an Add action');
+    assert.equal(reads, 2);
+    await assertNoCorruption(fixture);
+  });

@@ -665,3 +665,29 @@ test("legacy text-replacement translation and mutation observers are absent", /*
   assert.doesNotMatch(source, /\b(?:ENGLISH_TEXT|ENGLISH_REPLACEMENTS|originalTextNodes|originalAttributes|translateUiString|translateDynamicUiText|translateTextNode|translateAttributes|i18nObserver)\b/u);
   assert.doesNotMatch(source, /\btr\s*\(/u);
 });
+
+
+test("skipped result names survive short-label translation keys and all catalogs have unique entries",
+  /** Reject duplicate catalog keys that silently overwrite per-instance message placeholders. */
+  () => {
+    const first = source.indexOf("const I18N = {");
+    const last = source.indexOf("\n};", first);
+    assert.ok(first >= 0 && last > first);
+    const section = source.slice(first, last);
+    const codes = ["da", "en", "de"];
+    for (let index = 0; index < codes.length; index++) {
+      const code = codes[index];
+      const begin = section.indexOf('\n  "' + code + '": {');
+      const end = index + 1 < codes.length
+        ? section.indexOf('\n  "' + codes[index + 1] + '": {') : section.length;
+      assert.ok(begin >= 0 && end > begin, "Find catalog for " + code);
+      const keys = [...section.slice(begin, end).matchAll(/^\s{4}"([^"]+)":/gmu)]
+        .map(/** Extract literal keys before JS object evaluation hides duplicates. */ match => match[1]);
+      assert.equal(new Set(keys).size, keys.length, code + " catalog must not contain duplicate keys");
+      const app = loadApp({ saved: code });
+      const message = app.read('msg("multi.skipped", {server: "Pi-hole 42"})');
+      assert.ok(message.includes("Pi-hole 42"), code + " outcome must identify the skipped instance");
+      const label = app.read('msg("multi.skippedLabel")');
+      assert.ok(label && !label.includes("{server}"), code + " short status is independent of instance context");
+    }
+  });
