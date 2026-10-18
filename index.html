@@ -1956,8 +1956,8 @@ function resolveLanguage(saved, browserLanguages = [], configuredDefault = "auto
   return "en";
 }
 let currentLanguage = resolveLanguage(storedValue(LANGUAGE_KEY), [...(navigator.languages || []), navigator.language]);
-let pendingLanguageFormState = null;
-// A tab navigation creates a fresh draft identity; language-only rerenders preserve it.
+let pendingFormRerenderState = null;
+// User navigation creates a new draft identity; language and theme rerenders preserve it.
 let formContextRevision = 0;
 const fieldEditRevisions = new Map();
 let formEditSerial = 0;
@@ -2069,7 +2069,7 @@ function captureFormState() {
 }
 
 /**
- * Merge drafts from overlapping language changes while retaining newer edits.
+ * Merge drafts from overlapping language and theme changes while retaining newer edits.
  * An untouched placeholder from a pending render must not overwrite a saved draft.
  * @returns {Object} The merged field and help-section snapshot.
  */
@@ -2096,7 +2096,7 @@ function mergeFormState(previous, current) {
 
 /**
  * Track user input/change revisions for current form fields and update the pending
- * language snapshot only when its tab and render generation are still current.
+ * visual-rerender snapshot only while its tab and generation remain current.
  */
 function recordPendingFormEdit(event) {
   const element = event.target;
@@ -2110,7 +2110,7 @@ function recordPendingFormEdit(event) {
   // Record actual user edits even when no language render is pending.
   // Programmatic snapshot restoration does not emit input/change events.
   fieldEditRevisions.set(selector, ++formEditSerial);
-  const pending = pendingLanguageFormState;
+  const pending = pendingFormRerenderState;
   if (!pending || pending.generation !== state.renderGen || pending.tab !== state.activeTab) {
     return;
   }
@@ -2168,24 +2168,54 @@ function restoreFormState(snapshot) {
 }
 
 /**
- * Apply and persist a language choice, then rebuild the shell and optionally the active tab.
- * Carry unfinished form edits through asynchronous rendering. Restore the final
- * snapshot only if its tab, language and render generation are still current.
- * @param {string} language Requested language tag; unsupported values select English.
- * @param {boolean} rerender Whether to rebuild the operational tab as well as the shell.
+ * Capture the active view's latest draft, including edits made during an
+ * overlapping theme or language render. Passwords stay in transient memory.
+ * @returns {object} Fields, selection, focus and expanded help sections.
+ */
+function activeViewDraftSnapshot() {
+  const pending = pendingFormRerenderState;
+  const previous = pending?.generation === state.renderGen && pending.tab === state.activeTab
+    ? pending.snapshot : null;
+  return mergeFormState(previous, captureFormState());
+}
+/**
+ * Rebuild the active tab without creating a new draft or submission identity.
+ * Restore immediately when possible and after asynchronous reads finish.
+ * Only the owning generation can complete its final restoration.
+ * @param {object} snapshot Form state merged with any pending view draft.
+ * @returns {Promise<void>} Resolves when the rendering operation settles.
+ */
+async function rerenderActiveViewPreservingDrafts(snapshot) {
+  if (configurationStatus !== "ready" || !state.activeTab || !snapshot) return;
+  const tab = state.activeTab;
+  const rendering = switchTab(tab, false);
+  const generation = state.renderGen;
+  pendingFormRerenderState = { tab, generation, snapshot };
+  restoreFormState(snapshot);
+  await rendering;
+  if (state.renderGen === generation && state.activeTab === tab) {
+    restoreFormState(snapshot);
+    if (pendingFormRerenderState?.generation === generation) {
+      pendingFormRerenderState = null;
+    }
+  }
+}
+/**
+ * Apply and persist a language choice, then rebuild the shell and active view.
+ * Reuse theme changes' draft-preserving logic so concurrent visual refreshes
+ * cannot discard new typing, target selections or focus.
+ * @param {string} language Requested language; unsupported values select English.
+ * @param {boolean} rerender Whether to rebuild the operational tab.
  */
 async function setLanguage(language, rerender = true) {
   const code = normalizeLanguage(language) || "en";
   languageChosenThisPage = true;
-  const previous = pendingLanguageFormState?.generation === state.renderGen && pendingLanguageFormState.tab === state.activeTab ? pendingLanguageFormState.snapshot : null;
-  const snapshot = rerender && configurationStatus === "ready" ? mergeFormState(previous, captureFormState()) : null;
+  const snapshot = rerender && configurationStatus === "ready" ? activeViewDraftSnapshot() : null;
   currentLanguage = code;
   storeValue(LANGUAGE_KEY, code);
   document.documentElement.lang = code;
   const select = document.getElementById("languageSelect");
-  if (select) {
-    select.value = code;
-  }
+  if (select) select.value = code;
   applyI18n();
   renderTabs();
   renderPills();
@@ -2193,24 +2223,8 @@ async function setLanguage(language, rerender = true) {
     renderConfigurationState();
     return;
   }
-  if (rerender && state.activeTab) {
-    const tab = state.activeTab;
-    const rendering = switchTab(tab, false);
-    const generation = state.renderGen;
-    pendingLanguageFormState = {
-      tab,
-      generation,
-      snapshot
-    };
-    restoreFormState(snapshot);
-    await rendering;
-    if (state.renderGen === generation && state.activeTab === tab && currentLanguage === code) {
-      restoreFormState(snapshot);
-      pendingLanguageFormState = null;
-    }
-  }
+  if (rerender && state.activeTab) await rerenderActiveViewPreservingDrafts(snapshot);
 }
-
 /**
  * Populate the language selector and connect language changes and pending-draft tracking.
  * Apply translations to the static shell without starting configuration or Pi-hole requests.
@@ -4280,7 +4294,7 @@ function clearConfirmedDraft(outcomes, form, fields, submission) {
   for (const [selector, previous] of fields) {
     // Pending language renders may still restore the captured draft later.
     // Clear only snapshots belonging to the same tab and render generation.
-    const pending = pendingLanguageFormState;
+    const pending = pendingFormRerenderState;
     if (pending && pending.tab === submission.tab && pending.generation === state.renderGen) {
       const field = pending.snapshot.fields.find(candidate => candidate.selector === selector);
       if (field && typeof field.value === "string" && field.value.trim() === previous) field.value = "";
@@ -4376,8 +4390,8 @@ function clearSubmittedFields(fields) {
   for (const [id, value] of Object.entries(fields)) {
     const element = document.getElementById(id);
     if (element && element.value === value) element.value = "";
-    if (pendingLanguageFormState) {
-      for (const field of pendingLanguageFormState.snapshot.fields) {
+    if (pendingFormRerenderState) {
+      for (const field of pendingFormRerenderState.snapshot.fields) {
         if (field.selector === "#" + id && field.value === value) field.value = "";
       }
     }
@@ -5939,7 +5953,7 @@ function applyTheme(theme) {
 }
 /**
  * Apply the stored theme and bind the toggle to persist changes and refresh the current view.
- * The current theme refresh rebuilds the tab and does not preserve unfinished form drafts.
+ * A theme refresh preserves active-tab drafts and restores chart colors.
  */
 function initThemeToggle() {
   applyTheme(loadTheme());
@@ -5948,7 +5962,8 @@ function initThemeToggle() {
     applyTheme(theme);
     storeValue(THEME_KEY, theme);
     if (configurationStatus === "ready") {
-      void switchTab(state.activeTab);
+      // Preserve the active submission context and draft while rebuilding theme-sensitive charts.
+      void rerenderActiveViewPreservingDrafts(activeViewDraftSnapshot());
     } else {
       renderConfigurationState();
     }
