@@ -30,7 +30,7 @@ relevante indstillinger ens fra ét kontrolpanel.
 
 ## Aktuel status og dokumentation
 
-**Gennemgået 2026-10-17:** den aktuelle applikationsversion er **1.5.009**.
+**Gennemgået 2026-10-18:** den aktuelle applikationsversion er **1.5.009**.
 Ekstern konfiguration, Docker-installation, den native LXC-installer og
 beskyttelse mod API- og loginomdirigeringer er implementeret på `main`.
 [Udviklingsoversigten i #6](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/6)
@@ -381,12 +381,13 @@ katalog over offentliggjorte udgivelsesfiler.
 - **v1.4.008:** Ekstern JSON-konfiguration, genererede API-proxyer og et Docker-image, der kan bygges lokalt — [PR #3](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/3)
 - **v1.5.009:** Automatisk native installation i Proxmox LXC samt stærkere nginx-isolering og CSP — [PR #5](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/5)
 - **Efterfølgende rettelse på `main`:** API- og loginomdirigeringer afvises — [#7](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/7), flettet ind med [PR #25](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/25)
+- **Driftssikre resultater på `main`:** Korrekt læse-/skriveresultat pr. Pi-hole, sikre gentagelser og bevarede klientkladder — [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8), flettet ind med [PR #29](https://github.com/Daniel-Dietz/dobbelt-pi-hole/pull/29).
 
 ## Roadmap
 
 [Oversigten i #6](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/6) er den
-gældende kilde til fremdrift. **Status 2026-10-17: 1 af 19 arbejdspakker
-afsluttet; 18 åbne. Næste: #8.** Tabellen følger den anbefalede
+gældende kilde til fremdrift. **Status 2026-10-18: 2 af 19 arbejdspakker
+afsluttet; 17 åbne. Næste: #9.** Tabellen følger den anbefalede
 arbejdsrækkefølge. Kun kolonnen med forudsætninger angiver tekniske afhængigheder
 inden for dette roadmap; en tidligere række er ikke automatisk en
 forudsætning. De enkelte issues fastlægger omfang og acceptkriterier. Der er
@@ -399,8 +400,8 @@ for #23 eller #24.
 | Rækkefølge | Issue og omfang | Status | Forudsætninger |
 | --- | --- | --- | --- |
 | 01 | [#7](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/7) — Afvis API- og loginomdirigeringer til andre installationers ruter | Afsluttet | Ingen |
-| 02 | [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8) — Læse- og skriveresultater pr. installation, delvise fejl og ukendte datatilstande | Åben — næste | #7 |
-| 03 | [#9](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/9) — Begræns forespørgsler, beskyt mod indlæsningskapløb i forespørgselsloggen, og adskil sessions- og forbindelsestilstande | Åben | #7, #8 |
+| 02 | [#8](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/8) — Læse- og skriveresultater pr. installation, delvise fejl og ukendte datatilstande | Afsluttet | #7 |
+| 03 | [#9](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/9) — Begræns forespørgsler, beskyt mod indlæsningskapløb i forespørgselsloggen, og adskil sessions- og forbindelsestilstande | Åben — næste | #7, #8 |
 | 04 | [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10) — API-kompatibilitet, rettigheder samt fejlslagen eller ukendt blokeringsstatus | Åben | #9 |
 | 05 | [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11) — Bevar kladder, forbedr tastaturbetjening, og udvid browser- og mobiltests | Åben | #8, #9 |
 | 06 | [#12](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/12) — Forhåndskontrol af konfiguration, koordineret aktivering og tilbageførsel | Åben | Ingen |
