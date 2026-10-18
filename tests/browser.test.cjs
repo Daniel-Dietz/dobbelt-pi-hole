@@ -196,6 +196,8 @@ async function openDashboard(t, options = {}) {
     waitForReady = true,
     fakeClock = false,
     holdInitialSessions = false,
+    holdSummaryServer = null,
+    holdQueriesServer = null,
     contentSecurityPolicy = null,
     origin = ORIGIN,
     html = readFileSync(HTML_PATH, 'utf8'),
@@ -267,6 +269,8 @@ async function openDashboard(t, options = {}) {
     return gate;
   }
   const initialSessionGate = holdInitialSessions ? pauseReads('/dns/blocking', typeof holdInitialSessions === 'string' ? holdInitialSessions : null) : null;
+  const summaryGate = holdSummaryServer ? pauseReads('/stats/summary', holdSummaryServer) : null;
+  const queriesGate = holdQueriesServer ? pauseReads('/queries', holdQueriesServer) : null;
   const serverData = Object.fromEntries([1, 2, 3, 4].map(/** Allocate independent writable API data for each possible instance so mutations cannot leak between fixtures. */ id => [String(id), {
     blocking: true,
     domains: [{
@@ -667,7 +671,9 @@ async function openDashboard(t, options = {}) {
     errors,
     serverData,
     pauseReads,
-    initialSessionGate
+    initialSessionGate,
+    summaryGate,
+    queriesGate
   };
 }
 
@@ -2809,5 +2815,87 @@ test('Issue #9: late logout 401 cannot clear a new session',
       sid: 'after-logout-sid',
       saved: 'after-logout-sid'
     });
+    await assertNoCorruption(fixture);
+  });
+
+for (const language of ['da', 'en', 'de']) {
+  test('Issue #9: a healthy dashboard card renders while a peer hangs (' + language + ')',
+    /** Publish one instance's confirmed summary without misrepresenting an outstanding peer as successful. */
+    async t => {
+      const fixture = await openDashboard(t, { language, holdSummaryServer: '2', waitForReady: false });
+      const { page, summaryGate } = fixture;
+      await page.locator('[data-dashboard-preview="1"]').waitFor();
+      await page.locator('[data-dashboard-pending="2"]').waitFor();
+      assert.ok(summaryGate.arrived > 0, 'The second instance must still be pending');
+      assert.equal(await page.locator('[data-dashboard-preview="1"] .big-num').textContent(),
+        (12345).toLocaleString(EXPECTED[language].locale));
+      const progress = await page.locator('[data-dashboard-progress="true"]').textContent();
+      assert.ok(progress.includes('1') && progress.includes('2'), 'The combined total must identify partial coverage');
+      summaryGate.release();
+      await page.locator('#dashGrid [data-toggle-block="2"]').waitFor();
+      assert.equal(await page.locator('#dashGrid [data-toggle-block]').count(), 2);
+      await assertNoCorruption(fixture);
+    });
+
+  test('Issue #9: queries from a healthy server appear before the peer responds (' + language + ')',
+    /** Verify that one slow /queries response cannot delay another server's visible rows. */
+    async t => {
+      const fixture = await openDashboard(t, {
+        language, hash: 'queries', holdQueriesServer: '2', waitForReady: false
+      });
+      const { page, queriesGate } = fixture;
+      await page.locator('#qArea tbody tr').first().waitFor();
+      assert.ok(queriesGate.arrived > 0, 'A second peer request must still be held');
+      assert.equal(await page.locator('#qArea tbody tr').count(), 1);
+      const status = await page.locator('#qStatus').textContent();
+      assert.ok(status.includes('1') && status.includes('2'), 'Progress must disclose that not all instances responded');
+      queriesGate.release();
+      await page.waitForFunction(
+        /** Wait for both independent instance results instead of a fixed delay. */
+        () => document.querySelectorAll('#qArea tbody tr').length === 2
+      );
+      assert.equal(await page.locator('#qArea tbody tr').count(), 2);
+      await assertNoCorruption(fixture);
+    });
+}
+
+test('Issue #9: older client-name refresh cannot overwrite a newer result',
+  /** Resolve two friendly-name requests in reverse order and keep only the latest generation. */
+  async t => {
+    const fixture = await openDashboard(t, { language: 'en' });
+    const result = await fixture.page.evaluate(
+      /** Delay the first instance response past the second generation's completion. */
+      async () => {
+        const originalFetch = window.fetch;
+        let releaseOld;
+        const oldResponse = new Promise(resolve => { releaseOld = resolve; });
+        let calls = 0;
+        const target = serverById('1').base + '/clients';
+        window.fetch = (url, options) => {
+          if (String(url) === target) {
+            calls++;
+            if (calls === 1) return oldResponse;
+            return Promise.resolve(new Response(
+              JSON.stringify({ clients: [{ client: '192.168.1.10', comment: 'Current name' }] }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            ));
+          }
+          return originalFetch(url, options);
+        };
+        try {
+          const first = refreshClientNames();
+          const second = await refreshClientNames();
+          releaseOld(new Response(
+            JSON.stringify({ clients: [{ client: '192.168.1.10', comment: 'Obsolete name' }] }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          ));
+          const firstPublished = await first;
+          return { firstPublished, second, name: state.clientNames.get('192.168.1.10') };
+        } finally {
+          window.fetch = originalFetch;
+        }
+      }
+    );
+    assert.deepEqual(result, { firstPublished: false, second: true, name: 'Current name' });
     await assertNoCorruption(fixture);
   });
