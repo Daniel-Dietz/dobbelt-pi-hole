@@ -971,6 +971,25 @@ const I18N = {
     "auth.sessionUnverified": "Forbindelsen kunne ikke bekræftes; sessionen er gemt.",
     "auth.sessionUnverifiedOn": "{server}: Forbindelsen kunne ikke bekræftes. Prøv igen.",
     "auth.retrySession": "Prøv forbindelsen igen",
+    "api.incompatibleResponse": "Pi-hole API-svaret er ugyldigt eller mangler obligatoriske data. Kontrollér Pi-hole v6 og den lokale API-dokumentation.",
+    "api.unsupportedVersion": "Denne Pi-hole rapporterer en ikke-understøttet FTL-hovedversion. Skrivehandlinger er blokeret; Pi-hole v6 kræves.",
+    "api.configWriteDenied": "Pi-hole afviste ændringen af konfigurationen (HTTP 403). App-adgangskoder kan være begrænset af webserver.api.app_sudo; aktivér ikke brede rettigheder uden at vurdere risikoen.",
+    "api.permissionDenied": "Pi-hole afviste handlingen (HTTP 403). Læseadgangen kan stadig være gyldig; kontrollér kontoens rettigheder.",
+    "auth.rateLimited": "For mange loginforsøg eller ingen ledige sessioner på Pi-hole. Prøv senere.",
+    "auth.totpRequired": "Pi-hole kræver en ekstra 2FA-kode; brug en særskilt app-adgangskode eller Pi-holes egen login-side.",
+    "dashboard.blockingFailed": "blokering mislykkedes",
+    "dashboard.blockingUnknown": "blokeringsstatus ukendt",
+    "dashboard.blockingNotActionable": "Status er ikke bekræftet. Skift blokering direkte i Pi-hole.",
+    "dashboard.blockingUnconfirmed": "Pi-hole har ikke bekræftet den ønskede blokeringsstatus. Kontrollér tilstanden, før du prøver igen.",
+    "dashboard.detailsUnavailable": "Detaljer ikke tilgængelige; intet tomt resultat bekræftet.",
+    "hosts.configWriteRestricted": "Pi-hole afviste konfigurationsændringer på {servers}. Læsning virker fortsat; brug Pi-holes administration til ændringer.",
+    "settings.permissionsHelp": "App-adgangskoder giver ikke automatisk ret til at ændre Pi-hole-konfigurationen, herunder lokale DNS-poster. webserver.api.app_sudo er normalt deaktiveret; aktivering tillader også bredere ændringer som DNS, DHCP og adgangskoder. Aktivér ikke funktionen uden bevidst tillid og behov.",
+    "settings.apiVersionTitle": "Pi-hole-version og API-kompatibilitet",
+    "settings.apiVersionHelp": "Kontrolpanelet understøtter Pi-hole FTL v6 API. Versionerne indlæses kun via /info/version; de giver ingen sikker viden om en sessions skriverettigheder.",
+    "settings.apiVersionSupported": "Pi-hole FTL v6 registreret",
+    "settings.apiVersionUnsupported": "Ikke-understøttet FTL-version; skrivning blokeret",
+    "settings.apiVersionUnknown": "Versionen kunne ikke bekræftes",
+    "settings.apiVersionOffline": "Ikke logget ind; version ikke kontrolleret",
     "common.requestTimeout": "Anmodningen overskred tidsgrænsen.",
     "gravity.streamTimeout": "Gravity-opdateringen overskred strømningens tidsgrænse.",
     "pagination.showing": "Viser {shown} af {total}",
@@ -1263,6 +1282,25 @@ const I18N = {
     "auth.sessionUnverified": "Connection not verified; saved session retained.",
     "auth.sessionUnverifiedOn": "{server}: Could not verify the connection. Retry.",
     "auth.retrySession": "Retry connection",
+    "api.incompatibleResponse": "Pi-hole returned an invalid or incomplete API response. Check the Pi-hole v6 API contract on the instance.",
+    "api.unsupportedVersion": "This Pi-hole reports an unsupported FTL major version. Writes are blocked; the dashboard requires Pi-hole v6.",
+    "api.configWriteDenied": "Pi-hole denied the configuration change (HTTP 403). App-password sessions may lack webserver.api.app_sudo; do not enable broad privileges without assessing the risk.",
+    "api.permissionDenied": "Pi-hole denied this operation (HTTP 403). Read access may still work; check the session's permissions.",
+    "auth.rateLimited": "Too many login attempts or no available Pi-hole session slots. Try again later.",
+    "auth.totpRequired": "Pi-hole requires a 2FA code; use a separate app password or log in through Pi-hole's own interface.",
+    "dashboard.blockingFailed": "blocking failed",
+    "dashboard.blockingUnknown": "blocking status unknown",
+    "dashboard.blockingNotActionable": "State is not confirmed. Change blocking in Pi-hole itself.",
+    "dashboard.blockingUnconfirmed": "Pi-hole did not confirm the requested blocking state. Verify it before retrying.",
+    "dashboard.detailsUnavailable": "Details unavailable; an empty result was not confirmed.",
+    "hosts.configWriteRestricted": "Pi-hole denied configuration writes on {servers}. Existing records remain readable; use Pi-hole administration for changes.",
+    "settings.permissionsHelp": "An app password does not automatically allow configuration changes, including local DNS records. webserver.api.app_sudo defaults to false; enabling it grants broader powers over upstream DNS, DHCP and passwords. Do not enable it without explicit need and trust.",
+    "settings.apiVersionTitle": "Pi-hole version and API compatibility",
+    "settings.apiVersionHelp": "The dashboard targets the Pi-hole FTL v6 API. Versions are read only through /info/version and do not prove write permission for the current session.",
+    "settings.apiVersionSupported": "Pi-hole FTL v6 detected",
+    "settings.apiVersionUnsupported": "Unsupported FTL version; writes blocked",
+    "settings.apiVersionUnknown": "Could not verify the API version",
+    "settings.apiVersionOffline": "Not logged in; version not checked",
     "common.requestTimeout": "The request timed out.",
     "gravity.streamTimeout": "The Gravity stream exceeded its deadline.",
     "pagination.showing": "Showing {shown} of {total}",
@@ -1555,6 +1593,25 @@ const I18N = {
     "auth.sessionUnverified": "Verbindung nicht bestätigt; gespeicherte Sitzung bleibt erhalten.",
     "auth.sessionUnverifiedOn": "{server}: Verbindung konnte nicht bestätigt werden. Erneut versuchen.",
     "auth.retrySession": "Verbindung erneut prüfen",
+    "api.incompatibleResponse": "Pi-hole hat eine ungültige oder unvollständige API-Antwort geliefert. Prüfen Sie die Pi-hole-v6-API-Dokumentation der Instanz.",
+    "api.unsupportedVersion": "Diese Pi-hole-Instanz meldet eine nicht unterstützte FTL-Hauptversion. Schreibaktionen sind gesperrt; Pi-hole v6 wird benötigt.",
+    "api.configWriteDenied": "Pi-hole hat die Konfigurationsänderung verweigert (HTTP 403). Bei App-Passwörtern kann webserver.api.app_sudo fehlen; gewähren Sie keine umfassenden Rechte ohne Risikoprüfung.",
+    "api.permissionDenied": "Pi-hole hat diese Aktion verweigert (HTTP 403). Der Lesezugriff kann weiterhin gültig sein; prüfen Sie die Berechtigungen.",
+    "auth.rateLimited": "Zu viele Anmeldeversuche oder keine freien Pi-hole-Sitzungen. Versuchen Sie es später erneut.",
+    "auth.totpRequired": "Pi-hole verlangt einen zusätzlichen 2FA-Code; nutzen Sie ein separates App-Passwort oder die Anmeldung direkt bei Pi-hole.",
+    "dashboard.blockingFailed": "Blockierung fehlgeschlagen",
+    "dashboard.blockingUnknown": "Blockierungsstatus unbekannt",
+    "dashboard.blockingNotActionable": "Der Status ist nicht bestätigt. Ändern Sie die Blockierung direkt in Pi-hole.",
+    "dashboard.blockingUnconfirmed": "Pi-hole hat den gewünschten Blocking-Status nicht bestätigt. Prüfen Sie den Zustand vor einem erneuten Versuch.",
+    "dashboard.detailsUnavailable": "Details nicht verfügbar; ein leerer Datenbestand ist nicht bestätigt.",
+    "hosts.configWriteRestricted": "Pi-hole hat Konfigurationsänderungen auf {servers} verweigert. Vorhandene Einträge bleiben lesbar; Änderungen über die Pi-hole-Verwaltung vornehmen.",
+    "settings.permissionsHelp": "Ein App-Passwort erlaubt nicht automatisch Konfigurationsänderungen, auch nicht für lokale DNS-Einträge. webserver.api.app_sudo ist standardmäßig deaktiviert; die Aktivierung ermöglicht auch umfassende Änderungen an Upstream-DNS, DHCP und Passwörtern. Aktivieren Sie dies nur bei bewusstem Bedarf und Vertrauen.",
+    "settings.apiVersionTitle": "Pi-hole-Version und API-Kompatibilität",
+    "settings.apiVersionHelp": "Das Dashboard unterstützt die Pi-hole-FTL-v6-API. Versionsdaten werden ausschließlich lesend über /info/version abgefragt und beweisen keine Schreibberechtigung der Sitzung.",
+    "settings.apiVersionSupported": "Pi-hole FTL v6 erkannt",
+    "settings.apiVersionUnsupported": "FTL-Version nicht unterstützt; Schreiben gesperrt",
+    "settings.apiVersionUnknown": "API-Version konnte nicht überprüft werden",
+    "settings.apiVersionOffline": "Nicht angemeldet; Version nicht überprüft",
     "common.requestTimeout": "Zeitlimit für die Anfrage überschritten.",
     "gravity.streamTimeout": "Zeitlimit für den Gravity-Stream überschritten.",
     "pagination.showing": "{shown} von {total} werden angezeigt",
@@ -2446,7 +2503,10 @@ async function loadRuntimeConfiguration() {
     sid: storedValue(sessionStorageKey(server), "sessionStorage") || null,
     connected: false,
     unverified: false,
-    checking: true
+    checking: true,
+    configWriteDenied: false,
+    apiVersionState: "unknown",
+    apiVersion: null
   }));
   for (const id of ["1", "2", "3", "4"]) {
     storeValue("ph_sid_" + id, null, "sessionStorage");
@@ -2677,6 +2737,49 @@ function pageSizeOf(selectId) {
 }
 /** Identify HTTP 401 failures that invalidate only the affected Pi-hole session. */
 class AuthError extends Error {}
+/** Identify a denied API operation without invalidating an otherwise valid session. */
+class PermissionError extends Error {}
+/** Identify responses that are incompatible with the documented Pi-hole v6 API. */
+class ApiCompatibilityError extends Error {}
+/**
+ * Normalize documented Pi-hole v6 blocking states without mapping failed/unknown to disabled.
+ * @param {*} value Raw blocking property returned by the Pi-hole API.
+ * @returns {string} enabled, disabled, failed or unknown.
+ */
+function blockingMode(value) {
+  if (value === true || value === "enabled") return "enabled";
+  if (value === false || value === "disabled") return "disabled";
+  if (value === "failed") return "failed";
+  return "unknown";
+}
+/**
+ * Require valid query counts before including an instance in dashboard totals.
+ * @param {*} payload The decoded v6 /stats/summary response.
+ * @returns {object} The verified response, preserving all optional details.
+ */
+function requireSummaryResult(payload) {
+  const queries = payload?.queries;
+  if (!queries || typeof queries !== "object" ||
+      !Number.isFinite(queries.total) || queries.total < 0 ||
+      !Number.isFinite(queries.blocked) || queries.blocked < 0 ||
+      queries.blocked > queries.total) {
+    throw new ApiCompatibilityError(msg("api.incompatibleResponse"));
+  }
+  return payload;
+}
+/**
+ * Parse a read-only Pi-hole FTL version response, without guessing privileges.
+ * @param {*} payload Documented GET /info/version response.
+ * @returns {object} Parsed local version and supported/unsupported/unknown state.
+ */
+function apiVersionInfo(payload) {
+  const version = payload?.version?.ftl?.local?.version;
+  if (typeof version !== "string" || !version.trim() || version.length > 80) {
+    return { state: "unknown", version: null };
+  }
+  const match = /^v?(\d+)\./u.exec(version.trim());
+  return { state: !match ? "unknown" : Number(match[1]) === 6 ? "supported" : "unsupported", version: version.trim() };
+}
 /** Identify a request that reached its deadline, rather than a user-initiated cancellation. */
 class RequestTimeoutError extends Error {}
 // Normal requests are bounded independently from the longer Gravity streaming operation.
@@ -2721,6 +2824,15 @@ async function apiCall(server, path, {
   timeoutMs = API_REQUEST_TIMEOUT_MS,
   invalidateSessionOn401 = true
 } = {}) {
+  // Refuse known non-v6 writes but always allow session revocation.
+  if (method !== "GET" && path !== "/auth" && server.apiVersionState === "unsupported") {
+    throw new ApiCompatibilityError(msg("api.unsupportedVersion"));
+  }
+  if (method !== "GET" && path.startsWith("/config/") && server.configWriteDenied) {
+    const error = new PermissionError(msg("api.configWriteDenied"));
+    error.httpStatus = 403;
+    throw error;
+  }
   const deadline = requestSignals(requestSignal, timeoutMs);
   const { signal } = deadline;
   const headers = { "Content-Type": "application/json" };
@@ -2749,17 +2861,32 @@ async function apiCall(server, path, {
       throw new AuthError(msg("auth.notConnectedOn", { server: server.label }));
     }
     if (rawResponse) return response;
-    if (response.status === 204) return null;
-    const payload = (response.headers.get("content-type") || "").includes("application/json")
+    // Pi-hole v6 config-array PUT explicitly returns HTTP 201 with no content.
+    // Accept only this documented empty-body success alongside HTTP 204.
+    if (response.status === 204 ||
+        (response.status === 201 && method === "PUT" && path.startsWith("/config/"))) return null;
+    const isJson = (response.headers.get("content-type") || "").toLowerCase().includes("application/json");
+    const payload = isJson
       ? await response.json().catch(/** Preserve aborts and deadlines; only malformed complete JSON may fall back to null. */ error => {
         if (signal.aborted) throw error;
         return null;
       })
       : await response.text();
     if (!response.ok) {
+      if (response.status === 403) {
+        const deniedConfig = method !== "GET" && path.startsWith("/config/");
+        if (deniedConfig && server.sid === requestSid) server.configWriteDenied = true;
+        const failure = new PermissionError(msg(deniedConfig ? "api.configWriteDenied" : "api.permissionDenied"));
+        failure.httpStatus = 403;
+        throw failure;
+      }
       const failure = new Error(payload?.error?.message || (typeof payload === "string" ? payload : "HTTP " + response.status));
       failure.httpStatus = response.status;
       throw failure;
+    }
+    // HTTP 200 with HTML, broken JSON, an array, or no payload is not a valid v6 API response.
+    if (!isJson || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new ApiCompatibilityError(msg("api.incompatibleResponse"));
     }
     return payload;
   } catch (error) {
@@ -2786,9 +2913,18 @@ async function login(server, password) {
     if (response.status === 409 && payload?.error?.code === "dashboard_config_changed") {
       throw new Error(msg("config.changed"));
     }
-    if (!response.ok || !payload?.session?.sid) {
-      throw new Error(payload?.error?.message || msg("auth.loginFailed"));
+    if (!response.ok || payload?.session?.valid === false) {
+      throw new Error(response.status === 429 ? msg("auth.rateLimited") :
+        payload?.session?.totp === true ? msg("auth.totpRequired") :
+        payload?.error?.message || msg("auth.loginFailed"));
     }
+    if (payload?.session?.valid !== true || typeof payload.session.sid !== "string" ||
+        !payload.session.sid.trim()) {
+      throw new ApiCompatibilityError(msg("api.incompatibleResponse"));
+    }
+    server.configWriteDenied = false;
+    server.apiVersionState = "unknown";
+    server.apiVersion = null;
     server.sid = payload.session.sid;
     server.connected = true;
     server.unverified = false;
@@ -3147,8 +3283,8 @@ async function renderDashboard(container, generation) {
     }
     try {
       const [summaryResponse, blockingResponse] = await Promise.all([
-        apiCall(requestedServer, "/stats/summary", { signal: controller.signal }),
-        apiCall(requestedServer, "/dns/blocking", { signal: controller.signal })
+        apiCall(requestedServer, "/stats/summary", { signal: controller.signal }).then(requireSummaryResult),
+        apiCall(requestedServer, "/dns/blocking", { signal: controller.signal }).catch(/** Preserve verified query totals when only blocking is unavailable. */ () => null)
       ]);
       // Optional charts must not delay an already confirmed summary card.
       if (ownsView()) {
@@ -3229,12 +3365,20 @@ async function renderDashboard(container, generation) {
     const gravityStats = summaryResult.summary.gravity || {};
     combinedQueries += Number(queryStats.total) || 0;
     combinedBlockedQueries += Number(queryStats.blocked) || 0;
-    const blockingState = summaryResult.blocking && summaryResult.blocking.blocking;
-    const blockingEnabled = blockingState === true || blockingState === "enabled";
+    const mode = blockingMode(summaryResult.blocking?.blocking);
+    const blockingEnabled = mode === "enabled";
+    const blockingDisabled = mode === "disabled";
+    const actionable = (blockingEnabled || blockingDisabled) && summaryServer.apiVersionState !== "unsupported";
+    const blockingLabelKey = {
+      enabled: "dashboard.blockingEnabled",
+      disabled: "dashboard.blockingDisabled",
+      failed: "dashboard.blockingFailed",
+      unknown: "dashboard.blockingUnknown"
+    }[mode];
     return `<div class="card">
 					<h2 class="flex-between">
 						<span><span class="tag tag-${summaryServer.chip.slice(1)}">${escapeHtml(summaryServer.label)}</span></span>
-						<span class="badge ${blockingEnabled ? "on" : "off"}">${htmlMsg(blockingEnabled ? "dashboard.blockingEnabled" : "dashboard.blockingDisabled")}</span>
+						<span class="badge ${blockingEnabled ? "on" : blockingDisabled ? "off" : ""}" data-blocking-state="${mode}">${htmlMsg(blockingLabelKey)}</span>
 					</h2>
 					<div class="big-num">${fmtNum(queryStats.total)}</div>
 					<div class="sub">${escapeHtml(msgCount("dashboard.queriesToday", queryStats.total))}</div>
@@ -3247,9 +3391,9 @@ async function renderDashboard(container, generation) {
 					<div class="stat-row"><span class="k">${htmlMsg("dashboard.gravityUpdated")}</span><span class="v">${fmtDate(gravityStats.last_update)}</span></div>
 					<hr class="sep">
 					<div class="row-inline">
-						<button class="btn xs ${blockingEnabled ? "danger" : "success"}" data-toggle-block="${summaryServer.id}" data-newstate="${blockingEnabled ? "off" : "on"}">
-						${htmlMsg(blockingEnabled ? "dashboard.disableBlocking" : "dashboard.enableBlocking")}
-						</button>
+${actionable ? `<button class="btn xs ${blockingEnabled ? "danger" : "success"}" data-toggle-block="${summaryServer.id}" data-newstate="${blockingEnabled ? "off" : "on"}">
+              ${htmlMsg(blockingEnabled ? "dashboard.disableBlocking" : "dashboard.enableBlocking")}
+            </button>` : `<span class="sub" data-blocking-unavailable="${summaryServer.id}">${htmlMsg("dashboard.blockingNotActionable")}</span>`}
 						<button class="btn xs" data-logout="${summaryServer.id}">${htmlMsg("dashboard.logout")}</button>
 					</div>
 					</div>`;
@@ -3268,12 +3412,14 @@ async function renderDashboard(container, generation) {
       const blockingServer = serverById(blockingButton.dataset.toggleBlock);
       blockingButton.disabled = true;
       try {
-        await apiCall(blockingServer, "/dns/blocking", {
+        const desiredMode = blockingButton.dataset.newstate === "on" ? "enabled" : "disabled";
+        const response = await apiCall(blockingServer, "/dns/blocking", {
           method: "POST",
-          body: {
-            blocking: blockingButton.dataset.newstate === "on"
-          }
+          body: { blocking: desiredMode === "enabled" }
         });
+        if (blockingMode(response?.blocking) !== desiredMode) {
+          throw new ApiCompatibilityError(msg("dashboard.blockingUnconfirmed"));
+        }
         toast(msg(blockingButton.dataset.newstate === "on" ? "dashboard.blockingEnabledToast" : "dashboard.blockingDisabledToast", {
           server: blockingServer.label
         }), "ok");
@@ -3311,7 +3457,8 @@ async function renderDashboard(container, generation) {
    * @returns {string} Ranked-list markup.
    */
   function renderTopEntries(entries, entryTotal, entryBarClass, limit = 5, labelForEntry = null) {
-    return entries && entries.length !== 0 ? [...entries].sort(/** Put the most frequently queried entries first, treating missing counts as zero. */ (leftEntry, rightEntry) => (rightEntry.count || 0) - (leftEntry.count || 0)).slice(0, limit).map(/** Choose the entry's display label and render its count against the list total. */ entry => renderStatBar(labelForEntry ? labelForEntry(entry) : entry.domain || entry.name || entry.ip || "–", entry.count || 0, entryTotal, entryBarClass)).join("") : `<p class="sub">${htmlMsg("dashboard.noData")}</p>`;
+    if (!Array.isArray(entries)) return `<p class="sub">${htmlMsg("dashboard.detailsUnavailable")}</p>`;
+    return entries.length !== 0 ? [...entries].sort(/** Put the most frequently queried entries first, treating missing counts as zero. */ (leftEntry, rightEntry) => (rightEntry.count || 0) - (leftEntry.count || 0)).slice(0, limit).map(/** Choose the entry's display label and render its count against the list total. */ entry => renderStatBar(labelForEntry ? labelForEntry(entry) : entry.domain || entry.name || entry.ip || "–", entry.count || 0, entryTotal, entryBarClass)).join("") : `<p class="sub">${htmlMsg("dashboard.noData")}</p>`;
   }
   const availableResults = serverResults.filter(/** Include details and charts only for connected instances with a usable summary. */ candidateResult => candidateResult.server.connected && candidateResult.summary);
   detailGrid.innerHTML = availableResults.map(/** Build an instance's domain, client and query-type detail card from the available responses. */ detailResult => {
@@ -4045,6 +4192,11 @@ async function performCheckedWrites(button, targets, op) {
   try {
     for (const server of targets) {
       if (!server.connected) { outcomes.push({ server, status: "skipped" }); continue; }
+      // A previously confirmed 403 prevents repeat writes to the same protected config route.
+      if (server.configWriteDenied && op.path(server).startsWith("/config/")) {
+        outcomes.push({ server, status: "failed", error: msg("api.configWriteDenied") });
+        continue;
+      }
       let rows;
       try { rows = op.extract(await apiCall(server, op.path(server))); }
       catch (error) { outcomes.push({ server, status: "failed", error: error.message }); continue; }
@@ -4500,6 +4652,17 @@ async function renderHosts(container, generation) {
 				</div>
 				<div id="hostArea"><p class="empty">${htmlMsg("hosts.loading")}</p></div>
 				</div>`;
+  /**
+   * Display the instances whose configuration writes were explicitly denied.
+   * A denied app-password session remains connected and can still read records.
+   * @returns {string} Localized, escaped permission notice or an empty string.
+   */
+  function hostPermissionNoticeHtml() {
+    const denied = state.servers.filter(/** Select only peers with a confirmed forbidden config write. */ server => server.configWriteDenied);
+    return denied.length ? `<p class="sub" role="alert" data-host-write-denied="true">${htmlMsg("hosts.configWriteRestricted", {
+      servers: denied.map(/** Pass plain labels to htmlMsg, which escapes the completed localized message. */ server => server.label).join(", ")
+    })}</p>` : "";
+  }
   const hostUiState = uiState.hosts;
   let sortKey = state.servers.some(/** Retain a saved instance-address sort column only while its instance remains configured. */ server => server.id === hostUiState.sortKey) ? hostUiState.sortKey : "name";
 
@@ -4591,19 +4754,19 @@ async function renderHosts(container, generation) {
         return sortDirection === "asc" ? comparison : -comparison;
       });
       if (sortedHosts.length === 0) {
-        hostArea.innerHTML = collectionCoverageHtml(readStates) + `<p class="empty">${htmlMsg("hosts.empty")}</p>`;
+        hostArea.innerHTML = hostPermissionNoticeHtml() + collectionCoverageHtml(readStates) + `<p class="empty">${htmlMsg("hosts.empty")}</p>`;
         return;
       }
       const sortIndicator = sortDirection === "asc" ? " ▲" : " ▼";
       const hostSortHeadingHtml = /** Build a host-table sort heading from its internal key and already escaped label. */ (columnKey, headingHtml) => `<th data-host-sort="${escapeHtml(columnKey)}" style="cursor:pointer;user-select:none;">${headingHtml}${sortKey === columnKey ? sortIndicator : ""}</th>`;
-      hostArea.innerHTML = collectionCoverageHtml(readStates) + `<div class="table-wrap"><table class="datatable">
+      hostArea.innerHTML = hostPermissionNoticeHtml() + collectionCoverageHtml(readStates) + `<div class="table-wrap"><table class="datatable">
 				<thead><tr>${hostSortHeadingHtml("name", htmlMsg("hosts.nameHeading"))}${state.servers.map(/** Build the address-sort heading for one configured instance. */ server => hostSortHeadingHtml(server.id, escapeHtml(server.label))).join("")}<th></th></tr></thead>
 				<tbody>${sortedHosts.map(/** Render a hostname row and highlight addresses that differ across its loaded instance records. */ (host, rowIndex) => {
         const serverCells = state.servers.map(/** Render this instance's address and eligible copy actions, or an add action for a missing record. */ server => {
           if (readStates.get(server.id) !== "confirmed") return uncertainCell(readStates, server);
           const hostRecord = host.byServer[server.id];
           if (hostRecord) {
-            const syncButtonsHtml = state.servers.filter(/** Offer source instances only when their loaded address differs from this target's address. */ sourceCandidate => sourceCandidate.id !== server.id && host.byServer[sourceCandidate.id] && host.byServer[sourceCandidate.id].ip !== hostRecord.ip).map(/** Build a copy-address button whose source and target IDs remain explicit in its data attributes. */ sourceServer => `<button class="btn xs" data-sync-host-row="${rowIndex}" data-sync-target="${escapeHtml(server.id)}" data-sync-source="${escapeHtml(sourceServer.id)}" title="${htmlMsg("hosts.useSource", {
+            const syncButtonsHtml = state.servers.filter(/** Offer source instances only when their loaded address differs from this target's address. */ sourceCandidate => sourceCandidate.id !== server.id && host.byServer[sourceCandidate.id] && host.byServer[sourceCandidate.id].ip !== hostRecord.ip).map(/** Build a copy-address button whose source and target IDs remain explicit in its data attributes. */ sourceServer => `<button class="btn xs" data-sync-host-row="${rowIndex}" data-sync-target="${escapeHtml(server.id)}" ${server.configWriteDenied ? "disabled" : ""} data-sync-source="${escapeHtml(sourceServer.id)}" title="${htmlMsg("hosts.useSource", {
               source: sourceServer.label,
               target: server.label
             })}" aria-label="${htmlMsg("hosts.useSource", {
@@ -4615,9 +4778,9 @@ async function renderHosts(container, generation) {
           const fallbackRecord = Object.values(host.byServer)[0];
           const fallbackIp = fallbackRecord ? fallbackRecord.ip : "";
           return `<td><span class="badge off">${htmlMsg("hosts.missing")}</span>
-							<button class="btn xs" data-add-host="${escapeHtml(server.id)}" data-name="${escapeHtml(host.name)}" data-ip="${escapeHtml(fallbackIp)}">${htmlMsg("hosts.add")}</button></td>`;
+							<button class="btn xs" data-add-host="${escapeHtml(server.id)}" ${server.configWriteDenied ? "disabled" : ""} data-name="${escapeHtml(host.name)}" data-ip="${escapeHtml(fallbackIp)}">${htmlMsg("hosts.add")}</button></td>`;
         });
-        return `<tr class="${new Set(Object.values(host.byServer).map(/** Collect loaded addresses so the row can detect cross-instance mismatches. */ record => record.ip)).size > 1 ? "row-mismatch" : ""}"><td class="mono">${escapeHtml(host.name)}</td>${serverCells.join("")}<td><button class="btn xs danger" data-del-row="${rowIndex}">${htmlMsg("hosts.delete")}</button></td></tr>`;
+        return `<tr class="${new Set(Object.values(host.byServer).map(/** Collect loaded addresses so the row can detect cross-instance mismatches. */ record => record.ip)).size > 1 ? "row-mismatch" : ""}"><td class="mono">${escapeHtml(host.name)}</td>${serverCells.join("")}<td><button class="btn xs danger" data-del-row="${rowIndex}" ${state.servers.filter(server => host.byServer[server.id]).every(server => server.configWriteDenied) ? "disabled" : ""}>${htmlMsg("hosts.delete")}</button></td></tr>`;
       }).join("")}</tbody>
 				</table></div>`;
       for (const sortHeader of hostArea.querySelectorAll("[data-host-sort]")) {
@@ -5652,7 +5815,7 @@ async function renderGravity(container, generation) {
  * and Pi-hole configuration are never written by this settings view.
  * @param {HTMLElement} container Active-tab container to populate.
  */
-async function renderSettings(container) {
+async function renderSettings(container, generation) {
   container.innerHTML = `
     <details class="help">
       <summary>${htmlMsg("settings.helpSummary")}</summary>
@@ -5663,10 +5826,16 @@ async function renderSettings(container) {
         <p>${htmlMsg("settings.proxyConfiguration")}</p>
         <h3>${htmlMsg("settings.appPasswordTitle")}</h3>
         <p>${htmlMsg("settings.appPasswordHelp")}</p>
+        <p>${htmlMsg("settings.permissionsHelp")}</p>
         <h3>${htmlMsg("settings.sessionsTitle")}</h3>
         <p>${htmlMsg("settings.sessionsHelp")}</p>
       </div>
     </details>
+    <div class="card">
+      <h2>${htmlMsg("settings.apiVersionTitle")}</h2>
+      <p class="sub">${htmlMsg("settings.apiVersionHelp")}</p>
+      <div id="apiVersions" aria-live="polite"></div>
+    </div>
     <div class="card">
       <h2>${htmlMsg("settings.title")}</h2>
       <form id="settingsForm">
@@ -5682,6 +5851,48 @@ async function renderSettings(container) {
         </div>
       </form>
     </div>`;
+  const versionArea = document.getElementById("apiVersions");
+  /**
+   * Display the reported FTL version without exposing a SID or the upstream URL.
+   * Missing version information is unknown, never assumed compatible.
+   */
+  function paintApiVersionStatuses() {
+    if (generation !== state.renderGen || !versionArea.isConnected) return;
+    versionArea.innerHTML = state.servers.map(
+      /** Render only escaped target labels and the read-only version string. */
+      server => {
+        const status = !server.connected ? "offline" : server.apiVersionState || "unknown";
+        const labels = {
+          supported: "settings.apiVersionSupported",
+          unsupported: "settings.apiVersionUnsupported",
+          unknown: "settings.apiVersionUnknown",
+          offline: "settings.apiVersionOffline"
+        };
+        const key = labels[status] || labels.unknown;
+        return `<p class="sub" data-api-support="${escapeHtml(status)}" data-api-server="${escapeHtml(server.id)}"><b>${escapeHtml(server.label)}</b>: ${htmlMsg(key)}${server.apiVersion ? ` — ${escapeHtml(server.apiVersion)}` : ""}</p>`;
+      }).join("");
+  }
+  paintApiVersionStatuses();
+  void Promise.all(state.servers.map(
+    /** Request only documented read-only version information for each connected instance. */
+    async server => {
+      if (!server.connected) return;
+      const sid = server.sid;
+      try {
+        const response = await apiCall(server, "/info/version");
+        if (generation !== state.renderGen || server.sid !== sid) return;
+        const details = apiVersionInfo(response);
+        server.apiVersionState = details.state;
+        server.apiVersion = details.version;
+      } catch {
+        if (generation !== state.renderGen || server.sid !== sid) return;
+        server.apiVersionState = "unknown";
+        server.apiVersion = null;
+      } finally {
+        paintApiVersionStatuses();
+      }
+    }
+  ));
   const form = document.getElementById("settingsForm");
   const labelInputs = [...form.querySelectorAll("[data-label]")];
   const validateLabel = /** Set the browser's localized validation message for an invalid personal server name. */ input => input.setCustomValidity(validLocalLabel(input.value) ? "" : msg("settings.invalidName"));

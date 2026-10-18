@@ -70,6 +70,14 @@ do not claim to enforce an nginx or Pi-hole server-side deadline.
 | Gravity response stream without new data | 2 minutes (idle) |
 | Gravity response stream, including continuous output | 30 minutes (absolute) |
 
+Pi-hole's [configuration API schema](https://github.com/pi-hole/FTL/blob/master/src/api/docs/content/specs/config.yaml)
+explicitly returns HTTP 201 **without any body** when adding an array item
+with `PUT /config/{element}/{value}`, and HTTP 204 without a body for DELETE.
+A missing JSON body on these exact documented success statuses is accepted;
+other endpoint responses do not inherit the same exception. For a host
+replacement, an acknowledged PUT must be followed by the requested DELETE
+of the old record; an ambiguous result stops the sequence for operator review.
+
 A timeout or transport error is **not** proof that a valid Pi-hole session has
 expired. During a **restored-session probe**, the browser retains its
 route-bound SID, marks this connection unverified and offers a manual retry.
@@ -102,16 +110,61 @@ remains tracked in [#22](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/
 
 ## Pi-hole API permissions
 
-Local DNS writes use `/config/dns/hosts`. Pi-hole's
-[`webserver.api.app_sudo`](https://docs.pi-hole.net/ftldns/configfile/#app_sudo)
-defaults to `false`, so app-password sessions cannot change configuration by
-default. Enabling it permits broader configuration changes, not only Local DNS.
-Review that scope before enabling it **on each Pi-hole**; it is not a dashboard
-JSON field. Otherwise, make those changes in Pi-hole's administration interface.
+### Supported Pi-hole v6 API baseline
 
-Authentication does not establish permission for every operation. Better
-permission/compatibility feedback remains in
-[#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10).
+The dashboard supports the **Pi-hole v6 FTL REST API**, not the older v5 PHP
+API. Consult the [Pi-hole API documentation](https://docs.pi-hole.net/api/)
+and each installation's own `/api/docs` reference, which matches the exact FTL
+build. The supported operations follow the documented
+[authentication](https://github.com/pi-hole/FTL/blob/master/src/api/docs/content/specs/auth.yaml),
+[DNS blocking](https://github.com/pi-hole/FTL/blob/master/src/api/docs/content/specs/dns.yaml),
+and [FTL version](https://github.com/pi-hole/FTL/blob/master/src/api/docs/content/specs/info.yaml)
+schemas. No specific v6 minor-release minimum or undocumented privileges are
+assumed. A v6 major-version label alone never guarantees that all response
+fields or permissions exist.
+
+| Operation | What the dashboard accepts | Failure behavior |
+| --- | --- | --- |
+| `POST /auth` | `session.valid === true` and a nonblank session SID; password or app password | Wrong credentials or invalid session stay disconnected; a missing validity flag or SID is an incompatible response |
+| `GET /info/version` | `version.ftl.local.version` read only, checked when opening **Settings** | v6 is identified, a known other major version blocks writes, and missing/failed version data stays **unknown** |
+| `GET /dns/blocking` | Explicit `enabled`, `disabled`, `failed`, `unknown` (legacy booleans are also interpreted) | Failed and unknown are distinct from disabled; neither can offer a blocking toggle |
+| `POST /dns/blocking` | A new state is confirmed only when the response explicitly matches the requested enabled/disabled mode | An unknown, failed, invalid or mismatched response is not a successful change; verify the real state before retrying |
+| `GET /stats/summary` | A response with valid, finite and nonnegative total/blocked query counts | Incomplete totals make the instance unavailable, not silently zero; other instances remain visible |
+| `GET/PUT/DELETE /config/dns/hosts` | Complete readable hosts collection, documented empty HTTP **201** for a successful config-array PUT, and HTTP **204** for a successful DELETE | A forbidden config write leaves the readable session valid and prevents repeated config writes to that target until the next login |
+
+**HTTP 401** means the SID used for that particular operation is invalid;
+it does not invalidate a replacement login that occurred while the request
+was in flight. **HTTP 403** means an operation was refused, **not** that its
+otherwise successful session must be discarded. Permission error messages are
+localized; an observed HTTP 403 on a configuration mutation causes the
+dashboard to suppress further configuration writes for that instance for the
+remainder of the current login. Read-only operations remain available. The
+blocked target is identified explicitly in Local DNS management. An HTTP 200
+with HTML, broken JSON or an incomplete required structure is not considered
+a confirmed API success; optional details are marked unavailable rather than
+reported as an empty dataset.
+
+Pi-hole's [`webserver.api.app_sudo`](https://docs.pi-hole.net/ftldns/configfile/#app_sudo)
+is **false by default**. Application-password authentication can still read
+data and can use other actions its session is allowed to perform, but local
+DNS modifications use protected Pi-hole configuration endpoints. Setting
+`app_sudo=true` would grant third-party app-password sessions **broad**
+configuration power: for example changing upstream DNS, DHCP settings and
+passwords—not just adding a host record. The dashboard does **not** enable it,
+change Pi-hole's authentication configuration or grant new permissions.
+Prefer performing restricted host changes in Pi-hole's own administrative UI,
+or assess the broader security implications explicitly on each target before
+granting any extra access. The dashboard does not infer privileges from login,
+a Pi-hole version string or the presence of app-password credentials.
+
+Pi-hole's REST login accepts password-based authentication and supports TOTP
+for suitably equipped clients. This dashboard's existing login form submits
+a password (including an app password); it does **not** offer a second-factor
+TOTP input. Where the regular password requires TOTP, use an independently
+created Pi-hole app password or the Pi-hole administrative interface. Secrets
+and session tokens are never included in the public configuration or the
+version-status panel. Further read-only service diagnostics remain in
+[#13](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/13).
 
 ## Docker
 

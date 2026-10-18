@@ -101,9 +101,14 @@ Netzwerkclients verwenden.
   Pi-hole-Verwaltungsoberfläche unter **Settings → API** erstellt.
 
 Eine erfolgreiche Anmeldung mit App-Passwort erlaubt nicht jede Änderung.
-Lokale DNS-Änderungen hängen von Pi-holes `webserver.api.app_sudo` ab. Prüfe die
-[API-Berechtigungen](docs/CONFIGURATION.md#pi-hole-api-permissions), bevor du
-Rechte erweiterst.
+Lokale DNS-Einträge nutzen geschützte Konfigurationsendpunkte und können trotz
+weiterhin gültigen Lesezugriffs mit HTTP 403 abgelehnt werden.
+`webserver.api.app_sudo` ist standardmäßig deaktiviert. Eine Aktivierung
+erteilt App-Passwort-Sitzungen weitreichende Konfigurationsrechte, auch für
+Upstream-DNS, DHCP und Passwörter. Prüfe die
+[API-Berechtigungen](docs/CONFIGURATION.md#pi-hole-api-permissions) und nutze
+für eingeschränkte Änderungen vorzugsweise die eigene Pi-hole-Verwaltung.
+Das Dashboard erweitert Berechtigungen niemals automatisch.
 
 ## Einrichtung mit Docker
 
@@ -415,9 +420,12 @@ Dokumentationslinks erhalten.
   einen bereits bestehenden Verbindungsstatus nicht. Logout löscht sie sofort
   lokal und unterscheidet bestätigten und unbestätigten Remote-Widerruf. Details stehen in der englischen
   [Betriebsanleitung](docs/CONFIGURATION.md#browser-request-limits-and-session-state).
-  Weitergehende Pi-hole-Berechtigungen bleiben in
-  [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10),
-  Formularentwürfe, Tastaturbedienung und zusätzliche Browser-/Mobiltests in
+  Pi-hole-v6-Berechtigungsfehler, unbekannte Blocking-Zustände und
+  ausschließlich lesende Versionsprüfungen werden in
+  [#10](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/10)
+  behandelt. Unvollständige API-Antworten gelten weder als leer noch als
+  erfolgreich. Formularentwürfe, Tastaturbedienung und zusätzliche
+  Browser-/Mobiltests bleiben in
   [#11](https://github.com/Daniel-Dietz/dobbelt-pi-hole/issues/11).
 - **Konfigurationsänderungen:** Beim Start wird das JSON geprüft. Ein Neustart
   mit ungültiger Eingabe kann den Dienst jedoch unerreichbar lassen. Bewahre
